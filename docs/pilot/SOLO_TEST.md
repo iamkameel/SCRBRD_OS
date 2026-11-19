@@ -205,7 +205,7 @@ Then sign in as `pupil.wes.u14a`. Compare. He has **Home**, **Matches**, **Passp
 
 Sign in as `scorer1.wes` on phone 1, after scenario 2 saved the side. The sheet is `SCORER_HELP.md`; these are the checks.
 
-1. **Matches**, today's fixture, **Start scoring →**. Answer **The toss**, then **Bat** or **Bowl**, the openers and the **Opening bowler**.
+1. **Matches**, today's fixture, **Start scoring**. Answer **The toss**, then **Bat** or **Bowl**, the openers and the **Opening bowler**.
 2. Kearsney's names: the pad cannot read another school's team sheet. Type each Kearsney player's name as he comes in ("K Batter 1"). That is expected.
 3. Score an over with a **Dot**, a four, a **Wide** and a **No ball**. Check the score counts one extra for each, and the over has six legal balls.
 4. Score a **Wicket**, then **Confirm out**. Pick the next batter on **Batting order**.
@@ -229,7 +229,7 @@ A failure: both phones able to score; a wrong figure accepted at the takeover.
 Before the toss, as `dos.wes` (a coach may not publish): today's fixture, **Match Details**, **Public page**, **Publish** for Westville. The **Ground display** section shows a link and a QR code.
 
 1. Open the link in laptop tab 2. Try **Floodlit**, then **Daylight**. Score a ball on the pad: the display follows within seconds.
-2. Laptop tab 1, as `parent.001`: **Home** shows the **Live** card. Tap **Follow the match**. His son's line shows when he bats.
+2. Laptop tab 1, as `parent.001`: **Home** shows the **Live** card. Tap **Open v** and the other side. His son's line shows when he bats.
 3. Switch off the laptop's Wi-Fi for a minute: the display shows **Last updated**, then catches up.
 4. Afterwards, as `dos.wes`, tap **Withdraw**.
 

@@ -87,7 +87,7 @@ try {
 
   // Resume an in-progress fixture. This lands straight on the scoring surface
   // and exercises the adapter that rebuilds an event log from a seeded innings.
-  const opened = await click(/Open Live Scorer/i, 5000);
+  const opened = await click(/Open Live Scorer|Resume Scoring/i, 5000);
   await page.waitForTimeout(1400);
   ok("live scorer opens on a match in progress",
      opened && /Phase|OUTCOME|UNDO|QUICK MODE|BOWL/i.test(await text()));

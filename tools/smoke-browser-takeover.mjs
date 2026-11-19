@@ -148,7 +148,7 @@ async function clearBlockers(page) {
 }
 
 const openMichaelhouse = async (page) => page.evaluate(() => {
-  const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
+  const isBtn = (b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
   const btns = [...document.querySelectorAll("button")].filter(isBtn);
   for (const b of btns) {
     let card = b;

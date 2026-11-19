@@ -137,7 +137,8 @@ const PIN = new Map([
   ["Log in", { in: ["home/sections/Header.jsx"] }],
   ["Match Centre", { in: ["design/roles.js"] }],              // the nav label for "matches"
   ["More", { in: ["shell/MobileNav.jsx"] }],
-  ["Open match", { in: ["views/MatchCentreView.jsx"] }],
+  // The match card's action (redesign slice 1), named for the other side: "Open v Westville Boys' High 1XI".
+  ["Open v", { in: ["lib/matchCard.js"], part: "`Open v \\$\\{" }],
   ["Scorecard", { in: ["views/matchcentre/MatchView.jsx"] }], // a tab of the fixture's own screen
   // The publication panel and the ground display.
   ["Publish", { in: ["views/publication.jsx"] }],
