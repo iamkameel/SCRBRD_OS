@@ -165,15 +165,15 @@ export function stateOf(match, sentence, official = null) {
  *   match: any,
  *   fold?: {innings?: any[], result?: any, conditions?: any} | null,   a fold of the log the screen already made
  *   innings?: any[] | null,     innings for the scores alone (the result route's), where there is no fold
- *   resultWords?: string | null,  the result route's words, where the screen read them
+ *   resultSaid?: string | null,  the result route's words, where the screen read them
  *   scores?: {home?: string | null, away?: string | null, batting?: "home" | "away" | null} | null,  scores already in words (the demo's)
  *   ownEnd?: "home" | "away" | null,   the reader's own end; the read's `mySide` when not given
  *   official?: "provisional" | "official" | "review" | null,
  *   now?: number,
  * }} p
  */
-export function cardModel({ match, fold = null, innings = null, resultWords = null, scores = null, ownEnd = null, official = null, now = Date.now() }) {
-  const sentence = statusSentence(match, fold && fold.innings?.length ? fold : null, { result: resultWords });
+export function cardModel({ match, fold = null, innings = null, resultSaid = null, scores = null, ownEnd = null, official = null, now = Date.now() }) {
+  const sentence = statusSentence(match, fold && fold.innings?.length ? fold : null, { result: resultSaid });
   const state = stateOf(match, sentence, official);
   const got = scores ?? scoresOf(match, fold?.innings?.length ? fold.innings : innings);
   const names = sidesOf(match);

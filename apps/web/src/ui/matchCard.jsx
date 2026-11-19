@@ -107,7 +107,7 @@ export function MatchCardSkeleton({ size = "card", testid }) {
 /**
  * @param {{
  *   size?: "row" | "card" | "board",
- *   match: any, fold?: any, innings?: any[] | null, resultWords?: string | null, scores?: any, ownEnd?: "home" | "away" | null,
+ *   match: any, fold?: any, innings?: any[] | null, resultSaid?: string | null, scores?: any, ownEnd?: "home" | "away" | null,
  *   official?: "provisional" | "official" | "review" | null, now?: number,
  *   updated?: import("react").ReactNode, line?: import("react").ReactNode, lineTestid?: string,
  *   action?: any, also?: any, board?: import("react").ReactNode, children?: import("react").ReactNode,
@@ -116,7 +116,7 @@ export function MatchCardSkeleton({ size = "card", testid }) {
  *   testid?: string, statusTestid?: string, sideTestid?: string, last?: boolean, aside?: import("react").ReactNode,
  * }} p
  */
-export function MatchCard({ size = "card", match, fold = null, innings = null, resultWords = null, scores = null, ownEnd = null, official = null, now,
+export function MatchCard({ size = "card", match, fold = null, innings = null, resultSaid = null, scores = null, ownEnd = null, official = null, now,
                             updated = null, line = null, lineTestid, action = null, also = null, board = null, children = null,
                             onOpen = null, openLabel, expanded, controls, loading = false, error = false, onRetry = null,
                             testid, statusTestid, sideTestid, last = false, aside = null }) {
@@ -134,7 +134,7 @@ export function MatchCard({ size = "card", match, fold = null, innings = null, r
       </div>
     );
   }
-  const m = cardModel({ match, fold, innings, resultWords, scores, ownEnd, official, now: now ?? Date.now() });
+  const m = cardModel({ match, fold, innings, resultSaid, scores, ownEnd, official, now: now ?? Date.now() });
   const right = updated ?? m.soon;
   const body = (
     <div style={{ display: "grid", gap: s.gap() }}>

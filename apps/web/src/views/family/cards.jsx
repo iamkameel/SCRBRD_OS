@@ -9,11 +9,12 @@ import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
 import { useNotifications } from "../../lib/notifications.js";
 import { ReadState } from "../../ui/primitives.jsx";
-import { resultText, teamOf, withOpponents } from "../../lib/matchCentre.js";
+import { resultText, withOpponents } from "../../lib/matchCentre.js";
 import { humanDate } from "../../lib/format.js";
 import { fixturesOf, lineFor, noticesFor, opponentOf, endOf } from "../../lib/family.js";
-import { Board } from "../../ui/board.jsx";
-import { Action, AvailabilityBlock, BusLine, Card, Line, TeamSheetLine, WeatherLine, answerVerb, whenOf } from "./parts.jsx";
+import { MatchCard } from "../../ui/matchCard.jsx";
+import { openWords } from "../../lib/matchCard.js";
+import { Action, AvailabilityBlock, BusLine, Card, Line, TeamSheetLine, WeatherLine, answerVerb } from "./parts.jsx";
 import { careerAverage } from "../../lib/compare.js";
 import { useFold } from "./useFold.js";
 import { SealMark } from "../../ui/sealMark.jsx";
@@ -53,13 +54,11 @@ export function NextFixtureCard({ child, matches, role, self = false, onOpen, on
       </Card>
     );
   }
-  const where = endOf(next, child) === "home" ? "home" : "away";
   return (
     <Card label={dayLabel(next.date)} testid="next-fixture">
-      <h2 data-testid="next-fixture-title" style={{ ...T.role.title.md, color: T.content.primary, margin: 0 }}>
-        v {opponentOf(next, child)} <span style={{ ...T.role.body, color: T.content.secondary }}>({where})</span>
-      </h2>
-      <Line quiet>{[next.time, next.venue].filter(Boolean).join(" · ") || whenOf(next)}</Line>
+      {/* The match card (slice 1): his side first, both named in full, and where it stands. What the card does not
+          say follows it: the bus, the weather, his answer and the side. */}
+      <MatchCard size="card" match={next} ownEnd={endOf(next, child)} now={now} testid="next-fixture-title" statusTestid="next-fixture-status"/>
       <BusLine match={next} role={role}/>
       <WeatherLine match={next} role={role}/>
       <div style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: T.space.md, display: "grid", gap: T.space.sm }}>
@@ -72,26 +71,38 @@ export function NextFixtureCard({ child, matches, role, self = false, onOpen, on
   );
 }
 
-const oversOf = (balls) => (balls % 6 === 0 ? String(balls / 6) : `${Math.floor(balls / 6)}.${balls % 6}`);
+/**
+ * His line while his side is live (§2.2): "You 34 (40)" at the crease, or what
+ * he made once out; never another child's. Null with nothing of his yet.
+ * @param {any[]} innings  @param {any} child  @param {boolean} self
+ */
+function liveLineOf(innings, child, self) {
+  const who = self ? "You" : (child.knownAs || child.name);
+  const inn = innings.at(-1) ?? null;
+  const him = inn?.batsmen?.find((b) => b.id === child.id && b.status !== "out" && b.status !== "retired") ?? null;
+  if (him && (him.balls > 0 || him.runs > 0 || inn?.striker === child.id || inn?.nonStriker === child.id)) return `${who} ${him.runs} (${him.balls})`;
+  const line = lineFor(innings, child.id);
+  return line ? `${who}: ${line}` : null;
+}
 
 /**
- * The board, only while his side's fixture is live (§2.1). The team's score,
- * and HIS row lit when he is in — never another child's name: the full board,
- * the scorecard and the moments are one tap away, in the Match Centre (P4).
+ * His side's match while it is live (§2.1, §1.9): the match card at its board
+ * size, his side first, both scores from the one fold, the sentence and HIS
+ * line, never another child's name: the scorecard and the moments are one tap
+ * away, in the Match Centre (P4).
  */
 export function LiveCard({ child, matches, onFollow, now, self = false }) {
   const live = fixturesOf(matches, child, now).live[0] ?? null;
   const fold = useFold(live);
   if (!live) return null;
-  const inn = fold.innings.at(-1) ?? null;
-  const him = inn?.batsmen?.find((b) => b.id === child.id && b.status !== "out") ?? null;
+  const end = endOf(live, child);
   return (
     <Card label="Live" testid="live-card">
-      {inn ? (
-        <Board size="card" compact testid="family-board" team={teamOf(live, inn.battingTeam).full} total={inn.runs} wickets={inn.wickets}
-          overs={oversOf(inn.balls)} batters={him ? [{ name: self ? "You" : (child.knownAs || child.name), runs: him.runs, balls: him.balls, onStrike: true }] : []}/>
-      ) : <Line quiet>The match has started. The first ball is not in yet.</Line>}
-      <div><Action primary onClick={() => onFollow(live)} testid="live-follow">Follow the match</Action></div>
+      <MatchCard size="board" match={live} ownEnd={end} now={now} testid="family-board" statusTestid="live-card-status"
+        fold={fold.innings.length ? { innings: fold.innings, result: fold.result } : null}
+        loading={fold.loading && !fold.innings.length}
+        line={fold.innings.length ? liveLineOf(fold.innings, child, self) : "The match has started. The first ball is not in yet."} lineTestid="live-card-line"
+        action={{ label: openWords(live, end), testid: "live-follow", onClick: () => onFollow(live) }}/>
     </Card>
   );
 }
@@ -103,16 +114,17 @@ export function LastMatchCard({ child, matches, onOpen, now, self = false }) {
   if (!last) return null;
   const line = lineFor(fold.innings, child.id);
   const result = resultText(last, fold.result);
+  const end = endOf(last, child);
   return (
     <Card label={`Last match · ${humanDate(last.date)} · v ${opponentOf(last, child)}`} testid="last-match">
       {fold.loading ? <Line quiet>Reading the scorecard…</Line> : (
-        <>
-          {line && <Line testid="last-match-line" strong>{self ? `You: ${line}` : line}</Line>}
-          {result && <Line testid="last-match-result">{result}.</Line>}
-          {!line && !result && <Line quiet>No score was recorded for this match.</Line>}
-        </>
+        // The match card (slice 1): both sides with their scores, the result, and his line.
+        <MatchCard size="card" match={last} ownEnd={end} now={now} statusTestid="last-match-result"
+          fold={fold.innings.length ? { innings: fold.innings, result: fold.result } : null} resultSaid={result}
+          line={line ? (self ? `You: ${line}` : line) : !result && !fold.innings.length ? "No score was recorded for this match." : null}
+          lineTestid={line ? "last-match-line" : "last-match-none"}
+          action={{ label: openWords(last, end), testid: "last-match-open", onClick: () => onOpen(last) }}/>
       )}
-      <div><Action onClick={() => onOpen(last)} testid="last-match-open">Open the match</Action></div>
     </Card>
   );
 }

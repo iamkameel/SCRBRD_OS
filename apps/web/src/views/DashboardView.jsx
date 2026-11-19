@@ -356,7 +356,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                   return (
                     <div key={m.id} data-testid={`week-fixture-${m.id}`} data-played={played ? "true" : "false"}>
                       <MatchCard size="row" last match={m} statusTestid={`week-said-${m.id}`}
-                        resultWords={typeof m.weekResult === "string" ? m.weekResult : null}
+                        resultSaid={typeof m.weekResult === "string" ? m.weekResult : null}
                         innings={Array.isArray(m.weekInnings) ? m.weekInnings : null}
                         // The result read did not answer: said, never "Match over" alone.
                         line={m.weekResult === null ? "The result could not be read just now." : null}

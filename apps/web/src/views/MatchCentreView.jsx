@@ -287,7 +287,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                   ? { label: isLive ? "Resume scoring" : "Start scoring", testid: `mc-score-${m.id}`, onClick: () => onOpenScorer&&onOpenScorer(m) } : null;
                 return (
                   <div key={m.id} style={{background:isSel?T.surface.interactive:"transparent",boxShadow:isSel?`inset 3px 0 0 ${D.sky}`:"none"}}>
-                    <MatchCard size="row" match={m} innings={said?.innings ?? null} resultWords={said?.text ?? null} scores={scores}
+                    <MatchCard size="row" match={m} innings={said?.innings ?? null} resultSaid={said?.text ?? null} scores={scores}
                       testid={`match-card-${m.id}`} statusTestid={`mc-card-status-${m.id}`} last={n===filtered.length-1}
                       onOpen={()=>setSelMatch(isSel?null:m)} openLabel={`Match details: ${sides.home.full} v ${sides.away.full}, ${humanDate(m.date)}`}
                       expanded={isSel} controls={isSel?"match-details":undefined}
