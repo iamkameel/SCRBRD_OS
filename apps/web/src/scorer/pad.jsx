@@ -94,9 +94,11 @@ export function PadBoard({ inn, match, target, flash = null, onFlashDone }) {
  * The bar's height is measured, not assumed — the sides' names wrap and a
  * practice label adds a line — and handed to the pin as --pad-bar-h on the
  * layout `ref` returns. While the pad is open the page's scroll padding is
- * the bar and the board, so a key reached by Tab, or a field scrolled to, is
- * never left under them (WCAG 2.4.11); what it was is put back on the way out.
- * Moves nothing a tap records.
+ * what covers it: at the top the bar and the board, at the bottom the bottom
+ * bar and, on a phone, the strip docked above it. So a key reached by Tab, or
+ * scrolled to, is never left under them (WCAG 2.4.11), and one scrolled to the
+ * middle is in the middle of what can be seen. What it was is put back on the
+ * way out. Moves nothing a tap records.
  */
 export function usePinnedBoard() {
   // A callback ref: the pad's layout mounts after the toss and the setup
@@ -104,7 +106,8 @@ export function usePinnedBoard() {
   const [el, layout] = useState(/** @type {HTMLElement | null} */ (null));
   useEffect(() => {
     if (!el || typeof document === "undefined") return undefined;
-    const root = document.documentElement, was = root.style.scrollPaddingTop;
+    const root = document.documentElement;
+    const was = [root.style.scrollPaddingTop, root.style.scrollPaddingBottom];
     const measure = () => {
       const bar = document.querySelector('[data-testid="pad-titlebar"]');
       const pin = el.querySelector('[data-testid="pad-pin"]');
@@ -112,6 +115,12 @@ export function usePinnedBoard() {
       el.style.setProperty("--pad-bar-h", `${barH}px`);
       const stuck = pin instanceof HTMLElement && getComputedStyle(pin).position === "sticky";
       root.style.scrollPaddingTop = `${barH + (stuck ? pin.offsetHeight + RING : 0) + RING}px`;
+      const tabs = document.querySelector('[data-testid="pad-tabs"]');
+      const strip = el.querySelector('[data-testid="pad-strip"]');
+      const below = tabs ? Math.max(0, innerHeight - tabs.getBoundingClientRect().top) : 0;
+      const docked = strip instanceof HTMLElement && getComputedStyle(strip).position === "sticky"
+        ? strip.offsetHeight + DOCK_ABOVE_BAR + RING : 0;
+      root.style.scrollPaddingBottom = `${below + docked + RING}px`;
     };
     measure();
     const ro = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
@@ -119,7 +128,7 @@ export function usePinnedBoard() {
     if (bar) ro?.observe(bar);
     ro?.observe(el);
     addEventListener("resize", measure);
-    return () => { ro?.disconnect(); removeEventListener("resize", measure); root.style.scrollPaddingTop = was; };
+    return () => { ro?.disconnect(); removeEventListener("resize", measure); [root.style.scrollPaddingTop, root.style.scrollPaddingBottom] = was; };
   }, [el]);
   return layout;
 }
@@ -314,7 +323,7 @@ function AreaPhase({ inn, area, onArea, onNone, blockRef, fieldMax = null }) {
       </div>
       {/* The field's size where a short phone has less room than its width:
           sized to what is left between the title bar and the docked strip
-          (useClearOfStrip), never under FIELD_MIN. */}
+          (useClearOfStrip), never under FIELD_FLOOR. */}
       <div data-testid="area-field" style={{ width: "100%", maxWidth: fieldMax != null ? `${fieldMax}px` : undefined, margin: "0 auto" }}>
         <WagonWheel bare ballLog={inn.ballLog} selSeg={area?.theta != null ? area : null}
           onPlace={(p) => { setPreview(null); onArea(p); }} onPlacing={setPreview}
@@ -547,6 +556,14 @@ const RING = 8;
 const DOCK_ABOVE_BAR = 16;
 /** The smallest field the pad draws to keep it above the docked strip; with less room the strip undocks instead. */
 export const FIELD_MIN = 240;
+/**
+ * With the strip undocked, the field shrinks to the room between the pinned
+ * board and the bottom bar rather than run under the bar (§3.4 Flow B 1: "the
+ * field drawing shrinks; the page does not scroll") — down to this, a field a
+ * thumb still places a point on. A screen with less room than that (an
+ * iPhone SE held sideways) scrolls, as it did before the board was pinned.
+ */
+export const FIELD_FLOOR = 180;
 /** The field's own largest size (panels.jsx: the bare wheel's `min(100%, 332px)`). */
 const FIELD_MAX = 332;
 
@@ -585,10 +602,12 @@ function bringInto(top, bottom, bandTop, floor) {
  * and a tap on what the scorer took for the field recorded a dot (the interface
  * review of 11 Nov 2026, finding 3). So, for the Area and Outcome steps:
  *
- *  - the field is sized to the room between the title bar and the docked strip
- *    (never under FIELD_MIN, never over its own 332px);
- *  - where even that does not fit (a phone held sideways), the strip undocks for
- *    the step and follows its keys, so it is never over them;
+ *  - the field is sized to the room between the pinned board and the docked
+ *    strip (never under FIELD_MIN, never over its own 332px);
+ *  - where even that does not fit (a short phone, a phone held sideways), the
+ *    strip undocks for the step and follows its keys, so it is never over them,
+ *    and the field shrinks to the room above the bottom bar (never under
+ *    FIELD_FLOOR);
  *  - the page is scrolled, at once and by the least, to put the step (and the
  *    stepper, where it fits) in that band, and again when a banner comes or goes;
  *  - when the ball ends, the page goes back to where the ball began.
@@ -626,7 +645,7 @@ function useClearOfStrip({ active, phase, stripRef, blockRef, stepperRef }) {
         const docked = Math.floor(band.dockFloor - band.top - row - RING);
         const loose = Math.floor(band.barFloor - band.top - row - RING);
         want = docked >= FIELD_MIN ? { free: false, field: docked < FIELD_MAX ? docked : null }
-          : { free: true, field: loose < FIELD_MAX ? Math.max(FIELD_MIN, loose) : null };
+          : { free: true, field: loose < FIELD_MAX ? Math.max(FIELD_FLOOR, loose) : null };
       } else {
         want = { free: block.getBoundingClientRect().height > band.dockFloor - band.top, field: null };
       }

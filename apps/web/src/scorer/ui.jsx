@@ -61,7 +61,11 @@ const GS = () => (
     .pad-head{display:contents}
     .pad-pin{position:sticky;top:var(--pad-bar-h,52px);z-index:20;background:${T.surface.canvas};
       box-shadow:0 0 0 ${T.space.sm} ${T.surface.canvas};border-radius:${T.radius.lg}}
-    .pad-main{min-width:0}
+    /* The pad moves the page itself (pad.jsx useClearOfStrip): the browser's
+       scroll anchoring may not move it too. With the board pinned, the anchor
+       it chose was a key of the phase being replaced, and a step from Shot to
+       Area scrolled the page before the pad could note where the ball began. */
+    .pad-main{min-width:0;overflow-anchor:none}
     /* The pad's strip (Wide, No ball, Dot, Undo) on a phone: where the pad
        is taller than the screen — a small Android, the shot grid in four
        columns — it docks 16px above the bottom bar (4px inset + 54px bar +
