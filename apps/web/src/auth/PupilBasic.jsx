@@ -171,7 +171,7 @@ export function PupilBasic({ name, claim, onSignOut, onRemoved, onOpenPad = null
           <h2 id="pupil-state-h" style={{ margin: "0 0 6px", fontFamily: FONT.head, fontSize: "18px", fontWeight: 800, color: T.content.primary }}>{words.title}</h2>
           <div data-testid="pupil-state-line" role="status" style={text(15, T.content.primary)}>{words.line}</div>
           {words.how && <div data-testid="pupil-state-how" style={{ ...text(14), marginTop: "8px" }}>{words.how}</div>}
-          {/* db/164: a boy the office enrolled, whose page a no closed, sent no claim: nothing he typed to repeat. */}
+          {/* db/169: a boy the office enrolled, whose page a no closed, sent no claim: nothing he typed to repeat. */}
           {claim.name && <div style={{ ...text(13), marginTop: "10px" }}>You said you are at <strong style={{ color: T.content.primary }}>{claim.schoolName}</strong>, as <span data-testid="pupil-typed-name" style={{ color: T.content.primary }}>{claim.name}</span>{claim.year ? <> ({claim.year})</> : null}.</div>}
           {keep && <div data-testid="pupil-keep" style={{ ...text(13), marginTop: "8px" }}>{keep}</div>}
         </section>

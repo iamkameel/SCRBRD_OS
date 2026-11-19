@@ -30,7 +30,7 @@
  *      off consent and takes no answer.
  *   6. Nothing on those pieces is set under 12px, nothing pressed is under
  *      44px, and they draw in Daylight as well as Floodlit.
- *   7. HIS OWN SIGN-IN (db/164, SCRBRD-140 Migration B, Q5/Q6). A boy of 15
+ *   7. HIS OWN SIGN-IN (db/169, SCRBRD-140 Migration B, Q5/Q6). A boy of 15
  *      with his own account and no yes reads nothing; his mother opens "His
  *      own sign-in" on his file, taps "Allow his own sign-in", and his own
  *      session reads his side at once; she taps "Stop his own sign-in" and
@@ -69,7 +69,7 @@ const U_MUM = "88888888-0000-0000-0000-0000000000b9";
 const U_NEW = "88888888-0000-0000-0000-0000000000bc";
 const A = { self: "a5510000-0000-0000-0000-0000000000b8", player: "a5510000-0000-0000-0000-0000000000b9", mum: "a5510000-0000-0000-0000-0000000000ba" };
 const L = { self: "a5520000-0000-0000-0000-0000000000b8", mum: "a5520000-0000-0000-0000-0000000000b9" };
-// Step 7 (db/164): a boy of 15 with his own account and no yes, and D Pillay's link to him.
+// Step 7 (db/169): a boy of 15 with his own account and no yes, and D Pillay's link to him.
 const THABO = "aaaaaaaa-0000-0000-0000-0000000000c1";
 const U_THABO = "88888888-0000-0000-0000-0000000000c1";
 const U_DPILLAY = "88888888-0000-0000-0000-000000000005";
@@ -439,8 +439,8 @@ try {
   ok("no page error on the join form", signup.errors.length === 0, signup.errors.join(" | "));
   await signup.ctx.close();
 
-  // ── 7. His own sign-in (db/164) ─────────────────────────────────
-  group("His own sign-in: she allows it, and stops it (db/164)");
+  // ── 7. His own sign-in (db/169) ─────────────────────────────────
+  group("His own sign-in: she allows it, and stops it (db/169)");
   {
     await q(`delete from app_user where id = $1`, [U_THABO]).catch(() => {});
     await q(`delete from role_assignment where id = $1`, [A7.mum]).catch(() => {});

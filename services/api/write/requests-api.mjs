@@ -227,15 +227,20 @@ export function requestRoutes({ pool, secret }) {
             throw err("office_only", 403);
           }
         }
-        // db/164 (Q12): "The signed consent form is on file", ticked by the office
-        // for a pupil under 18, recorded under its name in this transaction,
-        // before the grant door writes his roles and asks for a yes.
-        if (b.formOnFile === true && player) await recordFormOnFile(client, player);
         const { rows } = await client.query(
           `select * from enrol_person($1, $2, $3, $4, $5, $6, $7)`,
           [email, name, f.role, f.school, f.team, player, f.note]);
         const r = rows[0] ?? { ok: false, reason: "no_result" };
         if (r.ok === false) throw err(r.reason || "refused", ENROL_STATUS[r.reason] ?? 422);
+        // db/169 (Q12): "The signed consent form is on file", ticked by the office
+        // for a pupil under 18, recorded under its name in this transaction,
+        // AFTER the grant door has written his roles (his own link 'pending'):
+        // the yes then stamps it 'granted' and opens him. Not before: a yes
+        // recorded first opens a boy whose claim the office recognised
+        // through the grant door by itself, and enrol_person() then refuses
+        // the boy as player_already_has_an_account. A refusal here rolls the
+        // grant back with it.
+        if (b.formOnFile === true && player) await recordFormOnFile(client, player);
         const out = { userId: r.user_id, assignmentId: r.assignment_id };
         if (b.withCode !== true) return out;
         try {
@@ -331,18 +336,19 @@ export function requestRoutes({ pool, secret }) {
       const team = clean(b.teamCode, 8);
       if (team && !/^[A-Z0-9]{2,8}$/.test(team)) throw err("team_code_invalid");
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
-        // db/164 (Q12): the office's tick, recorded first, in this transaction.
-        // A refusal of the grant below rolls the tick back with it.
-        if (b.grant === true && b.formOnFile === true) {
-          const { rows: [q] } = await client.query(
-            `select coalesce($2::uuid, r.player_id) as player from role_request r where r.id = $1`, [req.params.id, player]);
-          if (q?.player) await recordFormOnFile(client, q.player);
-        }
         const { rows } = await client.query(`select * from decide_role_request($1, $2, $3, $4, $5)`,
                                             [req.params.id, b.grant, clean(b.note, 300), player, team]);
         const r = rows[0] ?? { ok: false, reason: "no_result" };
         if (r.ok === false) throw err(r.reason || "refused",
           r.reason === "no_such_request" ? 404 : r.reason === "not_permitted" ? 403 : 422);
+        // db/169 (Q12): the office's tick, recorded after the grant, in this
+        // transaction (as the enrol route above, and for the same reason). A
+        // refusal of the tick rolls the grant back with it.
+        if (b.grant === true && b.formOnFile === true) {
+          const { rows: [q] } = await client.query(
+            `select coalesce($2::uuid, r.player_id) as player from role_request r where r.id = $1`, [req.params.id, player]);
+          if (q?.player) await recordFormOnFile(client, q.player);
+        }
         return { id: req.params.id, state: b.grant ? "granted" : "declined", assignmentId: r.assignment_id };
       });
     }),

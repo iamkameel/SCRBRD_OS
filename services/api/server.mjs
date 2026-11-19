@@ -131,7 +131,7 @@ import { pilotRoutes } from "./write/pilot-api.mjs";
 import { followRoutes } from "./write/follow-api.mjs";
 // "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/168).
 import { pupilClaimRoutes } from "./write/pupil-claim-api.mjs";
-// "Allow his own sign-in" (SCRBRD-140 honesty model, Migration B; db/164).
+// "Allow his own sign-in" (SCRBRD-140 honesty model, Migration B; db/169).
 import { pupilSigninRoutes } from "./write/pupil-signin-api.mjs";
 // Practice Match's live weather hint, from Google (2026-10-02): a hint, never
 // the match's record; nothing stored (weather/weather-api.mjs).
@@ -884,8 +884,8 @@ const PLAYER_ROUTES = [
   [/^\/api\/pupil-claims\/clear$/,                   "POST", pupilClaims.clear],
   [/^\/api\/pupil-claims\/([^/]+)\/recognise$/,      "POST", pupilClaims.recognise],
   [/^\/api\/pupil-claims\/([^/]+)\/decline$/,        "POST", pupilClaims.decline],
-  // db/164: a boy's own sign-in, the family's yes or no and the office's form on
-  // file. Every decision is a db/164 definer's, under the caller.
+  // db/169: a boy's own sign-in, the family's yes or no and the office's form on
+  // file. Every decision is a db/169 definer's, under the caller.
   [/^\/api\/players\/([^/]+)\/own-signin$/,          "GET",  ownSignin.state],
   [/^\/api\/players\/([^/]+)\/own-signin$/,          "POST", ownSignin.set],
   [/^\/api\/players\/([^/]+)\/own-signin\/office$/,  "POST", ownSignin.office],

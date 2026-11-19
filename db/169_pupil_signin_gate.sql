@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════
---  164 · "Allow his own sign-in": the yes for a pupil's own sign-in,
+--  169 · "Allow his own sign-in": the yes for a pupil's own sign-in,
 --        the gate in the core access check, and the office's tick
 --        (SCRBRD-140, the honesty model, Migration B)
 -- ══════════════════════════════════════════════════════════════════
@@ -95,14 +95,14 @@
 --     scorebook_school_grant() (db/63): the same line. md5-guarded.
 --   ~ my_own_boy() (db/106), recognition_self_players() (db/144),
 --     my_health_consents() (db/60): nothing for a closed account.
---   ~ app_user_email_seen() (db/118): an account that has said it is a
---       pupil (db/163's pupil_claim, recognised or waiting) is a pupil's
---       for his address, at his claim's school: the office and the
---       principal there read it, a director of sport does not.
+--   (app_user_email_seen() (db/118), which this file widened when it was
+--    db/164, is no longer touched here: db/168 §6b now adds the same arm, an
+--    account that has said it is a pupil is a pupil's for his address, at
+--    his claim's school. db/99 §142 (address) still holds it.)
 --   ~ role_request_grant_as() (db/92, db/108, db/128): his own link is
 --       stamped "granted" only when a yes is in force (or he is eighteen);
 --       otherwise "pending", and he waits (Q12).
---   ~ db/163's pupil_account_opened(), pupil_claim_waiting(),
+--   ~ db/168's pupil_account_opened(), pupil_claim_waiting(),
 --     my_pupil_state(), pupil_claims() and pupil_claim_keep_until():
 --     "opened" now means opened and his sign-in in force; a page a no
 --     closed again reads "closed"; an account holding a pupil's role has no
@@ -125,6 +125,13 @@
 -- an adult is always in force. app_user_email_seen() answers him his own
 -- address, which is his account.
 --
+-- NUMBERED db/169, WRITTEN AS db/164. The file was renumbered after db/165
+-- and db/166 shipped and Migration A became db/168. The text it puts into
+-- the bodies it re-emits (§5: app_can() and its siblings' one line, and
+-- my_own_boy()'s) still says "-- db/164:", on purpose: those bodies are
+-- held to their md5 by §0 and §8, and by db/99 §142, so the comment is left
+-- as written rather than move every hash.
+--
 -- Every function: SECURITY DEFINER, search_path pinned, REVOKE ALL FROM
 -- PUBLIC; the doors GRANT EXECUTE to scrbrd_app by name; nothing to anon,
 -- authenticated or service_role (db/157). No BEGIN or COMMIT: the paste
@@ -143,7 +150,7 @@ BEGIN
      OR to_regprocedure('pupil_claim_office(uuid)') IS NULL OR to_regprocedure('pupil_claim_log(text,uuid,uuid[])') IS NULL
      OR to_regprocedure('pupil_account_opened(uuid)') IS NULL OR to_regclass('pupil_claim') IS NULL
      OR to_regprocedure('app_enrolled_at(uuid)') IS NULL OR to_regprocedure('app_can_but_player(text,uuid,text,uuid,uuid)') IS NULL THEN
-    RAISE EXCEPTION 'db/164: app_user_id() (db/01), sa_today() (db/08), guardian_link_reopened_since() (db/124), lift_cuts_ok() (db/70), role_request_grant_as() (db/92), app_enrolled_at() (db/107), app_can_but_player() (db/119) or db/163''s pupil claim is missing; apply them first';
+    RAISE EXCEPTION 'db/169: app_user_id() (db/01), sa_today() (db/08), guardian_link_reopened_since() (db/124), lift_cuts_ok() (db/70), role_request_grant_as() (db/92), app_enrolled_at() (db/107), app_can_but_player() (db/119) or db/168''s pupil claim is missing; apply them first';
   END IF;
 END $guard$;
 
@@ -151,9 +158,12 @@ END $guard$;
 -- as this file leaves it (a second paste). Anything else stops the paste:
 -- a body that has moved since is not the one this file was written
 -- against. Each is changed by exactly the text in §5 and nothing else.
-DROP TABLE IF EXISTS _db164_bodies;
-CREATE TEMP TABLE _db164_bodies (fn text PRIMARY KEY, was_md5 text, mine_md5 text);
-INSERT INTO _db164_bodies VALUES
+-- (Moved 19 Nov, on the renumber: pupil_claims() and pupil_claim_keep_until()
+-- as db/168 now leaves them, after Migration A's review; every other hash
+-- held unchanged.)
+DROP TABLE IF EXISTS _db169_bodies;
+CREATE TEMP TABLE _db169_bodies (fn text PRIMARY KEY, was_md5 text, mine_md5 text);
+INSERT INTO _db169_bodies VALUES
   ('app_can(text,uuid,text,uuid,uuid)',                '7fa3e089f052d42790d0e7f07556fa28', 'e8e8848ae0d30642c702502d9a3ed628'),
   ('app_holds(text)',                                  'f53697b4a90fbd2427ef7fe9de415f06', 'ba639a44481e5537cc5320e8711962f7'),
   ('app_enrolled()',                                   '9a3b74b8b64875c6a8e6244deafcfadb', 'aa23d9277a9f600eccbb7c1582b8e22c'),
@@ -167,21 +177,20 @@ INSERT INTO _db164_bodies VALUES
   ('my_health_consents()',                             'e7b25292d376488fb390b453998e829a', 'a8f1cdfca325430b57b66115b3dfba95'),
   ('role_request_grant_as(uuid,uuid,text,uuid,text)',  '5ac61a0386e299220d485d0fc744e8c7', '6ec179e5ccb6d8afdbdc8ac3d2c317e4'),
   ('my_pupil_state()',                                 '7e617a2bf3c80223c9dbec592604b56b', '2d959dd176152fb275f61eede6ea95a6'),
-  ('pupil_claims(uuid)',                               '236d0ff30f96f570723d5259109bb247', '608b9e8e2b97267f624afb9401aa67e4'),
+  ('pupil_claims(uuid)',                               '393c8222bb2e4e269f9badc6daa7d8b7', 'a6faac8bedb002af1ebe120912050c71'),
   ('pupil_account_opened(uuid)',                       '4ab87c3767211d5c959c4a43da18a2b9', '19eae6d7d5419182ba3eb242a6147b70'),
   ('pupil_claim_waiting(uuid)',                        'e2dca119c869fadd964e73c6d98e0278', '08b401e4f64ebcd5ab38130ac488f81b'),
-  ('pupil_claim_keep_until(uuid)',                     'b64dbe01c336708bac142f86cdf60120', 'a65471e9e4eeb6cd0b3a37772f698c68'),
-  ('app_user_email_seen(uuid,uuid,text)',              '7116c9e13ddd993d8b65c9a6656255cf', 'eb52d82ad0748f99a45b9e1aaa11e6c8');
+  ('pupil_claim_keep_until(uuid)',                     '3f0886bc4ba10a37b12c3a7bcf8bc2f6', 'c310ac648a03905829a6b3c76fa1d106');
 DO $bodies$
 DECLARE r record; v text;
 BEGIN
-  FOR r IN SELECT * FROM _db164_bodies LOOP
+  FOR r IN SELECT * FROM _db169_bodies LOOP
     v := (SELECT md5(p.prosrc) FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn));
     IF v IS NULL THEN
-      RAISE EXCEPTION 'db/164: % is not there', r.fn;
+      RAISE EXCEPTION 'db/169: % is not there', r.fn;
     END IF;
     IF v NOT IN (r.was_md5, r.mine_md5) THEN
-      RAISE EXCEPTION 'db/164: % is neither as the files before this one left it nor this file''s (md5 %); factor the version now in place and move its hash', r.fn, v;
+      RAISE EXCEPTION 'db/169: % is neither as the files before this one left it nor this file''s (md5 %); factor the version now in place and move its hash', r.fn, v;
     END IF;
   END LOOP;
 END $bodies$;
@@ -208,7 +217,7 @@ CREATE TABLE IF NOT EXISTS pupil_signin_consent (
   -- guardian         her own tap: "Allow his own sign-in" or "Stop his own sign-in"
   -- office           the office: the signed form on file (yes), or a
   --                  withdrawal recorded for a parent (no)
-  -- enrolled         (yes) the office's stamp on his own link before db/164
+  -- enrolled         (yes) the office's stamp on his own link before db/169
   -- terms_withdrawn  (no) her withdrawal of the terms, recorded as it happened
   how            text NOT NULL CHECK (how IN ('guardian', 'office', 'enrolled', 'terms_withdrawn')),
   given_by       uuid REFERENCES app_user(id) ON DELETE SET NULL,
@@ -230,7 +239,7 @@ CREATE TABLE IF NOT EXISTS pupil_signin_consent (
 CREATE INDEX IF NOT EXISTS pupil_signin_consent_player_idx ON pupil_signin_consent (player_id, seq);
 
 COMMENT ON TABLE pupil_signin_consent IS
-  'db/164 (SCRBRD-140 honesty model, Migration B): every yes and no for a pupil''s own sign-in, append-only. Read by pupil_signin_in_force(); functions only.';
+  'db/169 (SCRBRD-140 honesty model, Migration B): every yes and no for a pupil''s own sign-in, append-only. Read by pupil_signin_in_force(); functions only.';
 
 ALTER TABLE pupil_signin_consent ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON pupil_signin_consent FROM PUBLIC;
@@ -316,7 +325,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- Called after a yes is recorded. If the boy is now in force: his own links
 -- still 'pending' (a grant without the tick) are stamped 'granted', so
 -- db/81's trigger lets a Google sign-in on to his account (§3.6); and an
--- account the office recognised and that waits (db/163) is opened through
+-- account the office recognised and that waits (db/168) is opened through
 -- the one grant door, which asks the question itself. A grant the door
 -- refuses (no side on the roster, say) leaves him recognised; the yes
 -- stays on record and opens him when the office fixes it and says yes
@@ -445,7 +454,7 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
  * false records a withdrawal (a parent who telephones, a court order): it
  * closes every yes before it, the family's and the school's. The office:
  * guardian.link.manage at his school, never under a support hour, a
- * platform-wide key or a pad (db/163's pupil_claim_office()). Answers (ok,
+ * platform-wide key or a pad (db/168's pupil_claim_office()). Answers (ok,
  * reason, in_force): not_signed_in · not_permitted · answer_required ·
  * player_is_an_adult · no_date_of_birth (a yes only; the office records
  * his date of birth first).
@@ -584,7 +593,7 @@ CREATE OR REPLACE TRIGGER pupil_signin_terms_withdrawn
 
 -- ── 5 · The gate, and the doors that already read his own ──────────
 -- Each body re-emitted from the catalog (pg_get_functiondef, as db/128 and
--- db/163 do), with the one change below and nothing else; rights,
+-- db/168 do), with the one change below and nothing else; rights,
 -- settings, volatility and owner checked unchanged. A second paste finds
 -- its mark and leaves the body alone (and §0 has already checked that body
 -- is this file's, by its md5).
@@ -639,14 +648,14 @@ BEGIN
        '''self'', ''verified'', p_decider, now(), pupil_signin_stamp(v_player), '
          || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN ''popia-2026-01'' END, '
          || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN now() END, p_decider);'),
-      -- db/163's two readers of his claim's state: a page a no closed again reads 'closed'.
+      -- db/168's two readers of his claim's state: a page a no closed again reads 'closed'.
       ('my_pupil_state()', 1,
        'CASE WHEN pupil_account_opened(c.user_id) THEN ''open'' ELSE c.state END',
        'CASE WHEN pupil_account_opened(c.user_id) THEN ''open'' WHEN c.state = ''open'' THEN ''closed'' ELSE c.state END'),
       ('pupil_claims(uuid)', 1,
        'CASE WHEN pupil_account_opened(c.user_id) THEN ''open'' ELSE c.state END',
        'CASE WHEN pupil_account_opened(c.user_id) THEN ''open'' WHEN c.state = ''open'' THEN ''closed'' ELSE c.state END'),
-      -- db/163's "opened": opened AND his sign-in in force; a claim waits until then.
+      -- db/168's "opened": opened AND his sign-in in force; a claim waits until then.
       ('pupil_account_opened(uuid)', 1,
        '  SELECT EXISTS (SELECT 1 FROM app_user u WHERE u.id = p_person AND u.player_id IS NOT NULL)' || chr(10) || '      OR EXISTS',
        '  SELECT pupil_signin_open(p_person) AND EXISTS (SELECT 1 FROM app_user u WHERE u.id = p_person AND u.player_id IS NOT NULL)' || chr(10)
@@ -655,29 +664,19 @@ BEGIN
        'c.user_id = p_person AND c.state <> ''open'')',
        'c.user_id = p_person)'),
       -- An account holding a pupil's role is never removed by the 30-day keep:
-      -- it has no last day (db/163 refuses to remove it anyway).
+      -- it has no last day (db/168 refuses to remove it anyway). db/168 holds a
+      -- concern's reporter the same way (pupil_claim_held()); this is beside it.
       ('pupil_claim_keep_until(uuid)', 1,
-       'CASE WHEN c.state = ''open'' OR pupil_account_opened(c.user_id) THEN NULL',
-       'CASE WHEN c.state = ''open'' OR pupil_account_opened(c.user_id) OR pupil_signin_is_pupils(c.user_id) THEN NULL'),
-      -- db/118's address rule: an account that has said it is a pupil (db/163's
-      -- third case of person_is_pupil(), recognised or still waiting) is a
-      -- pupil's, at the school of his claim, so only that school's office and
-      -- principal read his address (R4) -- also on a request he sent before he
-      -- claimed, which a director of sport otherwise reads.
-      ('app_user_email_seen(uuid,uuid,text)', 1,
-       '           WHERE a.person_id = p_user AND a.role IN (''player'', ''selfaccess'')) z;',
-       '           WHERE a.person_id = p_user AND a.role IN (''player'', ''selfaccess'')' || chr(10)
-         || '          UNION ALL' || chr(10)
-         || '          -- db/164: an account that has said it is a pupil (db/163), at his claim''s school.' || chr(10)
-         || '          SELECT c.school_id FROM pupil_claim c WHERE c.user_id = p_user) z;')
+       'CASE WHEN c.state = ''open'' OR pupil_account_opened(c.user_id) OR pupil_claim_held(c.user_id) THEN NULL',
+       'CASE WHEN c.state = ''open'' OR pupil_account_opened(c.user_id) OR pupil_claim_held(c.user_id) OR pupil_signin_is_pupils(c.user_id) THEN NULL')
     ) AS t(fn, times, was, now_) LOOP
     SELECT p.prosrc, array_to_string(p.proconfig, ','), p.proacl::text, p.prosecdef, p.provolatile, p.proowner
       INTO v_src, v_cfg, v_acl, v_sec, v_vol, v_own FROM pg_proc p WHERE p.oid = r.fn::regprocedure;
     -- A second run: §0 checked the body is this file's.
-    IF md5(v_src) = (SELECT b.mine_md5 FROM _db164_bodies b WHERE b.fn = r.fn) THEN CONTINUE; END IF;
+    IF md5(v_src) = (SELECT b.mine_md5 FROM _db169_bodies b WHERE b.fn = r.fn) THEN CONTINUE; END IF;
     n := (length(v_src) - length(replace(v_src, r.was, ''))) / length(r.was);
     IF n <> r.times THEN
-      RAISE EXCEPTION 'db/164: % holds the text it changes % times, not %', r.fn, n, r.times;
+      RAISE EXCEPTION 'db/169: % holds the text it changes % times, not %', r.fn, n, r.times;
     END IF;
     v_def := pg_get_functiondef(r.fn::regprocedure);
     EXECUTE replace(v_def, r.was, r.now_);
@@ -687,7 +686,7 @@ BEGIN
        OR (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = r.fn::regprocedure) IS DISTINCT FROM v_sec
        OR (SELECT p.provolatile FROM pg_proc p WHERE p.oid = r.fn::regprocedure) IS DISTINCT FROM v_vol
        OR (SELECT p.proowner FROM pg_proc p WHERE p.oid = r.fn::regprocedure) IS DISTINCT FROM v_own THEN
-      RAISE EXCEPTION 'db/164: re-emitting % changed more than its one change', r.fn;
+      RAISE EXCEPTION 'db/169: re-emitting % changed more than its one change', r.fn;
     END IF;
   END LOOP;
 END $gate$;
@@ -751,7 +750,7 @@ DO $carry$
 DECLARE n integer;
 BEGIN
   n := pupil_signin_carry_over();
-  RAISE NOTICE 'db/164: % boy(s) enrolled before this file keep their own sign-in, as the office''s yes', n;
+  RAISE NOTICE 'db/169: % boy(s) enrolled before this file keep their own sign-in, as the office''s yes', n;
 END $carry$;
 
 
@@ -791,28 +790,28 @@ DO $check$
 DECLARE f text; v text; w text; r record;
 BEGIN
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'pupil_signin_consent'::regclass) THEN
-    RAISE EXCEPTION 'db/164: pupil_signin_consent is not under row-level security';
+    RAISE EXCEPTION 'db/169: pupil_signin_consent is not under row-level security';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'pupil_signin_consent')
      OR has_table_privilege('scrbrd_app', 'pupil_signin_consent', 'SELECT') OR has_table_privilege('scrbrd_app', 'pupil_signin_consent', 'INSERT')
      OR has_table_privilege('scrbrd_app', 'pupil_signin_consent', 'UPDATE') OR has_table_privilege('scrbrd_app', 'pupil_signin_consent', 'DELETE') THEN
-    RAISE EXCEPTION 'db/164: the application can reach pupil_signin_consent other than through its functions';
+    RAISE EXCEPTION 'db/169: the application can reach pupil_signin_consent other than through its functions';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'assignment_subject'::regclass
                     AND tgname = 'pupil_signin_terms_withdrawn' AND tgenabled = 'O') THEN
-    RAISE EXCEPTION 'db/164: the trigger pupil_signin_terms_withdrawn is missing or disabled';
+    RAISE EXCEPTION 'db/169: the trigger pupil_signin_terms_withdrawn is missing or disabled';
   END IF;
   -- His notices: the restrictive policy, as written (§5b).
   SELECT pg_get_expr(p.polqual, p.polrelid) INTO v FROM pg_policy p
    WHERE p.polrelid = 'notification'::regclass AND p.polname = 'notification_pupil_signin'
      AND NOT p.polpermissive AND p.polcmd = 'r';
   IF v IS NULL OR position('pupil_signin_mine_open()' IN v) = 0 THEN
-    RAISE EXCEPTION 'db/164: notification_pupil_signin is %', coalesce(v, '(missing, or not restrictive)');
+    RAISE EXCEPTION 'db/169: notification_pupil_signin is %', coalesce(v, '(missing, or not restrictive)');
   END IF;
   -- Every re-emitted body is exactly this file's.
-  FOR r IN SELECT * FROM _db164_bodies LOOP
+  FOR r IN SELECT * FROM _db169_bodies LOOP
     IF (SELECT md5(p.prosrc) FROM pg_proc p WHERE p.oid = r.fn::regprocedure) IS DISTINCT FROM r.mine_md5 THEN
-      RAISE EXCEPTION 'db/164: % is not this file''s body after the paste (md5 %)', r.fn,
+      RAISE EXCEPTION 'db/169: % is not this file''s body after the paste (md5 %)', r.fn,
         (SELECT md5(p.prosrc) FROM pg_proc p WHERE p.oid = r.fn::regprocedure);
     END IF;
   END LOOP;
@@ -823,10 +822,10 @@ BEGIN
                                'pupil_signin_my_link(uuid)', 'pupil_signin_terms_withdrawn()', 'pupil_signin_carry_over()']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
-      RAISE EXCEPTION 'db/164: % does not pin its search_path', f;
+      RAISE EXCEPTION 'db/169: % does not pin its search_path', f;
     END IF;
     IF f <> 'pupil_signin_carry_over()' AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
-      RAISE EXCEPTION 'db/164: % is not a definer', f;
+      RAISE EXCEPTION 'db/169: % is not a definer', f;
     END IF;
     -- Read back from the ACL: the owner, and scrbrd_app for a door; nobody else.
     SELECT coalesce(string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',' ORDER BY x.grantee::regrole::text), '')
@@ -836,8 +835,8 @@ BEGIN
                          'pupil_signin_state(uuid)', 'my_own_signin()', 'pupil_signin_mine_open()')
               THEN 'scrbrd_app:EXECUTE' ELSE '' END;
     IF v IS DISTINCT FROM w THEN
-      RAISE EXCEPTION 'db/164: % is granted %', f, coalesce(nullif(v, ''), 'to nobody');
+      RAISE EXCEPTION 'db/169: % is granted %', f, coalesce(nullif(v, ''), 'to nobody');
     END IF;
   END LOOP;
 END $check$;
-DROP TABLE IF EXISTS _db164_bodies;
+DROP TABLE IF EXISTS _db169_bodies;

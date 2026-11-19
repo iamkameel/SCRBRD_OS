@@ -129,7 +129,7 @@ export function pupilClaimRoutes({ pool, secret }) {
       // The days as the database writes them (YYYY-MM-DD), never a Date: pg would read a date at local midnight.
       const { rows } = await client.query(`select state, school_id, school_name, typed_name, typed_year, said_under_18_on::text, sent_on::text,
                                                  keep_until::text, safeguarding from my_pupil_state()`);
-      // db/164: is this a pupil's account, and is his own sign-in in force? A
+      // db/169: is this a pupil's account, and is his own sign-in in force? A
       // pupil enrolled by the office, whose page a no has closed, has no claim:
       // his basic view is drawn from this, in the same sentence ('closed').
       const { rows: [o] } = await client.query(`select pupil, open, school_id, school_name from my_own_signin()`);

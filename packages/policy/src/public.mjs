@@ -350,7 +350,7 @@ export const NEVER_PUBLIC = Object.freeze({
   // year he typed, and which roster row the office matched him to: his own,
   // the office's and the principal's alone (R4). Never on a page; the whole table.
   pupil_claim: "N4",
-  // ── db/164, SCRBRD-140 honesty model: "Allow his own sign-in" ──
+  // ── db/169, SCRBRD-140 honesty model: "Allow his own sign-in" ──
   // N4. Who said yes or no to a boy's own sign-in, on which link, with which
   // terms version: his family's, the office's and the principal's alone.
   // Never on a page; the whole table.

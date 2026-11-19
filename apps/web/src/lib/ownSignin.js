@@ -1,5 +1,5 @@
 /**
- * "Allow his own sign-in" (SCRBRD-140 honesty model, Migration B; db/164):
+ * "Allow his own sign-in" (SCRBRD-140 honesty model, Migration B; db/169):
  * the words the family and the office read about a boy's own sign-in, and
  * the words for each refusal of its doors.
  *

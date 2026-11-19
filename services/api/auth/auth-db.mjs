@@ -160,7 +160,7 @@ export async function sessionProfile(pool, secret, bearer) {
   return runAsPrincipal(pool, secret, bearer, async (client, principal) => {
     const { rows: me } = await client.query(
       `select id, name, email from app_user where id = $1`, [principal.userId]);
-    // db/164: a pupil's account whose own sign-in is not in force holds
+    // db/169: a pupil's account whose own sign-in is not in force holds
     // nothing the API will honour (app_can() refuses every assignment), so
     // its workspace is drawn as the account with no school's: his basic view.
     const { rows: [own] } = await client.query(`select pupil, open from my_own_signin()`);

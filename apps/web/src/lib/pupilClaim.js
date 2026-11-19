@@ -16,7 +16,7 @@
  *   recognised        "Your school knows this is you. A parent or guardian
  *                     needs to say yes before your own page opens."
  *   declined          the school has answered; never why
- *   closed            (db/164) a yes was taken back: "Your own page is
+ *   closed            (db/169) a yes was taken back: "Your own page is
  *                     closed until a parent or guardian says yes again." 
  *
  * HOW A YES COMES, TODAY. Until the honesty model's Migration B, a parent's
@@ -112,7 +112,7 @@ export function stateWords(claim) {
       return { title: "The school has answered", line: "Your own page will not open from this claim. If you think that is wrong, ask the school office.", how: null };
     case "open":
       return { title: "Your own page is open", line: "Sign out, then sign in again, to see it.", how: null };
-    // db/164: a yes was taken back (a parent's "Stop his own sign-in", her
+    // db/169: a yes was taken back (a parent's "Stop his own sign-in", her
     // withdrawal, her link ending, or the office's record). He is not signed out.
     case "closed":
       return { title: "Your own page is closed", line: "Your own page is closed until a parent or guardian says yes again.",

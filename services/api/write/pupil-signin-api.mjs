@@ -1,7 +1,7 @@
 /**
  * SCRBRD — "Allow his own sign-in": the yes for a pupil's own sign-in, and
  * the office's form on file (SCRBRD-140, the honesty model, Migration B;
- * db/164).
+ * db/169).
  *
  * A boy under 18 with his own account reads his own page only while a yes
  * is in force: a guardian's "Allow his own sign-in", or the office's record
@@ -11,7 +11,7 @@
  * routes only record the yes and the no, and read what the family and the
  * office may see of it.
  *
- * WHAT THIS FILE DECIDES: nothing. Each route calls one db/164 function
+ * WHAT THIS FILE DECIDES: nothing. Each route calls one db/169 function
  * under the caller's own identity; the function decides who may and answers
  * a code, which becomes a status here and words on the screen
  * (apps/web/src/lib/ownSignin.js).

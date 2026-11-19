@@ -1,15 +1,15 @@
 -- ══════════════════════════════════════════════════════════════════
---  The pre-paste count for db/164 (SCRBRD-140 Migration B): how many live
+--  The pre-paste count for db/169 (SCRBRD-140 Migration B): how many live
 --  accounts the gate would close on this database. READ-ONLY.
 -- ══════════════════════════════════════════════════════════════════
 --
--- Run it on each database BEFORE db/164 is pasted, as the owner:
+-- Run it on each database BEFORE db/169 is pasted, as the owner:
 --
 --   psql "$DATABASE_URL" -X -f tools/pupil-signin-count.sql
 --
--- It writes nothing and needs nothing from db/164: it works out, from what
--- is on record now, what db/164's gate (pupil_signin_open()) would answer
--- for every active account the moment the paste commits — after db/164 §6
+-- It writes nothing and needs nothing from db/169: it works out, from what
+-- is on record now, what db/169's gate (pupil_signin_open()) would answer
+-- for every active account the moment the paste commits — after db/169 §6
 -- has carried every live, verified own link stamped "granted" over as the
 -- office's yes. The number on the first line is the one for Kameel's paste
 -- card; the design expects none.
@@ -21,7 +21,7 @@
 --   no_consent       a boy it answers as is under 18 and has no live,
 --                    verified own link stamped "granted" to carry over
 -- An eighteen-year-old by the roster is never closed. Counted beside, NOT
--- closed by db/164 and left to Kameel:
+-- closed by db/169 and left to Kameel:
 --   no_boy_named     it holds a pupil's role and names no boy (no roster
 --                    link, no self link): no family's yes could ever open it The last column says
 -- whether the account also holds a role that is not a pupil's (a staff
@@ -101,5 +101,5 @@ SELECT x.id AS account,
                                                   AND (g.valid_until IS NULL OR g.valid_until > (now() AT TIME ZONE 'Africa/Johannesburg')::date))))))
  ORDER BY 1;
 
--- After the paste the same number is db/164's own answer, for a check:
+-- After the paste the same number is db/169's own answer, for a check:
 --   SELECT count(*) FROM app_user u WHERE u.active AND NOT pupil_signin_open(u.id);

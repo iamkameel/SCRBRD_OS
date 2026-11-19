@@ -23,7 +23,7 @@ export const DECIDE_WORDS = {
   team_code_invalid: "That side was not understood. Choose the side again.",
   missing_token: "You were signed out. Sign in again to answer requests.",
   token_expired: "You were signed out. Sign in again to answer requests.",
-  // db/164 (Q12): the office's tick, "The signed consent form is on file".
+  // db/169 (Q12): the office's tick, "The signed consent form is on file".
   form_no_date_of_birth: "That pupil has no date of birth on the roster, so the signed form cannot open his own page. Add it to the roster first.",
   form_not_permitted: "Only the school office and the principal can record a pupil's signed consent form.",
 };

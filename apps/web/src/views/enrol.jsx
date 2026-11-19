@@ -58,7 +58,7 @@ export const ENROL_MESSAGE = {
   missing_token: "You are not signed in.",
   // db/122 §1d: a pupil's account is opened, and his sign-in code issued, by the school office or the principal.
   office_only: "This is a pupil's account. Only the school office or the principal opens it or issues his sign-in code.",
-  // db/164 (Q12): the office's tick, "The signed consent form is on file".
+  // db/169 (Q12): the office's tick, "The signed consent form is on file".
   form_no_date_of_birth: FORM_ON_FILE.form_no_date_of_birth,
   form_not_permitted: FORM_ON_FILE.form_not_permitted,
 };
@@ -258,7 +258,7 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
         teamCode: (teamScoped ? f.team : subjectScoped && !forChild ? linked?.team : "") || undefined,
         playerId: subjectScoped && f.player ? f.player : undefined,
         withCode: f.withCode === true && !codeWithheld,
-        // db/164 (Q12): ticked by a person, never assumed. Unticked, his account is
+        // db/169 (Q12): ticked by a person, never assumed. Unticked, his account is
         // opened and his own page waits for a parent's or guardian's yes.
         ...(PUPIL_ROLES.includes(f.role) && f.formOnFile === true ? { formOnFile: true } : {}),
       } });

@@ -369,8 +369,8 @@ try {
     const pupilW = await appoint("away.pupil.ck@example.invalid", "V Away Pupil", WES, "player", "1XI", AWAYBAT);
     await assign(pupilW, "player", WES, "1XI");
     await assign(pupilW, "selfaccess", WES, null, AWAYBAT);
-    // db/164: enrolled the way the office did before db/164 (his own link stamped
-    // 'granted'); the paste carries that over as the office's yes (db/164 §6).
+    // db/169: enrolled the way the office did before db/169 (his own link stamped
+    // 'granted'); the paste carries that over as the office's yes (db/169 §6).
     await q(`select pupil_signin_carry_over()`);
     const parentW = await appoint("away.parent.ck@example.invalid", "V Away Parent", WES, "guardian");
     await assign(parentW, "guardian", WES, null, AWAYBAT);

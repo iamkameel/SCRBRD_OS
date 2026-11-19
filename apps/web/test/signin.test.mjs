@@ -265,7 +265,7 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
   ok("the database's day, as written", dayWords("2027-01-01") === "1 January 2027" && dayWords("x") === "");
   ok("removing the account says what goes before it goes", /sign-in and the schools you follow/.test(REMOVE_WORDS.ask));
 
-  // db/164: a yes taken back. §3.4's sentence, word for word; how a yes comes again; no oracle.
+  // db/169: a yes taken back. §3.4's sentence, word for word; how a yes comes again; no oracle.
   w = stateWords({ state: "closed", schoolName: "Test School" });
   ok("closed: §3.4's sentence", w.title === "Your own page is closed" && w.line === "Your own page is closed until a parent or guardian says yes again.", JSON.stringify(w));
   ok("...and how a yes comes again: Family, or the office", /Family/.test(w.how) && /office at Test School/.test(w.how), w.how);

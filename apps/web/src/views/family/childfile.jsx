@@ -96,7 +96,7 @@ export function ChildFileCard({ child, role, w, todo = null, onAgreed }) {
           <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Public match pages, health monitoring, where {name}&apos;s {w.record} may travel, and scouts</span>
         </OpenRow>
         {panel === "consents" && <Consents child={child} role={role} nonce={consentNonce} onChanged={() => setConsentNonce((n) => n + 1)}/>}
-        {/* db/164 (Q5): his own sign-in, allowed or stopped by her, on her own link. */}
+        {/* db/169 (Q5): his own sign-in, allowed or stopped by her, on her own link. */}
         <OpenRow onClick={() => toggle("signin")} testid={`family-open-signin-${child.id}`}>
           <span style={{ ...T.role.body, fontWeight: 600 }}>His own sign-in</span>
           <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Whether {name} may sign in to his own page</span>
@@ -317,7 +317,7 @@ export function Consents({ child, role, nonce = 0, onChanged }) {
 }
 
 
-// ── db/164 · His own sign-in (Q5, Q6) ──────────────────
+// ── db/169 · His own sign-in (Q5, Q6) ──────────────────
 
 /**
  * Whether the boy may sign in to his own page, and her yes or no. Read only

@@ -351,7 +351,7 @@ function RequestsPanel({ role, players }) {
   const [nudge, setNudge] = useState(0);
   const [pick, setPick] = useState({});
   const [side, setSide] = useState({});
-  // db/164 (Q12): "The signed consent form is on file", ticked per pupil's request.
+  // db/169 (Q12): "The signed consent form is on file", ticked per pupil's request.
   const [form, setForm] = useState({});
   // What the server said to each answer, by request: { ok, text }. Said
   // only after its reply; a refusal stays on the row, and a line whose row has
