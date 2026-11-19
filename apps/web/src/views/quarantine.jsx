@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
-import { Btn, Card } from "../ui/primitives.jsx";
+import { Btn, Card, EmptyState } from "../ui/primitives.jsx";
 import { DISMISSAL_LABEL } from "@scrbrd/scoring";
 
 /**
@@ -132,9 +132,7 @@ function QuarantinePanel({ matchId, role }) {
     return (
       <Card sx={{ padding: "14px", marginTop: "12px" }} data-testid="quarantine-panel">
         <div style={{ marginBottom: "6px" }}>{head}</div>
-        <div style={{ ...smallText(), color: state.error ? textOn(D.rose) : D.textMuted }}>
-          {state.loading ? "Loading…" : `Could not load the set-aside balls (${state.error}).`}
-        </div>
+        <EmptyState loading={state.loading} error={state.error} what="the set-aside balls" onRetry={() => setNonce((n) => n + 1)}/>
       </Card>
     );
   }

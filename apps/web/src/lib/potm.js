@@ -78,7 +78,7 @@ export const STOOD_WORDS = "It stands. The review is closed with your name; the 
 export function reviewRows({ rows, error = null }) {
   if (rows == null) {
     return { rows: [], unread: [{ id: "potm-review:read", rule: "read", state: /** @type {const} */ ("could_not_read"), read: "potm-review",
-      fact: "Could not read the awards to review", count: 0, source: null, owner: null, deadline: null, age: null,
+      fact: "Couldn't load the awards to review", count: 0, source: null, owner: null, deadline: null, age: null,
       action: { kind: "retry", label: "Try again" }, error }], open: 0, failed: 1 };
   }
   const out = rows.map((r) => ({

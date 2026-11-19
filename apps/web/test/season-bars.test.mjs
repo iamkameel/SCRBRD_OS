@@ -207,7 +207,7 @@ group("Signed in is never Demo; signed out always is");
 group("A read that did not answer is said, and nothing is drawn");
 {
   const failed = view({ said: readState({ rows: [], loading: false, error: "boom", status: 500 }, { what: "the season figures" }), rows: [], onRetry: () => {} });
-  ok("failed: the sentence and a Retry", /Could not read the season figures/.test(text(failed)) && /season-bars-read-state-retry/.test(failed), text(failed).slice(0, 200));
+  ok("failed: the sentence and a Retry", /Couldn't load the season figures/.test(text(failed)) && /season-bars-read-state-retry/.test(failed), text(failed).slice(0, 200));
   ok("...and no bar and no source line", bars(failed).length === 0 && !/source-line-season-bars/.test(failed));
   const loading = view({ said: readState({ rows: [], loading: true }, { what: "the season figures" }), rows: [] });
   ok("loading: says so, draws no bar", /Reading the season figures/.test(text(loading)) && bars(loading).length === 0);

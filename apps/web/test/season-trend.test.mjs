@@ -230,7 +230,7 @@ group("Analytics' picker waits for the roster, and says so (review S1)");
   const loading = pick({ rows: [], loading: true, error: null, status: null });
   ok("loading: 'Reading the players…', never 'No player of this side'", /Reading the players/.test(text(loading)) && !/No player of this side/.test(text(loading)) && !/season-trend-player"/.test(loading), text(loading));
   const failed = pick({ rows: [], loading: false, error: "unreachable", status: null });
-  ok("failed: 'Could not read the players', never 'No player'", /Could not read the players/.test(text(failed)) && !/No player of this side/.test(text(failed)), text(failed));
+  ok("failed: 'Couldn't load the players', never 'No player'", /Couldn't load the players/.test(text(failed)) && !/No player of this side/.test(text(failed)), text(failed));
   const refused = pick({ rows: [], loading: false, error: "forbidden", status: 403 });
   ok("refused: 'Your role may not read the players'", /Your role may not read the players/.test(text(refused)) && !/No player of this side/.test(text(refused)), text(refused));
   const none = pick({ rows: [], loading: false, error: null, status: null });
@@ -268,7 +268,7 @@ group("A read with nothing, or refused, or failed: words, never an empty chart")
   ok("a 403: 'Your role may not read …', no chart", /Your role may not read R Pillay's innings\./.test(text(refused)) && !/season-trend-chart/.test(refused), text(refused));
   const failed = renderToStaticMarkup(h(SeasonTrendView, { rows: [], who: "R Pillay", onRetry: () => {},
     said: readState({ rows: [], loading: false, error: "unreachable", status: null }, { what: "R Pillay's innings" }) }));
-  ok("a failure: 'Could not read …', with a retry, no chart", /Could not read R Pillay's innings\./.test(text(failed)) && /Retry|Try again/i.test(text(failed)) && !/season-trend-chart/.test(failed), text(failed));
+  ok("a failure: 'Couldn't load …', with a retry, no chart", /Couldn't load R Pillay's innings\./.test(text(failed)) && /Retry|Try again/i.test(text(failed)) && !/season-trend-chart/.test(failed), text(failed));
   const loading = renderToStaticMarkup(h(SeasonTrendView, { rows: [], who: "R Pillay",
     said: readState({ rows: [], loading: true, error: null, status: null }, { what: "R Pillay's innings" }) }));
   ok("loading: 'Reading …', no chart", /Reading R Pillay's innings/.test(text(loading)) && !/season-trend-chart/.test(loading));

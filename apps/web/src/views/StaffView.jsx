@@ -15,8 +15,9 @@ function StaffView({ role }) {
   // `users` and `assignments` reads Settings → People uses, through the same
   // choke point (row-scoped and column-masked for this principal). The old
   // `staff` and `coach` tables are not read: nothing writes them (lib/staff.js).
-  const accounts = useLive("users", role);
-  const appointments = useLive("assignments", role);
+  const [nonce, setNonce] = useState(0);
+  const accounts = useLive("users", role, nonce);
+  const appointments = useLive("assignments", role, nonce);
   // The clearance register, for the reader's own school. Empty for anybody
   // the server did not hand it to, and the panel is not drawn: whether the
   // office may see who is unchecked is decided in clearance_register(), and
@@ -67,9 +68,9 @@ function StaffView({ role }) {
       {REGISTER.length > 0 && <ClearanceRegister rows={REGISTER}/>}
 
       {failed ? (
-        <Card sx={{ padding: T.space.lg }}><EmptyState error/></Card>
+        <Card sx={{ padding: T.space.lg }}><EmptyState error={true} what="the staff" onRetry={() => setNonce((n) => n + 1)}/></Card>
       ) : loading && STAFF.length === 0 ? (
-        <Card sx={{ padding: T.space.lg }}><EmptyState loading/></Card>
+        <Card sx={{ padding: T.space.lg }}><EmptyState loading what="the staff"/></Card>
       ) : filtered.length === 0 ? (
         <Card sx={{ padding: T.space.lg }}>
           <div data-testid="staff-none" style={{ ...T.role.body, color: T.content.secondary }}>

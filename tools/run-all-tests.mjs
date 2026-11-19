@@ -313,12 +313,12 @@ const SUITES = [
   ["skills-history", "apps/web/test/skillsHistory.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
-  // per-fixture count: "N to resolve" and "Could not read X", a failed read
+  // per-fixture count: "N to resolve" and "Couldn't load X", a failed read
   // never the same as nothing.
   ["queue", "apps/web/test/queue.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The parent's action list, phase A0 (GA-I20): R1 an answer owed and R2
   // answer again, over a side's worth of rows narrowed to his own; the
-  // fourteen-day fold; "N to do" and "Could not read X", a failed read never
+  // fourteen-day fold; "N to do" and "Couldn't load X", a failed read never
   // the same as nothing; no reason, no note, no "done".
   ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
