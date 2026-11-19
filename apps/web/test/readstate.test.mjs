@@ -313,7 +313,7 @@ group("The hooks keep their state (audit R15)");
 // ═════════════════════════════════════════════════════
 group("The UI piece: ReadState, and EmptyState on top of it");
 {
-  const html = (el) => renderToStaticMarkup(el);
+  const html = (el) => renderToStaticMarkup(el).replace(/&#x27;/g, "'");
   const failed = readState(read({ error: "unreachable" }), { what: WHAT });
   const m = html(h(ReadState, { read: failed, onRetry: () => {} }));
   ok("a failed read draws its sentence and says it is an alert", m.includes("Couldn't load skills assessments.") && /role="alert"/.test(m) && /data-state="failed"/.test(m));
