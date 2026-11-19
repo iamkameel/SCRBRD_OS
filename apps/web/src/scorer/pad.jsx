@@ -93,12 +93,15 @@ export function PadBoard({ inn, match, target, flash = null, onFlashDone }) {
  * The board pinned under the title bar (§3.4 Flow B 1; `.pad-pin` in ui.jsx).
  * The bar's height is measured, not assumed — the sides' names wrap and a
  * practice label adds a line — and handed to the pin as --pad-bar-h on the
- * layout `ref` returns. While the pad is open the page's scroll padding is
- * what covers it: at the top the bar and the board, at the bottom the bottom
- * bar and, on a phone, the strip docked above it. So a key reached by Tab, or
- * scrolled to, is never left under them (WCAG 2.4.11), and one scrolled to the
- * middle is in the middle of what can be seen. What it was is put back on the
- * way out. Moves nothing a tap records.
+ * layout `ref` returns.
+ *
+ * Focus is never left under the pinned board (WCAG 2.4.11), on any tab: a
+ * control reached by the keyboard that the board covers is scrolled, by the
+ * least, to just under it. Not by scroll-padding: a padding the size of the
+ * board makes every scroll-into-view centre on the part of the screen the
+ * board leaves, which on a short phone is under the docked strip. A pad key
+ * before the strip is useFocusClearOfStrip's, which reads the same band.
+ * Moves nothing a tap records.
  */
 export function usePinnedBoard() {
   // A callback ref: the pad's layout mounts after the toss and the setup
@@ -106,29 +109,31 @@ export function usePinnedBoard() {
   const [el, layout] = useState(/** @type {HTMLElement | null} */ (null));
   useEffect(() => {
     if (!el || typeof document === "undefined") return undefined;
-    const root = document.documentElement;
-    const was = [root.style.scrollPaddingTop, root.style.scrollPaddingBottom];
+    const pinOf = () => el.querySelector('[data-testid="pad-pin"]');
     const measure = () => {
       const bar = document.querySelector('[data-testid="pad-titlebar"]');
-      const pin = el.querySelector('[data-testid="pad-pin"]');
-      const barH = bar instanceof HTMLElement ? bar.offsetHeight : 52;
-      el.style.setProperty("--pad-bar-h", `${barH}px`);
-      const stuck = pin instanceof HTMLElement && getComputedStyle(pin).position === "sticky";
-      root.style.scrollPaddingTop = `${barH + (stuck ? pin.offsetHeight + RING : 0) + RING}px`;
-      const tabs = document.querySelector('[data-testid="pad-tabs"]');
-      const strip = el.querySelector('[data-testid="pad-strip"]');
-      const below = tabs ? Math.max(0, innerHeight - tabs.getBoundingClientRect().top) : 0;
-      const docked = strip instanceof HTMLElement && getComputedStyle(strip).position === "sticky"
-        ? strip.offsetHeight + DOCK_ABOVE_BAR + RING : 0;
-      root.style.scrollPaddingBottom = `${below + docked + RING}px`;
+      el.style.setProperty("--pad-bar-h", `${bar instanceof HTMLElement ? bar.offsetHeight : 52}px`);
+    };
+    const onFocus = (e) => {
+      const t = e.target;
+      if (!(t instanceof Element) || !el.contains(t) || !t.matches(":focus-visible")) return;
+      if (t.closest('[data-testid="pad-pin"], [data-testid="pad-strip"], [role="dialog"]')) return;
+      requestAnimationFrame(() => {
+        const pin = pinOf();
+        if (!t.isConnected || !(pin instanceof HTMLElement) || getComputedStyle(pin).position !== "sticky") return;
+        const bar = document.querySelector('[data-testid="pad-titlebar"]');
+        const under = (bar ? bar.getBoundingClientRect().bottom : 0) + pin.offsetHeight + RING;
+        const top = t.getBoundingClientRect().top;
+        if (top < under) scrollBy({ top: top - under, behavior: "instant" });
+      });
     };
     measure();
     const ro = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
     const bar = document.querySelector('[data-testid="pad-titlebar"]');
     if (bar) ro?.observe(bar);
-    ro?.observe(el);
     addEventListener("resize", measure);
-    return () => { ro?.disconnect(); removeEventListener("resize", measure); [root.style.scrollPaddingTop, root.style.scrollPaddingBottom] = was; };
+    document.addEventListener("focusin", onFocus);
+    return () => { ro?.disconnect(); removeEventListener("resize", measure); document.removeEventListener("focusin", onFocus); };
   }, [el]);
   return layout;
 }
