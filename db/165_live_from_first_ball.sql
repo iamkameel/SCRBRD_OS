@@ -22,7 +22,9 @@
 -- the bowler), which can be half an hour before play and is the pre-match
 -- line-up (ROLE_DASHBOARDS §5: "Scorer: toss/line-up" before live). So
 -- PUBLIC_BY_TERMS's "first event" is read as the first ball. The scorebook
--- importer's balls are kind 'ball' too.
+-- importer writes no ball rows (innings_start, innings_summary and
+-- innings_end, db/63), so an imported fixture goes scheduled → complete in
+-- its commit and never reads live.
 --
 -- WHAT THIS FILE DOES.
 --   1. match_live_on_first_event(), a statement-level AFTER INSERT trigger
@@ -33,17 +35,19 @@
 --      'complete'. The ball is the act; nobody is given the column, no
 --      capability is added and packages/policy is unchanged.
 --   1b. Kameel, 18 Nov 2026: "Refuse it once there are balls." live →
---      scheduled is refused for a fixture with any row in its ball log,
---      for every caller (section 1b below).
+--      scheduled is refused for a fixture with a ball in its log, for every
+--      caller (section 1b below). Balls only, as the trigger counts them: a
+--      fixture set live after the toss with no ball bowled may go back.
 --   2. A backfill, match_live_backfill(): a scheduled fixture that already
 --      has a delivery in its log is in play, so it becomes live. The paste prints the count
 --      before and after, and refuses to commit if one is left.
 --
--- WHAT IT DOES NOT DO. A ball only reaches ball_event through the lease
--- (events-api.mjs, scoring_lease_check) or the importer's confirm; a
--- quarantined ball goes to ball_event_quarantine and moves nothing. The
--- importer goes scheduled → live → complete in one transaction, and nobody
--- sees the middle step. The trigger writes no notice and no audit row: the
+-- WHAT IT DOES NOT DO. A ball reaches ball_event through the lease
+-- (events-api.mjs, scoring_lease_check), a supervisor's release from
+-- quarantine (quarantine_resolve, which makes a scheduled fixture live, as
+-- it should) or an approved amendment (a finished match: nothing to move);
+-- a quarantined ball goes to ball_event_quarantine and moves nothing. The
+-- trigger writes no notice and no audit row: the
 -- first ball is its own record. Every trigger on match that fires on a
 -- status change was read for → live (LIFECYCLE_DIAGNOSIS §5.1):
 -- availability_ask_again returns early unless the new status is scheduled,
@@ -63,8 +67,15 @@
 -- directly in any case), nothing to the managed host's three API roles. The
 -- backfill is the owner's alone.
 --
--- Safe to run twice: CREATE OR REPLACE, DROP TRIGGER IF EXISTS before the
--- CREATE, and a backfill that finds nothing the second time. No BEGIN or
+-- THE PASTE'S LOCKS (review S1, 19 Nov 2026). CREATE OR REPLACE TRIGGER
+-- (db/109, db/110, db/113) takes SHARE ROW EXCLUSIVE on ball_event and
+-- match: writes pause for a moment, reads never wait. And no lock is waited
+-- on for more than ten seconds (section 0): a paste that cannot get one
+-- stops; paste it again.
+--
+-- Safe to run twice: CREATE OR REPLACE throughout, and a backfill that finds
+-- nothing the second time; pasted over the first cut of this file (DROP and
+-- CREATE of the same triggers) it replaces them in place. No BEGIN or
 -- COMMIT: the bundle and the migrator hold the transaction. Running ahead of
 -- db/133 is refused. Its proof is db/99 §143.
 
@@ -78,6 +89,14 @@ BEGIN
   END IF;
 END $guard$;
 
+-- ── 0 · Ten seconds for a lock, or nothing (db/158, db/161, db/163) ──
+-- A plain SET, so it holds for every statement after it however the file is
+-- run (psql -1, the SQL editor's single run, statement by statement); the
+-- file's last statement RESETs it, so a pooled connection is handed back as
+-- it came. Inside a transaction a stopped paste rolls back whole; statement
+-- by statement, a second paste finishes what a stopped one left.
+SET lock_timeout = '10s';
+
 
 -- ── 1 · The first ball makes the fixture live ──────────────────────
 CREATE OR REPLACE FUNCTION match_live_on_first_event() RETURNS trigger AS $$
@@ -88,14 +107,15 @@ BEGIN
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
-DROP TRIGGER IF EXISTS ball_event_match_live ON ball_event;
-CREATE TRIGGER ball_event_match_live AFTER INSERT ON ball_event
+CREATE OR REPLACE TRIGGER ball_event_match_live AFTER INSERT ON ball_event
   REFERENCING NEW TABLE AS match_live_new_events
   FOR EACH STATEMENT EXECUTE FUNCTION match_live_on_first_event();
 
 -- ── 1b · A scored fixture stays played (Kameel, 18 Nov 2026) ───────
 -- "Refuse it once there are balls." live → scheduled is refused for a
--- fixture with any row in its ball log, for every caller: the office and
+-- fixture with a ball in its log (kind 'ball', as the trigger counts them:
+-- the toss's setup is not one, so a fixture the office set live after the
+-- toss with no ball bowled may still go back), for every caller: the office and
 -- every holder of fixture.update, the owner and a definer too. db/133
 -- allowed it, so an office edit could put a scored fixture back to
 -- "Upcoming". Refused as db/133's moves are (check_violation, constraint
@@ -106,15 +126,14 @@ CREATE TRIGGER ball_event_match_live AFTER INSERT ON ball_event
 -- so db/133's body is not re-emitted.
 CREATE OR REPLACE FUNCTION match_scored_stays_live() RETURNS trigger AS $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
+  IF EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id AND b.kind = 'ball') THEN
     RAISE EXCEPTION 'This fixture has been scored, so it is not put back to scheduled: call it off (abandoned) if it is not going on.'
       USING ERRCODE = 'check_violation', CONSTRAINT = 'match_status_transition';
   END IF;
   RETURN NEW;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
-DROP TRIGGER IF EXISTS match_scored_stays_live ON match;
-CREATE TRIGGER match_scored_stays_live BEFORE UPDATE OF status ON match
+CREATE OR REPLACE TRIGGER match_scored_stays_live BEFORE UPDATE OF status ON match
   FOR EACH ROW WHEN (OLD.status = 'live' AND NEW.status = 'scheduled')
   EXECUTE FUNCTION match_scored_stays_live();
 
@@ -200,6 +219,9 @@ BEGIN
                     AND position('match_status_transition' IN prosrc) > 0) THEN
     RAISE EXCEPTION 'db/165: match_scored_stays_live() is not a pinned definer raising match_status_transition';
   END IF;
+  IF position($w$b.kind = 'ball'$w$ IN (SELECT prosrc FROM pg_proc WHERE oid = 'match_scored_stays_live()'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/165: match_scored_stays_live() refuses on something other than a ball';
+  END IF;
   -- The grants, read from the ACL: scrbrd_app's EXECUTE beside the owner's, nothing else.
   FOR v IN SELECT f FROM unnest(ARRAY['match_live_on_first_event()', 'match_scored_stays_live()']) f
             WHERE (SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',')
@@ -221,3 +243,7 @@ BEGIN
     RAISE EXCEPTION 'db/165: PUBLIC reaches one of db/165''s functions';
   END IF;
 END $check$;
+
+
+-- ── 5 · The lock limit back as it was: a pooled connection is handed back as it came ──
+RESET lock_timeout;

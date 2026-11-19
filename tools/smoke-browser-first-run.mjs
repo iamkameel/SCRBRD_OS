@@ -686,7 +686,20 @@ try {
 } finally {
   // A match with a log is not deleted (ball_event never is): unpublished, it leaves the home page.
   await q(`update fixture_publication set published = false where match_id = any($1::uuid[])`, [made.matches]).catch(() => {});
-  for (const m of made.matches) await q(`update match set status = 'scheduled', starts_at = now() + interval '3 days' where id = $1 and status = 'live'`, [m]).catch(() => {});
+  // A live fixture this walk made is called off, not put back to scheduled:
+  // db/165 refuses live → scheduled once there are balls. If that fails, the
+  // walk fails and says so, rather than leave a live fixture for the walks
+  // after it (review S3, 19 Nov 2026).
+  for (const m of made.matches) {
+    try {
+      await q(`update match set status = 'abandoned' where id = $1 and status = 'live'`, [m]);
+    } catch (e) {
+      fail++;
+      console.log(`  ✗ cleanup: the walk's live fixture ${m} could not be called off — ${/** @type {any} */ (e).message}`);
+    }
+  }
+  const stillLive = made.matches.length ? await q(`select id from match where id = any($1::uuid[]) and status = 'live'`, [made.matches]).catch((e) => [{ id: `(unread: ${e.message})` }]) : [];
+  if (stillLive.length) { fail++; console.log(`  ✗ cleanup: live fixtures left behind: ${stillLive.map((r) => r.id).join(", ")}`); }
   for (const m of made.matches) await q(`delete from match where id = $1`, [m]).catch(() => {});
   for (const g of made.grounds) await q(`delete from ground where id = $1`, [g]).catch(() => {});
   await q(`delete from school_add_request where person_id in (select id from app_user where email like 'walk.firstrun.ask.%')`).catch(() => {});

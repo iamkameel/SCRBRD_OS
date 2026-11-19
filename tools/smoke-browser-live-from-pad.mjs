@@ -18,7 +18,8 @@
  *      toss: still scheduled once its setup is sent (the line-up is not
  *      play). He scores one ball:
  *      the fixture is live, with no SQL write, and the coach's Match Centre
- *      and the spectator's page (one reload) say Live.
+ *      says Live; the spectator's page, opened before play, turns Live by
+ *      itself, with no reload.
  *   4. A four: it reaches the spectator's page on the page's own refresh,
  *      with no reload, and nothing the page holds or received names a child
  *      beyond docs/policy/PUBLIC_DATA.md's L2 rule (initial and surname, and
@@ -88,7 +89,9 @@ async function open(label, { size = DESKTOP, path = "/app" } = {}) {
   await offline(ctx);
   const page = await ctx.newPage();
   watchReads(page);
-  await page.addInitScript(`window.__SCRBRD_LIVE_MS__ = 1000; window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
+  // The public page's two paces, shortened as other walks shorten the live one:
+  // live (max 5 s, liveRefreshMs) and, before play near the start, soonRefreshMs.
+  await page.addInitScript(`window.__SCRBRD_LIVE_MS__ = 1000; window.__SCRBRD_SOON_MS__ = 2000; window.__SCRBRD_API_BASE__ = ${JSON.stringify(BASE)};`);
   const errors = [], bodies = [];
   page.on("response", (r) => { if (new URL(r.url()).pathname.startsWith("/api/public/")) bodies.push(r.text().catch(() => "")); });
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
@@ -260,10 +263,12 @@ try {
   ok("no console errors (coach)", coach.errors.length === 0, coach.errors.join(" | "));
   await close(coach);
 
-  await pu.page.reload({ waitUntil: "networkidle" });
-  await pu.page.waitForSelector('[data-testid="public-match"]', { timeout: 8000 }).catch(() => {});
-  ok(`one reload, and the spectator's page says Live ("${await word(pu.page, "mc-status")}")`,
-    await until(pu.page, () => document.querySelector('[data-testid="mc-status"]')?.textContent?.trim() === "Live", 8000), await inner(pu.page, "mc-status"));
+  // Opened before play, it asks again near the start (PublicMatch.jsx, soonRefreshMs), so it turns
+  // Live by itself: no reload (19 Nov 2026: it never polled until it was live).
+  const tLive = Date.now();
+  ok(`the spectator's page, opened before play, says Live with no reload ("${await word(pu.page, "mc-status")}")`,
+    await until(pu.page, () => document.querySelector('[data-testid="mc-status"]')?.textContent?.trim() === "Live", ONE_REFRESH_MS), await word(pu.page, "mc-status"));
+  note(`it turned Live ${Date.now() - tLive} ms after the server had the first ball`);
   ok(`...with the single on it (${await inner(pu.page, "mc-scores")})`, await waitFor(async () => (await runsOn(pu.page)) === 1, 8000), await inner(pu.page, "mc-scores"));
 
   // ── 4 ──────────────────────────────────────────────────────────

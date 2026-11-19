@@ -10170,6 +10170,16 @@ BEGIN
     PERFORM _as(DOS);
     v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', S));
     PERFORM _assert(v = 'ok' AND _v165_status(S) = 'scheduled', format('§143 (back): a live fixture with no log put back reads %s, %s', v, _v165_status(S)));
+    -- Balls only, as the trigger counts them (review S2): a fixture with the toss's setup and no ball,
+    -- set live by the office, may still go back to scheduled.
+    Q := _v165_fixture('back setup only', 'scheduled', 153);
+    v := _v165_setup(Q);
+    PERFORM _assert(v = 'written' AND _v165_status(Q) = 'scheduled', format('§143 (back): the setup-only fixture reads %s, %s', v, _v165_status(Q)));
+    v := _v133_try(format('UPDATE match SET status = ''live'' WHERE id = %L', Q));
+    PERFORM _assert(v = 'ok' AND _v165_status(Q) = 'live', format('§143 (back): the office setting the setup-only fixture live reads %s, %s', v, _v165_status(Q)));
+    v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', Q));
+    PERFORM _assert(v = 'ok' AND _v165_status(Q) = 'scheduled',
+      format('§143 (back): a live fixture with only its setup put back reads %s, %s', v, _v165_status(Q)));
     A := _v165_fixture('back called off', 'abandoned', 152);
     PERFORM _assert(_v165_ball(A, 1) = 'written', '§143 (back): the called-off fixture''s ball was not written');
     v := _v133_try(format('UPDATE match SET status = ''scheduled'' WHERE id = %L', A));
@@ -39391,9 +39401,10 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --                scrbrd_app alone; the backfill the owner's alone; the
   --                trigger present, enabled, calling that function
   --   (back)       Kameel, 18 Nov 2026, "Refuse it once there are balls":
-  --                live → scheduled refused once the log has a row, for the
+  --                live → scheduled refused once the log has a ball, for the
   --                office and the owner alike (match_status_transition); a
-  --                live fixture with no log may go back; a scored match
+  --                live fixture with no log, or with only the toss's setup
+  --                and no ball, may go back; a scored match
   --                called off still goes back on (abandoned → scheduled)
   --
   -- Falsified, each against this database in its own rolled-back run (the
@@ -39405,7 +39416,8 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   -- trigger and the backfill made to count any event, not a ball (the rule
   -- first prototyped, under which the toss's setup made a fixture live) →
   -- (first) and (backfill) red. The refusal's trigger dropped → (back) and
-  -- (grants) red.
+  -- (grants) red. The refusal made to count any row of the log (5df45d95's
+  -- cut) → (back) red at the setup-only fixture.
   PERFORM _v165_case('first');
   PERFORM _v165_case('statement');
   PERFORM _v165_case('others');

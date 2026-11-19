@@ -11,7 +11,7 @@ import { HeaderScores, StatusLine } from "../views/matchcentre/scores.jsx";
 import { matchInningsOf } from "../lib/superOver.js";
 import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
 import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
-import { liveRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
+import { liveRefreshMs, soonRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { publicStory, read, readPar } from "./reads.js";
 import { publicOfficial } from "../lib/official.js";
@@ -87,12 +87,20 @@ function usePhone(px = 640) {
 function usePublicMatch(matchId) {
   const [state, setState] = useState({ loading: true, missing: false, error: null, header: null, fold: {}, events: [], people: {}, last: 0, par: null, okAt: null, stale: false, refreshing: false });
   const [tick, setTick] = useState(0);
-  const live = state.header?.status === "live";
+  const status = state.header?.status;
+  const live = status === "live";
+  // Opened before the first ball (19 Nov 2026): it asks again once a minute
+  // from an hour before the start until twelve hours after it, so it turns
+  // live by itself; then at the live pace. A tab out of view asks nothing.
+  const startsAt = state.header?.startsAt ? Date.parse(state.header.startsAt) : NaN;
+  const soon = status === "scheduled" && Number.isFinite(startsAt)
+    && Date.now() > startsAt - 3600e3 && Date.now() < startsAt + 12 * 3600e3;
+  const every = live ? Math.max(5000, liveRefreshMs()) : soon ? soonRefreshMs() : 0;
   useEffect(() => {
-    if (!live) return undefined;
-    const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, Math.max(5000, liveRefreshMs()));
+    if (!every) return undefined;
+    const t = setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, every);
     return () => clearInterval(t);
-  }, [live]);
+  }, [every]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
