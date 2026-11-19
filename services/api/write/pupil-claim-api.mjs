@@ -1,6 +1,6 @@
 /**
  * SCRBRD — "I am a pupil here": the pupil's claim and the office's answer
- * (SCRBRD-140, the honesty model, Migration A; db/163).
+ * (SCRBRD-140, the honesty model, Migration A; db/168).
  *
  * A boy under 18 who has signed in with Google may say which school he is
  * at and who he is. It asks for nothing and opens nothing (Kameel, 18 Nov,
@@ -11,7 +11,7 @@
  * is kept 30 days from his last claim (or the school's answer) while the office decides, then removed
  * by a person (Q9); his screen says so from the first day.
  *
- * WHAT THIS FILE DECIDES: nothing. Every route calls one db/163 function
+ * WHAT THIS FILE DECIDES: nothing. Every route calls one db/168 function
  * under the caller's own identity; the function decides who may and
  * answers a code, which becomes a status here and words on the screen
  * (apps/web/src/lib/pupilClaim.js).
@@ -20,7 +20,7 @@
  * (Migration C) has something to compare it with (the re-review's open point
  * 2): a date sent anyway is not read, not checked and not forwarded, so it
  * is never a bind parameter a host's statement log could keep. The client
- * never sends one (lib/pupilClaim.js buildClaim()). db/163's function keeps
+ * never sends one (lib/pupilClaim.js buildClaim()). db/168's function keeps
  * its p_born argument, DEFAULT NULL, for Migration C.
  *
  * Routes (all signed in; a pad's resume credential reaches nothing here):
@@ -142,7 +142,7 @@ export function pupilClaimRoutes({ pool, secret }) {
 
     removeSelf: handle(async (client) => {
       const { rows } = await client.query(`select * from pupil_claim_remove_self()`);
-      // Kept for a safeguarding concern (db/163 B1): answered as any account that is not a claim.
+      // Kept for a safeguarding concern (db/168 B1): answered as any account that is not a claim.
       const r = rows[0]?.reason === "kept" ? { ok: false, reason: "not_a_claim" } : rows[0];
       return { ...verdict(r), removed: true };
     }),

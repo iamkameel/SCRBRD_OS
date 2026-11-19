@@ -74,7 +74,7 @@ export function signupApi() {
     if (pathname === "/api/competition-invitations") return { status: 200, body: { invitations: [] } };
     // The follow list (db/160): an account that follows nothing yet, as a new one does.
     if (pathname === "/api/follows/today") return { status: 200, body: { asOf: "2026-11-15", fixtures: [], schools: [] } };
-    // "I am a pupil here" (db/163): an account that has said nothing, as a new one has.
+    // "I am a pupil here" (db/168): an account that has said nothing, as a new one has.
     if (pathname === "/api/pupil/state") return { status: 200, body: { claim: null } };
     const read = /^\/api\/read\/([a-z_]+)$/.exec(pathname);
     if (read) return { status: 200, body: { resource: read[1], rows: reads[read[1]]?.() ?? [] } };

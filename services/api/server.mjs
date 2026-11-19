@@ -129,7 +129,7 @@ import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs"
 import { liftRoutes } from "./write/lift-api.mjs";
 import { pilotRoutes } from "./write/pilot-api.mjs";
 import { followRoutes } from "./write/follow-api.mjs";
-// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/163).
+// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/168).
 import { pupilClaimRoutes } from "./write/pupil-claim-api.mjs";
 // Practice Match's live weather hint, from Google (2026-10-02): a hint, never
 // the match's record; nothing stored (weather/weather-api.mjs).
@@ -870,9 +870,9 @@ const PLAYER_ROUTES = [
   // platform's answer. Each decision is a db/158 definer's, under the caller.
   [/^\/api\/school-requests$/,                      "POST", requests.schoolAsk],
   [/^\/api\/school-requests\/([^/]+)\/decide$/,      "POST", requests.schoolDecide],
-  // "I am a pupil here" (db/163, the honesty model's Migration A): the boy's
+  // "I am a pupil here" (db/168, the honesty model's Migration A): the boy's
   // own claim, state and way out, and the office's Pupil claims list. Every
-  // decision is a db/163 definer's, under the caller.
+  // decision is a db/168 definer's, under the caller.
   [/^\/api\/pupil\/state$/,                         "GET",  pupilClaims.state],
   [/^\/api\/pupil\/claim$/,                         "POST", pupilClaims.claim],
   [/^\/api\/pupil\/remove$/,                        "POST", pupilClaims.removeSelf],

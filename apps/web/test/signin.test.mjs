@@ -16,9 +16,9 @@
  *     something that opens nothing (a follow, Q10; a pupil's claim, Q3); a
  *     parent's child is free text that is never looked up; nothing on the
  *     screen says "found" or "not found"; a pupil under eighteen asks for no
- *     role, and his claim (db/163) promises nothing; the staff roles are ones
+ *     role, and his claim (db/168) promises nothing; the staff roles are ones
  *     the policy lets an office grant.
- *   - THE BASIC VIEW (db/163): his state in one true sentence, how long the
+ *   - THE BASIC VIEW (db/168): his state in one true sentence, how long the
  *     account is kept, and none of the asking.
  *   - THE WAYS TO SIGN IN and THE CLAIMS LIST: what a row says, what a refusal
  *     is called, the screens as drawn.
@@ -230,7 +230,7 @@ group("Joining a school never says found or not found, and never looks a child u
   ok("no 'Child's name' suggestions: the input is autoComplete off", /data-testid="join-child"/.test(code) && /autoComplete="off"[^>]*data-testid="join-child"/.test(code));
 }
 
-group("A pupil under 18 says who he is (db/163, Q3): it asks for nothing and opens nothing");
+group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and opens nothing");
 {
   const S = "11111111-1111-1111-1111-111111111111";
   let c = buildClaim(S, { name: "  Test   Pupil ", year: " Grade 9 " });

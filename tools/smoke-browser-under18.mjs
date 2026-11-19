@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * The under-18 basic view, in a browser (SCRBRD-140, the honesty model §3.3
- * and §7 row 2; db/163, Migration A).
+ * and §7 row 2; db/168, Migration A).
  *
  * A boy of fifteen signs in with Google (the walk is its own "Google", as
  * tools/smoke-browser-signup.mjs is), says "I am a pupil", "I am under 18",

@@ -2770,7 +2770,7 @@ run twice".
 5. **Each month** (once `db/158` is pasted; as the owner, in the SQL Editor,
    `SELECT school_add_request_purge();` answers how many rows went):
    The lead runs `school_add_request_purge()` monthly, with the paste routine, and logs each run on the Build Board (Kameel, 15 Nov).
-6. **Pupil claims** (once `db/163` is pasted). Run `SELECT pupil_claim_purge();` with the
+6. **Pupil claims** (once `db/168` is pasted). Run `SELECT pupil_claim_purge();` with the
    monthly purge, as the owner. It removes claim accounts past their 30 days and answers
    how many went. It never removes an opened account, or one a safeguarding concern names.
    **An account later enrolled as an adult** (say, a pupil who turned 18 and now coaches) is
@@ -2787,7 +2787,7 @@ run twice".
      FROM pupil_claim c WHERE c.id = '<claim id>';
    DELETE FROM pupil_claim WHERE id = '<claim id>';   -- one row, by id, never by a wider filter
    ```
-   db/163 resets `lock_timeout` with its last statement, so a pooled SQL Editor
+   db/168 resets `lock_timeout` with its last statement, so a pooled SQL Editor
    connection is handed back as it came.
 
 ### The API refuses to run ahead of its schema

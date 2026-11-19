@@ -345,7 +345,7 @@ export const NEVER_PUBLIC = Object.freeze({
   // account may follow too): its owner's alone, never a page's, whichever
   // column; the whole table.
   followed_school: "N4",
-  // ── db/163, SCRBRD-140 honesty model: "I am a pupil here" ──
+  // ── db/168, SCRBRD-140 honesty model: "I am a pupil here" ──
   // N4. That an account says it is a pupil under 18 at a school, the name and
   // year he typed, and which roster row the office matched him to: his own,
   // the office's and the principal's alone (R4). Never on a page; the whole table.

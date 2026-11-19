@@ -11,7 +11,7 @@
  *
  *   1. NOBODY ASSIGNS THEMSELVES ANYTHING. Every kind ends in a request, never
  *      a role, or in something that opens nothing: "I just want to follow
- *      matches" follows the school at once (Q10, db/163; a follow grants no
+ *      matches" follows the school at once (Q10, db/168; a follow grants no
  *      read), and a pupil under 18 says who he is (rule 3). Nothing here is
  *      automatic: not for a parent, not for a pupil, and not for staff either.
  *      A member of staff whose office listed them in the staff register is
@@ -26,7 +26,7 @@
  *      did would be an oracle for which children attend a school.
  *   3. A PUPIL UNDER EIGHTEEN ASKS FOR NO ROLE (SCRBRD-140 honesty model, Q3,
  *      Kameel 18 Nov 2026). He may say "I am a pupil here": a pupil's claim
- *      (POST /api/pupil/claim, db/163, lib/pupilClaim.js), which asks for
+ *      (POST /api/pupil/claim, db/168, lib/pupilClaim.js), which asks for
  *      nothing and opens nothing. It puts his account in the basic view and
  *      a row in front of the office, and from then on the account asks for
  *      nothing at all. Opening his own page is still the school's and a

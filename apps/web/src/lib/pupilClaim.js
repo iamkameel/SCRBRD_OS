@@ -1,6 +1,6 @@
 /**
  * SCRBRD — "I am a pupil here" (SCRBRD-140, the honesty model, Migration A;
- * db/163). The pure half of the pupil's claim form, his basic view and the
+ * db/168). The pure half of the pupil's claim form, his basic view and the
  * office's Pupil claims list: what each state is called, what each refusal
  * says, and what is sent. No React and no network, so apps/web/test holds
  * every sentence to the design.
@@ -27,7 +27,7 @@
  * he follows; his screen says so from the first day (keepWords()). Nobody
  * asks a parent in Migration A: the words say the office decides, on the
  * signed form, and change with Migration B. An account that raised a
- * safeguarding concern is kept (db/163 B1): no date, and his own Remove
+ * safeguarding concern is kept (db/168 B1): no date, and his own Remove
  * answers as any account that is not a claim does, in words that tell
  * whoever holds his phone nothing (re-review S3(a)).
  */
@@ -130,7 +130,7 @@ export function keepWords(claim) {
 export const REMOVE_WORDS = Object.freeze({
   ask: "Remove this account now? Its sign-in and the schools you follow go with it. You can sign in with Google again later and start afresh.",
   done: "This account has been removed.",
-  // Also what an account kept for a safeguarding concern reads (db/163 B1; the API answers it as this):
+  // Also what an account kept for a safeguarding concern reads (db/168 B1; the API answers it as this):
   // neutral, because whoever holds his phone may be the adult the concern is about (re-review S3(a)).
   not_a_claim: "This account can't be removed from here. Ask a teacher you trust.",
   fallback: "The account was not removed. Try again.",

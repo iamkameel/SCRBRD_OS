@@ -110,7 +110,7 @@ export function requestRoutes({ pool, secret }) {
       // parent claims. Their own account's state, so saying so tells them
       // nothing about anybody else; a DSO lifts it, or it ends by itself.
       if (e.code === "23514" && e.constraint === "request_cooldown") return res.status(409).json({ error: "request_cooldown", detail: COOLDOWN_WORDS });
-      // db/163: an account that said it is a pupil under 18, its claim still
+      // db/168: an account that said it is a pupil under 18, its claim still
       // waiting, asks for nothing. His own account's state, said as that.
       if (e.code === "23514" && e.constraint === "pupil_claim_waiting") return res.status(403).json({ error: "ask_your_school_office", detail: PUPIL_WAITING_WORDS });
       if (e.code === "23514") return res.status(422).json({ error: "not_requestable", detail: e.message });
@@ -288,7 +288,7 @@ export function requestRoutes({ pool, secret }) {
         const code = r?.reason || "refused";
         return res.status(SCHOOL_ASK_STATUS[code] ?? 422).json({ error: code });
       } catch (/** @type {any} */ e) {
-        // db/163: a pupil's claim waiting is "Ask a teacher", as a pupil's account is (db/158).
+        // db/168: a pupil's claim waiting is "Ask a teacher", as a pupil's account is (db/158).
         if (e.code === "23514" && e.constraint === "pupil_claim_waiting") return res.status(403).json({ error: "ask_a_teacher" });
         const status = e.code === "42501" ? 403 : (e.status || 500);
         return res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });

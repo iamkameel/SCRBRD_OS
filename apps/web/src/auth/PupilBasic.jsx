@@ -16,7 +16,7 @@ const ScoringBlock = lazy(() => import("../views/ScoringBlock.jsx").then((m) => 
 const WaysToSignIn = lazy(() => import("../views/signins.jsx").then((m) => ({ default: m.WaysToSignIn })));
 
 // ══════════════════════════════════════════════════════
-//  THE UNDER-18 BASIC VIEW  (SCRBRD-140, the honesty model §3.3; db/163)
+//  THE UNDER-18 BASIC VIEW  (SCRBRD-140, the honesty model §3.3; db/168)
 //
 //  An account that has said "I am a pupil here, and under 18". It is the
 //  front door's view (the schools he follows, their public matches, a

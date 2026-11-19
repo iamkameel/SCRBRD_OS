@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * "I am a pupil here" (db/163): the claim's routes, with no database.
+ * "I am a pupil here" (db/168): the claim's routes, with no database.
  *
  *   - a typed date of birth is dropped, never passed on to the database,
  *     until Migration C has something to compare it with (re-review open
@@ -10,7 +10,7 @@
  *     (re-review S3(a)): whoever holds his phone learns nothing;
  *   - signed out, nothing is reached.
  *
- * What db/163 decides is proved live by db/99 §141.
+ * What db/168 decides is proved live by db/99 §141.
  *
  *   node services/api/write/pupil-claim-api.test.mjs
  */
@@ -27,7 +27,7 @@ const USER = "00000000-0000-4000-8000-0000000001a3";
 const BEARER = `Bearer ${signToken({ userId: USER, deviceId: "test-device", sessionId: "00000000-0000-4000-8000-0000000000ab", epoch: 0 }, SECRET)}`;
 const HIL = "11111111-1111-1111-1111-111111111111";
 
-/** A pool answering db/163's two doors used here; it remembers every statement and parameter. @param {{ remove?: any }} o */
+/** A pool answering db/168's two doors used here; it remembers every statement and parameter. @param {{ remove?: any }} o */
 function fakePool({ remove = { ok: true, reason: null } } = {}) {
   /** @type {{ sql: string, params: any[] }[]} */
   const asked = [];

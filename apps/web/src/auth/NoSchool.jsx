@@ -8,7 +8,7 @@ import {
   KINDS, RELATIONSHIPS, REQUEST_STATE_WORDS, STAFF_ROLES,
   EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, spectatorAsk, withdrawWords, withdrew,
 } from "../lib/joinSchool.js";
-// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/163): the claim form, and the basic view.
+// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/168): the claim form, and the basic view.
 import { CLAIM_FORM, NAME_MAX, YEAR_MAX as CLAIM_YEAR_MAX, buildClaim, claimWords } from "../lib/pupilClaim.js";
 import { followProblem } from "../lib/follow.js";
 import { PupilBasic } from "./PupilBasic.jsx";
@@ -198,7 +198,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
     setBusy(false);
   };
 
-  // Q3 (db/163): a pupil under 18 says who he is. It asks for nothing and opens nothing;
+  // Q3 (db/168): a pupil under 18 says who he is. It asks for nothing and opens nothing;
   // the screen becomes his basic view (onClaimed).
   const claimIt = async () => {
     const c = buildClaim(schoolId, { name: form.name, year: form.pyear });
@@ -213,7 +213,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
     setBusy(false);
   };
 
-  // Q10 (db/163): "I just want to follow matches" follows the school, at once. No request.
+  // Q10 (db/168): "I just want to follow matches" follows the school, at once. No request.
   const followIt = async () => {
     if (!schoolId) { setProblem("Choose your school first."); return; }
     setBusy(true); setProblem("");
@@ -342,7 +342,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
         <div data-testid="join-form-pupil">
           <Choice on={form.adult === "yes"} title="I am 18 or older and still at school" data-testid="join-pupil-adult" onClick={() => set("adult", "yes")}/>
           <Choice on={form.adult === "no"} title="I am under 18" data-testid="join-pupil-minor" onClick={() => set("adult", "no")}/>
-          {/* Q3 (db/163): he says who he is. It asks for nothing and opens nothing. */}
+          {/* Q3 (db/168): he says who he is. It asks for nothing and opens nothing. */}
           {form.adult === "no" && (
             <div data-testid="join-pupil-under18">
               <div role="note" style={{ ...text(14), padding: "12px 14px", borderRadius: "10px", border: `1px solid ${T.line.normal}`, background: T.surface.base, marginBottom: "14px" }}>
@@ -445,7 +445,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   const me = profile()?.user;
   const live = signedIn();
   const followed = useFollowed();
-  // db/163: has this account said "I am a pupil here, and under 18"? Then it is his basic view
+  // db/168: has this account said "I am a pupil here, and under 18"? Then it is his basic view
   // (PupilBasic), not this one. undefined = asking; null = no claim.
   const [pupil, setPupil] = useState(/** @type {any} */ (undefined));
   const [pupilNonce, setPupilNonce] = useState(0);
@@ -509,7 +509,7 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
     );
   }
 
-  // A pupil's claim (db/163): his basic view, and nothing of this screen's asking.
+  // A pupil's claim (db/168): his basic view, and nothing of this screen's asking.
   if (pupil === "failed") {
     return (
       <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", padding: "24px 16px", background: T.surface.canvas, boxSizing: "border-box" }}>

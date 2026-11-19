@@ -66,7 +66,7 @@ export function followRoutes({ pool, secret, today }) {
 
     follow: handle((req) => {
       // { code } from a match's link, or { schoolId } from the join form's
-      // "I just want to follow matches" (Q10, db/163's follow_school_by_id():
+      // "I just want to follow matches" (Q10, db/168's follow_school_by_id():
       // the join list names schools by id). The same door either way.
       const schoolId = typeof req.body?.schoolId === "string" ? req.body.schoolId.trim() : "";
       const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";

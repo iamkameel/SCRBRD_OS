@@ -25,7 +25,7 @@ import { confirmFollow, dismissFollow } from "../lib/follow.js";
  *   followed  useFollowed()'s answer
  *   lead      drawn as the screen's first block (a followed school is live,
  *             or a link's question waits)
- *   onAskView Q10 (db/163): "Ask the school for its signed-in view" on each
+ *   onAskView Q10 (db/168): "Ask the school for its signed-in view" on each
  *             school's row, which sends the spectator request the join form
  *             used to (the no-school home's; never a pupil's basic view,
  *             which asks for nothing). Omitted, no such button.

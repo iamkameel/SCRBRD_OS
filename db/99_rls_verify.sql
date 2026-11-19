@@ -14667,12 +14667,12 @@ CREATE OR REPLACE FUNCTION _v166_duty(p_match uuid, p_person uuid) RETURNS uuid 
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/166 (section 140) ─────────────────────────────────────────────
 
--- ┌── db/163 (section 141): the pupil's claim and the basic view ─────────
+-- ┌── db/168 (section 141): the pupil's claim and the basic view ─────────
 -- Helpers, as the owner: each case below seeds its own people. Every name
 -- and address is invented.
 
 -- A first Google sign-in, as the exchange makes one (no session): the account's id.
-CREATE OR REPLACE FUNCTION _v163_account(p_tag text) RETURNS uuid AS $$
+CREATE OR REPLACE FUNCTION _v168_account(p_tag text) RETURNS uuid AS $$
 DECLARE u uuid; was text := current_setting('app.user_id', true);
 BEGIN
   PERFORM set_config('app.user_id', '', true);
@@ -14681,7 +14681,7 @@ BEGIN
   RETURN u;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The exchange's answer for that Google account now.
-CREATE OR REPLACE FUNCTION _v163_sign_in(p_tag text) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_sign_in(p_tag text) RETURNS text AS $$
 DECLARE v text; was text := current_setting('app.user_id', true);
 BEGIN
   PERFORM set_config('app.user_id', '', true);
@@ -14690,7 +14690,7 @@ BEGIN
   RETURN v;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A boy on a school's roster, p_age years old (NULL: no date of birth): his id.
-CREATE OR REPLACE FUNCTION _v163_boy(p_school uuid, p_tag text, p_age int) RETURNS uuid AS $$
+CREATE OR REPLACE FUNCTION _v168_boy(p_school uuid, p_tag text, p_age int) RETURNS uuid AS $$
   INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
   VALUES (p_school, 'U16A', 'Rostername ' || initcap(p_tag), 'Onesixtythree', 163, 'batter',
           CASE WHEN p_age IS NOT NULL THEN (sa_today() - make_interval(years => p_age))::date - 40 END)
@@ -14698,10 +14698,10 @@ CREATE OR REPLACE FUNCTION _v163_boy(p_school uuid, p_tag text, p_age int) RETUR
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A Hilton boy who already has his own account: through his roster link alone
 -- (p_how 'roster'), or through a live, verified self link alone ('self'). His id.
-CREATE OR REPLACE FUNCTION _v163_boy_with_account(p_tag text, p_how text) RETURNS uuid AS $$
+CREATE OR REPLACE FUNCTION _v168_boy_with_account(p_tag text, p_how text) RETURNS uuid AS $$
 DECLARE b uuid; u uuid; a uuid;
 BEGIN
-  b := _v163_boy('11111111-1111-1111-1111-111111111111', p_tag, 15);
+  b := _v168_boy('11111111-1111-1111-1111-111111111111', p_tag, 15);
   INSERT INTO app_user (school_id, email, name, role, player_id)
   VALUES ('11111111-1111-1111-1111-111111111111', 'v163.' || p_tag || '.own@example.invalid', 'V163 Own', 'player',
           CASE WHEN p_how = 'roster' THEN b END) RETURNING id INTO u;
@@ -14715,26 +14715,26 @@ BEGIN
   RETURN b;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A row of the access log naming a person, as the owner: the record that keeps his row.
-CREATE OR REPLACE FUNCTION _v163_logged(p_person uuid) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION _v168_logged(p_person uuid) RETURNS void AS $$
   INSERT INTO access_log (school_id, person_id, resource, record_ids, record_count)
   VALUES ('11111111-1111-1111-1111-111111111111', p_person, 'verify.163', '{}', 0)
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A person's claim, past row security: "state|school|player|known_how|known_by|typed_name|typed_year".
-CREATE OR REPLACE FUNCTION _v163_claim(p_user uuid) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_claim(p_user uuid) RETURNS text AS $$
   SELECT c.state || '|' || c.school_id || '|' || coalesce(c.player_id::text, '-') || '|' || coalesce(c.known_how, '-') || '|'
          || coalesce(c.known_by::text, '-') || '|' || c.typed_name || '|' || coalesce(c.typed_year, '-')
     FROM pupil_claim c WHERE c.user_id = p_user
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-CREATE OR REPLACE FUNCTION _v163_claim_id(p_user uuid) RETURNS uuid AS $$
+CREATE OR REPLACE FUNCTION _v168_claim_id(p_user uuid) RETURNS uuid AS $$
   SELECT c.id FROM pupil_claim c WHERE c.user_id = p_user
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- His last claim moved p_days into the past (Q9's clock), as the owner.
-CREATE OR REPLACE FUNCTION _v163_age(p_user uuid, p_days int) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION _v168_age(p_user uuid, p_days int) RETURNS void AS $$
   UPDATE pupil_claim SET last_claim_at = now() - make_interval(days => p_days), first_claim_at = now() - make_interval(days => p_days)
    WHERE user_id = p_user
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- What is left of an account, past row security: "row|active|identities|follows|requests|claim|name".
-CREATE OR REPLACE FUNCTION _v163_left(p_user uuid) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_left(p_user uuid) RETURNS text AS $$
   SELECT coalesce((SELECT 'row|' || u.active || '|' || u.name FROM app_user u WHERE u.id = p_user), 'gone')
          || '|' || (SELECT count(*) FROM auth_identity x WHERE x.user_id = p_user)
          || '|' || (SELECT count(*) FROM followed_school f WHERE f.person_id = p_user)
@@ -14742,36 +14742,36 @@ CREATE OR REPLACE FUNCTION _v163_left(p_user uuid) RETURNS text AS $$
          || '|' || (SELECT count(*) FROM pupil_claim c WHERE c.user_id = p_user)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A request's state, past row security.
-CREATE OR REPLACE FUNCTION _v163_request_state(p_request uuid) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_request_state(p_request uuid) RETURNS text AS $$
   SELECT q.state FROM role_request q WHERE q.id = p_request
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- db/57's pupil test (person_is_pupil() is owner-only).
-CREATE OR REPLACE FUNCTION _v163_is_pupil(p_person uuid) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION _v168_is_pupil(p_person uuid) RETURNS boolean AS $$
   SELECT person_is_pupil(p_person)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The owner's sweep (owner-only).
-CREATE OR REPLACE FUNCTION _v163_purge() RETURNS integer AS $$
+CREATE OR REPLACE FUNCTION _v168_purge() RETURNS integer AS $$
   SELECT pupil_claim_purge()
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A staff register row for an address, uploaded by Hilton's registrar, as the owner.
-CREATE OR REPLACE FUNCTION _v163_register(p_email text) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION _v168_register(p_email text) RETURNS void AS $$
   INSERT INTO school_register (school_id, email, name, role, team_code, valid_until, uploaded_by, upload_id)
   VALUES ('11111111-1111-1111-1111-111111111111', p_email, 'V163 Listed', 'scorer', NULL, sa_today() + 30,
           '88888888-0000-0000-0000-00000000000c', gen_random_uuid())
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Hilton's notices of a title, past row security: "count|any named|any not a DSO's no-name safeguarding notice".
-CREATE OR REPLACE FUNCTION _v163_notices(p_title text) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_notices(p_title text) RETURNS text AS $$
   SELECT count(*) || '|' || count(*) FILTER (WHERE n.recipient_id IS NOT NULL OR n.subject_person_id IS NOT NULL OR n.subject_id IS NOT NULL)
          || '|' || count(*) FILTER (WHERE n.kind <> 'safeguarding' OR n.required_capability <> 'safeguarding.concern.read' OR n.is_public)
     FROM notification n WHERE n.school_id = '11111111-1111-1111-1111-111111111111' AND n.title = p_title
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Their bodies, each once.
-CREATE OR REPLACE FUNCTION _v163_notice_bodies(p_title text) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_notice_bodies(p_title text) RETURNS text AS $$
   SELECT string_agg(DISTINCT n.body, ' ¶ ')
     FROM notification n WHERE n.school_id = '11111111-1111-1111-1111-111111111111' AND n.title = p_title
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A private, non-system notice to a person, written by the owner: 'written' or the refusal.
-CREATE OR REPLACE FUNCTION _v163_notify(p_person uuid) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_notify(p_person uuid) RETURNS text AS $$
 BEGIN
   INSERT INTO notification (school_id, scope_level, kind, urgency, title, body, required_capability, is_public, recipient_id)
   VALUES ('11111111-1111-1111-1111-111111111111', 'school', 'availability', 'medium', 'Verify 163', 'x', 'news.read', false, p_person);
@@ -14781,7 +14781,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- Every place in public a value is stored, past row security: each "table.column" where a
 -- date, timestamp or timestamptz column holds p_date, or a text, json or array column's
 -- text holds one of p_texts. For "the typed date of birth is in no table and no log".
-CREATE OR REPLACE FUNCTION _v163_find(p_date date, p_texts text[]) RETURNS text[] AS $$
+CREATE OR REPLACE FUNCTION _v168_find(p_date date, p_texts text[]) RETURNS text[] AS $$
 DECLARE r record; hit boolean; out_ text[] := '{}'; t text;
 BEGIN
   FOR r IN SELECT c.oid::regclass AS tbl, a.attname AS col, a.atttypid::regtype::text AS typ
@@ -14805,11 +14805,11 @@ BEGIN
   RETURN out_;
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A player's date of birth set by the owner: the scan's own control.
-CREATE OR REPLACE FUNCTION _v163_set_born(p_player uuid, p_born date) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION _v168_set_born(p_player uuid, p_born date) RETURNS void AS $$
   UPDATE player SET born = p_born WHERE id = p_player
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A function's grants, read from its ACL, the owner left out ("" for none, NULL when it does not exist).
-CREATE OR REPLACE FUNCTION _v163_acl(p_fn text) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_acl(p_fn text) RETURNS text AS $$
   SELECT CASE WHEN to_regprocedure(p_fn) IS NULL THEN NULL ELSE coalesce((
     SELECT string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',' ORDER BY x.grantee)
       FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
@@ -14817,7 +14817,7 @@ CREATE OR REPLACE FUNCTION _v163_acl(p_fn text) RETURNS text AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- A support hour at Hilton as its office, as support_access_begin() writes one: the actor's id.
-CREATE OR REPLACE FUNCTION _v163_support(p_tag text) RETURNS uuid AS $$
+CREATE OR REPLACE FUNCTION _v168_support(p_tag text) RETURNS uuid AS $$
 DECLARE u uuid; a uuid;
 BEGIN
   INSERT INTO app_user (school_id, email, name, role) VALUES (NULL, 'v163.' || p_tag || '.support@example.invalid', 'V163 Support', 'platformadmin')
@@ -14830,7 +14830,7 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The remover itself, called as the owner: whether it would remove the account (inside a
 -- savepoint, rolled back either way, so the case can go on).
-CREATE OR REPLACE FUNCTION _v163_would_remove(p_user uuid) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION _v168_would_remove(p_user uuid) RETURNS boolean AS $$
 DECLARE v boolean;
 BEGIN
   BEGIN
@@ -14842,29 +14842,29 @@ BEGIN
   RETURN v;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A roster row deleted, as the owner (a correction, an erasure): 'deleted' or the refusal.
-CREATE OR REPLACE FUNCTION _v163_delete_boy(p_player uuid) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_delete_boy(p_player uuid) RETURNS text AS $$
 BEGIN
   DELETE FROM player WHERE id = p_player;
   RETURN 'deleted';
 EXCEPTION WHEN OTHERS THEN RETURN SQLERRM;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The audit log's label for a person (db/79), and its pupil test.
-CREATE OR REPLACE FUNCTION _v163_audit(p_person uuid) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_audit(p_person uuid) RETURNS text AS $$
   SELECT audit_names_pupil(p_person) || '|' || coalesce(audit_person_label(p_person), '-')
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A function's source (owner-only to read in general), for the shape of a lock.
-CREATE OR REPLACE FUNCTION _v163_src(p_fn text) RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_src(p_fn text) RETURNS text AS $$
   SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure(p_fn)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- His claim's decision moved, as the owner: decided p_days ago.
-CREATE OR REPLACE FUNCTION _v163_decided(p_user uuid, p_days int) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION _v168_decided(p_user uuid, p_days int) RETURNS void AS $$
   UPDATE pupil_claim SET decided_at = now() - make_interval(days => p_days) WHERE user_id = p_user
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- The §60 sweep (db/99 §60 (nothing)), as the caller: every table and view the
 -- application may read, but its own app_user row and the policy catalogue
 -- (which signed-out sessions read too): "rows|detail".
-CREATE OR REPLACE FUNCTION _v163_sweep() RETURNS text AS $$
+CREATE OR REPLACE FUNCTION _v168_sweep() RETURNS text AS $$
 DECLARE t record; k bigint := 0; k2 bigint; detail text := '';
 BEGIN
   FOR t IN SELECT c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
@@ -14881,7 +14881,7 @@ END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- One case of §141, run as the caller (scrbrd_app, under each person's
 -- session in turn). Invoker, so every read meets row security as the API
 -- would. Each case seeds its own people and raises on its first failure.
-CREATE OR REPLACE FUNCTION _v163_case(p_case text) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION _v168_case(p_case text) RETURNS void AS $$
 DECLARE
   HIL    uuid := '11111111-1111-1111-1111-111111111111';
   WES    uuid := '22222222-2222-2222-2222-222222222222';
@@ -14904,32 +14904,32 @@ BEGIN
     -- (nothing) The §60 sweep, run again for each new state: an account with the
     -- office (it sent its claim), recognised and waiting, and declined reads ZERO rows
     -- from every table and view the application may read, but its own app_user row.
-    KID := _v163_account('nothing'); BOY := _v163_boy(HIL, 'nothing', 15);
+    KID := _v168_account('nothing'); BOY := _v168_boy(HIL, 'nothing', 15);
     PERFORM _as(KID);
     SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_send(HIL, 'Sipho Testcase', 'Grade 9') x;
     PERFORM _assert(ok_, format('§141 (nothing): the claim was not sent (%s)', why));
-    v := _v163_sweep();
+    v := _v168_sweep();
     PERFORM _assert(v = '0|', format('§141 (nothing): with the office, it read %s', left(v, 600)));
     PERFORM _assert(NOT app_enrolled(), '§141 (nothing): a claim counts as enrolled');
     SELECT count(*) INTO n FROM app_user;
     PERFORM _assert(n = 1 AND (SELECT id FROM app_user) = KID, format('§141 (nothing): it reads %s app_user rows', n));
     PERFORM _as(REG);
-    SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_recognise(_v163_claim_id(KID), BOY) x;
+    SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_recognise(_v168_claim_id(KID), BOY) x;
     PERFORM _assert(ok_, format('§141 (nothing): the office could not recognise him (%s)', why));
     PERFORM _as(KID);
-    v := _v163_sweep();
+    v := _v168_sweep();
     PERFORM _assert(v = '0|', format('§141 (nothing): recognised and waiting, it read %s', left(v, 600)));
     PERFORM _assert(NOT app_enrolled(), '§141 (nothing): recognised counts as enrolled');
     SELECT count(*) INTO n FROM player;
     PERFORM _assert(n = 0, format('§141 (nothing): recognised, it reads %s players (his own roster row among them?)', n));
     PERFORM _as(REG);
-    PERFORM pupil_claim_decline(_v163_claim_id(KID));
+    PERFORM pupil_claim_decline(_v168_claim_id(KID));
     PERFORM _as(KID);
-    v := _v163_sweep();
+    v := _v168_sweep();
     PERFORM _assert(v = '0|', format('§141 (nothing): declined, it read %s', left(v, 600)));
     -- The control: the same sweep reads rows as the office.
     PERFORM _as(REG);
-    PERFORM _assert(split_part(_v163_sweep(), '|', 1)::bigint > 0, '§141 (nothing): the control read nothing as the office');
+    PERFORM _assert(split_part(_v168_sweep(), '|', 1)::bigint > 0, '§141 (nothing): the control read nothing as the office');
     -- No privilege at all on the claim table, for anybody through the application.
     PERFORM _as(KID);
     BEGIN
@@ -14942,7 +14942,7 @@ BEGIN
     -- (own) What the basic view reads of its own: its state, exactly, and never the
     -- roster's name for him, his team, his player id or a birthday; the safeguarding
     -- card only once recognised (Q8), and only his school's.
-    KID := _v163_account('own'); BOY := _v163_boy(HIL, 'own', 15);
+    KID := _v168_account('own'); BOY := _v168_boy(HIL, 'own', 15);
     PERFORM _as(KID);
     SELECT count(*) INTO n FROM my_pupil_state();
     PERFORM _assert(n = 0, format('§141 (own): before any claim it has %s states', n));
@@ -14959,7 +14959,7 @@ BEGIN
     SELECT count(*) INTO n FROM dso_contacts(NULL);
     PERFORM _assert(n = 0, format('§141 (own): not yet recognised, it reads %s DSO rows', n));
     PERFORM _as(REG);
-    PERFORM pupil_claim_recognise(_v163_claim_id(KID), BOY);
+    PERFORM pupil_claim_recognise(_v168_claim_id(KID), BOY);
     PERFORM _as(KID);
     SELECT s.state || '|' || s.safeguarding INTO v FROM my_pupil_state() s;
     PERFORM _assert(v = 'recognised|true', format('§141 (own): recognised, its state reads %s', v));
@@ -14973,14 +14973,14 @@ BEGIN
     SELECT count(*) INTO n FROM dso_contacts(WES);
     PERFORM _assert(n = 0, format('§141 (own): it reads %s of Westville''s DSO rows', n));
     -- A Westville claim, still with Westville's office, sees no card at either school.
-    KID2 := _v163_account('own2');
+    KID2 := _v168_account('own2');
     PERFORM _as(KID2);
     PERFORM pupil_claim_send(WES, 'Lungi Testcase', NULL);
     SELECT count(*) INTO n FROM dso_contacts(NULL);
     PERFORM _assert(n = 0, format('§141 (own): a claim with Westville''s office reads %s DSO rows', n));
     -- A declined claim loses the card again.
     PERFORM _as(REG);
-    PERFORM pupil_claim_decline(_v163_claim_id(KID));
+    PERFORM pupil_claim_decline(_v168_claim_id(KID));
     PERFORM _as(KID);
     SELECT count(*) INTO n FROM dso_contacts(NULL);
     PERFORM _assert(n = 0, format('§141 (own): declined, it still reads %s DSO rows', n));
@@ -14990,14 +14990,14 @@ BEGIN
   ELSIF p_case = 'raise' THEN
     -- (raise) Q8: recognised, he raises a concern at his school; not at another; not
     -- while his claim is only with the office; not once declined.
-    KID := _v163_account('raise'); BOY := _v163_boy(HIL, 'raise', 14);
+    KID := _v168_account('raise'); BOY := _v168_boy(HIL, 'raise', 14);
     PERFORM _as(KID);
     PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
     SELECT x.reason INTO why FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
       'Somebody at nets keeps shouting at me and pushing me.', 'victim') x;
     PERFORM _assert(why = 'not_your_school', format('§141 (raise): with the office only, he raised (%s)', coalesce(why, 'accepted')));
     PERFORM _as(REG);
-    PERFORM pupil_claim_recognise(_v163_claim_id(KID), BOY);
+    PERFORM pupil_claim_recognise(_v168_claim_id(KID), BOY);
     PERFORM _as(KID);
     SELECT x.ok, x.reason INTO ok_, why FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
       'Somebody at nets keeps shouting at me and pushing me.', 'victim') x;
@@ -15012,7 +15012,7 @@ BEGIN
       'Somebody at nets keeps shouting at him and pushing him.', 'witness', p_subject_player => BOY) x;
     PERFORM _assert(why = 'child_not_visible', format('§141 (raise): he named a child (%s)', coalesce(why, 'accepted')));
     PERFORM _as(REG);
-    PERFORM pupil_claim_decline(_v163_claim_id(KID));
+    PERFORM pupil_claim_decline(_v168_claim_id(KID));
     PERFORM _as(KID);
     SELECT x.reason INTO why FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
       'Somebody at nets keeps shouting at me and pushing me.', 'victim') x;
@@ -15023,11 +15023,11 @@ BEGIN
     -- SCRBRD to add a school, no staff register grant; what it asked before is
     -- withdrawn. Following a school is the front door's and stays. The office
     -- enrolling his account (today's path) is not refused, and opens it.
-    KID := _v163_account('ask'); BOY := _v163_boy(HIL, 'ask', 15);
+    KID := _v168_account('ask'); BOY := _v168_boy(HIL, 'ask', 15);
     PERFORM _as(KID);
     INSERT INTO role_request (person_id, role, school_id) VALUES (KID, 'spectator', HIL) RETURNING id INTO q;
     PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    PERFORM _assert(_v163_request_state(q) = 'withdrawn', format('§141 (ask): his earlier request is %s', _v163_request_state(q)));
+    PERFORM _assert(_v168_request_state(q) = 'withdrawn', format('§141 (ask): his earlier request is %s', _v168_request_state(q)));
     BEGIN
       INSERT INTO role_request (person_id, role, school_id) VALUES (KID, 'spectator', HIL);
       PERFORM _assert(false, '§141 (ask): it asked for a role');
@@ -15043,7 +15043,7 @@ BEGIN
       PERFORM _assert(v = 'pupil_claim_waiting', format('§141 (ask): the school note was refused as %s', v));
     END;
     -- The staff register, with a row for his very address: no grant.
-    PERFORM _v163_register('v163.ask@example.invalid');
+    PERFORM _v168_register('v163.ask@example.invalid');
     BEGIN
       PERFORM register_claim(HIL);
       PERFORM _assert(false, '§141 (ask): the staff register took his claim');
@@ -15056,7 +15056,7 @@ BEGIN
     PERFORM _assert(ok_, '§141 (ask): he cannot follow his school''s public matches');
     -- Recognised, the same.
     PERFORM _as(REG);
-    PERFORM pupil_claim_recognise(_v163_claim_id(KID), BOY);
+    PERFORM pupil_claim_recognise(_v168_claim_id(KID), BOY);
     PERFORM _as(KID);
     BEGIN
       INSERT INTO role_request (person_id, role, school_id) VALUES (KID, 'player', HIL);
@@ -15074,54 +15074,54 @@ BEGIN
 
   ELSIF p_case = 'pupil' THEN
     -- (pupil) person_is_pupil()'s third case: true from the claim on, in every state.
-    KID := _v163_account('pupil'); BOY := _v163_boy(HIL, 'pupil', 15);
-    PERFORM _assert(NOT _v163_is_pupil(KID), '§141 (pupil): a new account is a pupil before it says anything');
+    KID := _v168_account('pupil'); BOY := _v168_boy(HIL, 'pupil', 15);
+    PERFORM _assert(NOT _v168_is_pupil(KID), '§141 (pupil): a new account is a pupil before it says anything');
     PERFORM _as(KID);
     PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    PERFORM _assert(_v163_is_pupil(KID), '§141 (pupil): with the office, he is not a pupil');
+    PERFORM _assert(_v168_is_pupil(KID), '§141 (pupil): with the office, he is not a pupil');
     PERFORM _as(REG);
-    PERFORM pupil_claim_recognise(_v163_claim_id(KID), BOY);
-    PERFORM _assert(_v163_is_pupil(KID), '§141 (pupil): recognised, he is not a pupil');
-    PERFORM pupil_claim_decline(_v163_claim_id(KID));
-    PERFORM _assert(_v163_is_pupil(KID), '§141 (pupil): declined, he is not a pupil');
+    PERFORM pupil_claim_recognise(_v168_claim_id(KID), BOY);
+    PERFORM _assert(_v168_is_pupil(KID), '§141 (pupil): recognised, he is not a pupil');
+    PERFORM pupil_claim_decline(_v168_claim_id(KID));
+    PERFORM _assert(_v168_is_pupil(KID), '§141 (pupil): declined, he is not a pupil');
     -- And so a private notice to him is refused (db/57 SG-9, db/116), as to any pupil;
     -- to an account that has said nothing, written.
-    PERFORM _assert(_v163_notify(KID) = 'refused', '§141 (pupil): a private notice reached him');
-    PERFORM _assert(_v163_notify(_v163_account('pupil2')) = 'written', '§141 (pupil): the control: a private notice to an adult was refused');
+    PERFORM _assert(_v168_notify(KID) = 'refused', '§141 (pupil): a private notice reached him');
+    PERFORM _assert(_v168_notify(_v168_account('pupil2')) = 'written', '§141 (pupil): the control: a private notice to an adult was refused');
 
   ELSIF p_case = 'born' THEN
     -- (born) Q2: the date of birth he types is compared and dropped: after the claim
     -- it is in no column of any table, the access log among them, as a date or as text.
-    KID := _v163_account('born'); BOY := _v163_boy(HIL, 'born', 15);
+    KID := _v168_account('born'); BOY := _v168_boy(HIL, 'born', 15);
     -- A date stored nowhere yet (earlier sections write many), so that finding it after means the claim wrote it.
     FOR n IN 0..60 LOOP
       arr := ARRAY[to_char(BORN, 'YYYY-MM-DD'), to_char(BORN, 'DD/MM/YYYY'), to_char(BORN, 'YYYYMMDD'), to_char(BORN, 'FMDD FMMonth YYYY')];
-      EXIT WHEN _v163_find(BORN, arr) = '{}';
+      EXIT WHEN _v168_find(BORN, arr) = '{}';
       BORN := BORN + 1;
     END LOOP;
-    PERFORM _assert(_v163_find(BORN, arr) = '{}', format('§141 (born): no date near %s is stored nowhere', BORN));
+    PERFORM _assert(_v168_find(BORN, arr) = '{}', format('§141 (born): no date near %s is stored nowhere', BORN));
     PERFORM _as(KID);
     SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_send(HIL, 'Sipho Testcase', 'Grade 9', BORN) x;
     PERFORM _assert(ok_, format('§141 (born): the claim with a date of birth was not sent (%s)', why));
-    PERFORM _assert(_v163_find(BORN, arr) = '{}', format('§141 (born): the typed date of birth is stored in %s', _v163_find(BORN, arr)));
+    PERFORM _assert(_v168_find(BORN, arr) = '{}', format('§141 (born): the typed date of birth is stored in %s', _v168_find(BORN, arr)));
     -- The shape check: no pupil is born tomorrow, or thirty years ago.
     SELECT x.reason INTO why FROM pupil_claim_send(HIL, 'Sipho Testcase', NULL, sa_today() + 1) x;
     PERFORM _assert(why = 'born_invalid', format('§141 (born): tomorrow answered %s', coalesce(why, 'ok')));
     SELECT x.reason INTO why FROM pupil_claim_send(HIL, 'Sipho Testcase', NULL, (sa_today() - interval '30 years')::date) x;
     PERFORM _assert(why = 'born_invalid', format('§141 (born): thirty years ago answered %s', coalesce(why, 'ok')));
     -- The control: the scan finds the date where it IS stored.
-    PERFORM _v163_set_born(BOY, BORN);
-    PERFORM _assert('player.born' = ANY (_v163_find(BORN, arr)), '§141 (born): the control: the scan does not find a stored date');
+    PERFORM _v168_set_born(BOY, BORN);
+    PERFORM _assert('player.born' = ANY (_v168_find(BORN, arr)), '§141 (born): the control: the scan does not find a stored date');
 
   ELSIF p_case = 'office' THEN
     -- (office) Who answers a claim: the office and the principal (guardian.link.manage,
     -- R4) read his address and act; a coach, the director of sport, the DSO, another
     -- school's office, the owner's key, a platform administrator and he himself list
     -- nothing and act on nothing, and an id that is no claim answers the same.
-    KID := _v163_account('office'); BOY := _v163_boy(HIL, 'office', 15);
+    KID := _v168_account('office'); BOY := _v168_boy(HIL, 'office', 15);
     PERFORM _as(KID);
     PERFORM pupil_claim_send(HIL, 'Sipho Testcase', 'Grade 9');
-    c := _v163_claim_id(KID);
+    c := _v168_claim_id(KID);
     FOREACH q IN ARRAY ARRAY[REG, PRIN] LOOP
       PERFORM _as(q);
       SELECT x.address || '|' || x.typed_name || '|' || x.state || '|' || x.keep_until INTO v FROM pupil_claims(HIL) x WHERE x.id = c;
@@ -15138,15 +15138,15 @@ BEGIN
       PERFORM _assert(why = 'not_permitted', format('§141 (office): %s declining answered %s', q, coalesce(why, 'ok')));
       PERFORM _assert(pupil_claim_clear(HIL) = 0, format('§141 (office): %s cleared Hilton''s claims', q));
     END LOOP;
-    PERFORM _assert(_v163_claim(KID) LIKE 'with_office|%', format('§141 (office): the claim moved: %s', _v163_claim(KID)));
+    PERFORM _assert(_v168_claim(KID) LIKE 'with_office|%', format('§141 (office): the claim moved: %s', _v168_claim(KID)));
     PERFORM _as(REG);
     SELECT x.reason INTO why FROM pupil_claim_recognise(gen_random_uuid(), BOY) x;
     PERFORM _assert(why = 'not_permitted', format('§141 (office): an id that is no claim answered %s', coalesce(why, 'ok')));
     -- The principal recognises: the record names him, and how.
     PERFORM _as(PRIN);
     SELECT x.ok INTO ok_ FROM pupil_claim_recognise(c, BOY) x;
-    PERFORM _assert(ok_ AND _v163_claim(KID) = format('recognised|%s|%s|office|%s|Sipho Testcase|Grade 9', HIL, BOY, PRIN),
-      format('§141 (office): recognised by the principal, the claim reads %s', _v163_claim(KID)));
+    PERFORM _assert(ok_ AND _v168_claim(KID) = format('recognised|%s|%s|office|%s|Sipho Testcase|Grade 9', HIL, BOY, PRIN),
+      format('§141 (office): recognised by the principal, the claim reads %s', _v168_claim(KID)));
     SELECT x.player_name || '|' || x.known_by_name INTO v FROM pupil_claims(HIL) x WHERE x.id = c;
     PERFORM _assert(v LIKE 'Rostername Office|%', format('§141 (office): the office reads the recognised claim as %s', v));
 
@@ -15155,26 +15155,26 @@ BEGIN
     -- own and nobody else recognised as him; under 18 (player.born is required on
     -- every new roster row, db/08's player_born_required).
     -- Recognising opens nothing and moves nothing on the account.
-    KID := _v163_account('recognise'); KID2 := _v163_account('recognise2');
-    BOY := _v163_boy(HIL, 'recognise', 15); BOY2 := _v163_boy(WES, 'recognise', 15);
+    KID := _v168_account('recognise'); KID2 := _v168_account('recognise2');
+    BOY := _v168_boy(HIL, 'recognise', 15); BOY2 := _v168_boy(WES, 'recognise', 15);
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
     PERFORM _as(KID2); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    c := _v163_claim_id(KID); c2 := _v163_claim_id(KID2);
+    c := _v168_claim_id(KID); c2 := _v168_claim_id(KID2);
     PERFORM _as(REG);
     SELECT x.reason INTO why FROM pupil_claim_recognise(c, BOY2) x;
     PERFORM _assert(why = 'player_not_at_that_school', format('§141 (recognise): a Westville boy answered %s', coalesce(why, 'ok')));
     SELECT x.reason INTO why FROM pupil_claim_recognise(c, (SELECT u.player_id FROM app_user u WHERE u.id = PILLAY)) x;
     PERFORM _assert(why = 'player_has_an_account', format('§141 (recognise): a boy with his own account answered %s', coalesce(why, 'ok')));
-    SELECT x.reason INTO why FROM pupil_claim_recognise(c, _v163_boy_with_account('recroster', 'roster')) x;
+    SELECT x.reason INTO why FROM pupil_claim_recognise(c, _v168_boy_with_account('recroster', 'roster')) x;
     PERFORM _assert(why = 'player_has_an_account', format('§141 (recognise): a boy whose account is his roster link answered %s', coalesce(why, 'ok')));
-    SELECT x.reason INTO why FROM pupil_claim_recognise(c, _v163_boy_with_account('recself', 'self')) x;
+    SELECT x.reason INTO why FROM pupil_claim_recognise(c, _v168_boy_with_account('recself', 'self')) x;
     PERFORM _assert(why = 'player_has_an_account', format('§141 (recognise): a boy whose account is his own self link answered %s', coalesce(why, 'ok')));
-    SELECT x.reason INTO why FROM pupil_claim_recognise(c, _v163_boy(HIL, 'adult', 19)) x;
+    SELECT x.reason INTO why FROM pupil_claim_recognise(c, _v168_boy(HIL, 'adult', 19)) x;
     PERFORM _assert(why = 'player_is_an_adult', format('§141 (recognise): a boy of nineteen answered %s', coalesce(why, 'ok')));
     -- A fresh claim, on the 15-year-old.
-    KID := _v163_account('recognise3');
+    KID := _v168_account('recognise3');
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    c := _v163_claim_id(KID);
+    c := _v168_claim_id(KID);
     PERFORM _as(REG);
     SELECT x.ok INTO ok_ FROM pupil_claim_recognise(c, BOY) x;
     PERFORM _assert(ok_, '§141 (recognise): the fifteen-year-old could not be recognised');
@@ -15182,7 +15182,7 @@ BEGIN
     PERFORM _assert(why = 'player_has_an_account', format('§141 (recognise): a second account for the same boy answered %s', coalesce(why, 'ok')));
     SELECT x.reason INTO why FROM pupil_claim_recognise(c, BOY) x;
     PERFORM _assert(why = 'already_answered', format('§141 (recognise): recognising twice answered %s', coalesce(why, 'ok')));
-    PERFORM _assert(_v163_left(KID) LIKE 'row|true|%' AND NOT EXISTS (SELECT 1 FROM pupil_claims(HIL) x WHERE x.id = c AND x.state <> 'recognised'),
+    PERFORM _assert(_v168_left(KID) LIKE 'row|true|%' AND NOT EXISTS (SELECT 1 FROM pupil_claims(HIL) x WHERE x.id = c AND x.state <> 'recognised'),
       '§141 (recognise): recognising moved the account');
     PERFORM _as(KID);
     PERFORM _assert(NOT app_enrolled(), '§141 (recognise): recognised, he is enrolled');
@@ -15197,16 +15197,16 @@ BEGIN
     -- (decline) Q11: a declined claim tells Hilton's DSOs, in db/93's no-name notice:
     -- not the account, not what he typed, not his address; the DSO reads it, the
     -- office and he do not. Once declined, he cannot send again.
-    KID := _v163_account('decline');
+    KID := _v168_account('decline');
     PERFORM _as(KID);
     PERFORM pupil_claim_send(HIL, 'Zebedee Testcase', 'Grade 9');
-    n := split_part(_v163_notices('A pupil claim was declined'), '|', 1)::int;
+    n := split_part(_v168_notices('A pupil claim was declined'), '|', 1)::int;
     PERFORM _as(REG);
-    SELECT x.ok INTO ok_ FROM pupil_claim_decline(_v163_claim_id(KID)) x;
+    SELECT x.ok INTO ok_ FROM pupil_claim_decline(_v168_claim_id(KID)) x;
     PERFORM _assert(ok_, '§141 (decline): the office could not decline');
-    v := _v163_notices('A pupil claim was declined');
+    v := _v168_notices('A pupil claim was declined');
     PERFORM _assert(v = format('%s|0|0', n + 1), format('§141 (decline): the DSOs'' notices read %s (there were %s)', v, n));
-    v := _v163_notice_bodies('A pupil claim was declined');
+    v := _v168_notice_bodies('A pupil claim was declined');
     PERFORM _assert(v = format('A request from an account saying it belongs to a pupil at your school was declined by the office on %s. The office can tell you who asked. If anything about it concerns you, raise a concern.',
                                to_char(sa_today(), 'FMDD FMMonth YYYY')),
       format('§141 (decline): the DSOs'' notice is %s', v));
@@ -15221,9 +15221,9 @@ BEGIN
       PERFORM _assert(n = 0, format('§141 (decline): %s reads %s of the DSOs'' notices', q, n));
     END LOOP;
     PERFORM _as(REG);
-    SELECT x.reason INTO why FROM pupil_claim_decline(_v163_claim_id(KID)) x;
+    SELECT x.reason INTO why FROM pupil_claim_decline(_v168_claim_id(KID)) x;
     PERFORM _assert(why = 'already_answered', format('§141 (decline): declining twice answered %s', coalesce(why, 'ok')));
-    PERFORM _assert(split_part(_v163_notices('A pupil claim was declined'), '|', 1)::int = m, '§141 (decline): a second notice');
+    PERFORM _assert(split_part(_v168_notices('A pupil claim was declined'), '|', 1)::int = m, '§141 (decline): a second notice');
     PERFORM _as(KID);
     SELECT x.reason INTO why FROM pupil_claim_send(HIL, 'Zebedee Testcase', NULL) x;
     PERFORM _assert(why = 'already_answered', format('§141 (decline): sending again answered %s', coalesce(why, 'ok')));
@@ -15234,105 +15234,105 @@ BEGIN
     -- (keep) Q9: kept 30 days from his last claim, then removed by a person, with his
     -- follow list and sign-ins; never an opened account; the office clears its own
     -- school's only; the owner's sweep reaches every school; he may go at once.
-    KID := _v163_account('keep'); KID2 := _v163_account('keep2'); ADULT := _v163_account('keep3');
-    BOY := _v163_boy(HIL, 'keep', 15);
+    KID := _v168_account('keep'); KID2 := _v168_account('keep2'); ADULT := _v168_account('keep3');
+    BOY := _v168_boy(HIL, 'keep', 15);
     PERFORM _as(KID);
     PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
     PERFORM follow_school_by_id(HIL);
     SELECT s.keep_until INTO v FROM my_pupil_state() s;
     PERFORM _assert(v = (sa_today() + 30)::text, format('§141 (keep): kept until %s', v));
-    PERFORM _v163_age(KID, 30);
+    PERFORM _v168_age(KID, 30);
     PERFORM _as(REG);
     PERFORM _assert(pupil_claim_clear(HIL) = 0, '§141 (keep): removed on its thirtieth day');
-    PERFORM _v163_age(KID, 31);
+    PERFORM _v168_age(KID, 31);
     PERFORM _as(WESOFF);
     PERFORM _assert(pupil_claim_clear(HIL) = 0, '§141 (keep): Westville''s office cleared Hilton''s');
     PERFORM _as(REG);
     n := pupil_claim_clear(HIL);
     PERFORM _assert(n = 1, format('§141 (keep): past its 30 days, the office cleared %s', n));
-    v := _v163_left(KID);
+    v := _v168_left(KID);
     PERFORM _assert(v = 'gone|0|0|0|0', format('§141 (keep): what is left of him is %s', v));
-    PERFORM _assert(_v163_sign_in('keep') = 'new_account', '§141 (keep): his Google account still signs in to the removed account');
+    PERFORM _assert(_v168_sign_in('keep') = 'new_account', '§141 (keep): his Google account still signs in to the removed account');
     -- An account the office opened is never removed.
     PERFORM _as(KID2);
     PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
     PERFORM _as(REG);
     PERFORM enrol_person('v163.keep2@example.invalid', 'V163 Keep2', 'player', HIL, NULL, BOY, 'Signed form on file');
-    PERFORM _v163_age(KID2, 60);
-    PERFORM _assert(pupil_claim_clear(HIL) = 0 AND _v163_purge() = 0, '§141 (keep): an opened account was removed');
-    PERFORM _assert(_v163_left(KID2) LIKE 'row|true|%', format('§141 (keep): the opened account is %s', _v163_left(KID2)));
+    PERFORM _v168_age(KID2, 60);
+    PERFORM _assert(pupil_claim_clear(HIL) = 0 AND _v168_purge() = 0, '§141 (keep): an opened account was removed');
+    PERFORM _assert(_v168_left(KID2) LIKE 'row|true|%', format('§141 (keep): the opened account is %s', _v168_left(KID2)));
     PERFORM _as(KID2);
     SELECT x.reason INTO why FROM pupil_claim_remove_self() x;
-    PERFORM _assert(why = 'not_a_claim' AND _v163_left(KID2) LIKE 'row|true|%',
-      format('§141 (keep): the opened account removing itself answered %s and left %s', coalesce(why, 'ok'), _v163_left(KID2)));
+    PERFORM _assert(why = 'not_a_claim' AND _v168_left(KID2) LIKE 'row|true|%',
+      format('§141 (keep): the opened account removing itself answered %s and left %s', coalesce(why, 'ok'), _v168_left(KID2)));
     -- The owner's sweep, at Westville, with nobody from the office pressing anything.
     PERFORM _as(ADULT);
     PERFORM pupil_claim_send(WES, 'Lungi Testcase', NULL);
-    PERFORM _v163_age(ADULT, 31);
-    PERFORM _assert(_v163_purge() = 1, '§141 (keep): the owner''s sweep removed nothing');
-    PERFORM _assert(_v163_left(ADULT) = 'gone|0|0|0|0', format('§141 (keep): the swept account is %s', _v163_left(ADULT)));
+    PERFORM _v168_age(ADULT, 31);
+    PERFORM _assert(_v168_purge() = 1, '§141 (keep): the owner''s sweep removed nothing');
+    PERFORM _assert(_v168_left(ADULT) = 'gone|0|0|0|0', format('§141 (keep): the swept account is %s', _v168_left(ADULT)));
     -- His own way out, at once; and nobody else's.
-    KID := _v163_account('keep4');
+    KID := _v168_account('keep4');
     PERFORM _as(KID);
     PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
     PERFORM follow_school_by_id(HIL);
     -- The record names him (an access log row), so his row stays, tombstoned and shut, holding nothing.
-    PERFORM _v163_logged(KID);
+    PERFORM _v168_logged(KID);
     SELECT x.ok INTO ok_ FROM pupil_claim_remove_self() x;
-    PERFORM _assert(ok_ AND _v163_left(KID) = 'row|false|Removed account|0|0|0|0',
-      format('§141 (keep): removing himself left %s', _v163_left(KID)));
-    PERFORM _assert(_v163_sign_in('keep4') = 'new_account', '§141 (keep): his Google account still signs in to the tombstone');
+    PERFORM _assert(ok_ AND _v168_left(KID) = 'row|false|Removed account|0|0|0|0',
+      format('§141 (keep): removing himself left %s', _v168_left(KID)));
+    PERFORM _assert(_v168_sign_in('keep4') = 'new_account', '§141 (keep): his Google account still signs in to the tombstone');
     PERFORM _as(COACH);
     SELECT x.reason INTO why FROM pupil_claim_remove_self() x;
-    PERFORM _assert(why = 'not_a_claim' AND _v163_left(COACH) LIKE 'row|true|%', format('§141 (keep): a coach removing himself answered %s', coalesce(why, 'ok')));
+    PERFORM _assert(why = 'not_a_claim' AND _v168_left(COACH) LIKE 'row|true|%', format('§141 (keep): a coach removing himself answered %s', coalesce(why, 'ok')));
 
   ELSIF p_case = 'held' THEN
     -- (held) B1: a recognised boy who raised a concern is never removed, by the office's
     -- clear, the owner's sweep or his own Remove: the concern's link to the child who
     -- raised it (he may be the child at risk) stays, account and claim and roster row.
     -- The office's list shows no date for it, and says nothing of why.
-    KID := _v163_account('held'); BOY := _v163_boy(HIL, 'held', 14);
+    KID := _v168_account('held'); BOY := _v168_boy(HIL, 'held', 14);
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v163_claim_id(KID), BOY);
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(KID), BOY);
     PERFORM _as(KID);
     SELECT x.ok INTO ok_ FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
       'Somebody at nets keeps shouting at me and pushing me.', 'victim') x;
     PERFORM _assert(ok_, '§141 (held): he could not raise his concern');
     -- Kameel, 18 Nov ("hide"): before his ordinary date, the office sees that date, as for any claim.
     PERFORM _as(REG);
-    SELECT x.keep_until::text INTO v FROM pupil_claims(HIL) x WHERE x.id = _v163_claim_id(KID);
+    SELECT x.keep_until::text INTO v FROM pupil_claims(HIL) x WHERE x.id = _v168_claim_id(KID);
     PERFORM _assert(v = (sa_today() + 30)::text, format('§141 (held): before his date the office''s list reads %s, not his ordinary date', coalesce(v, '(no date)')));
-    PERFORM _v163_age(KID, 45);
-    PERFORM _v163_decided(KID, 45);   -- re-review S4: both dates past, so only B1 keeps him
+    PERFORM _v168_age(KID, 45);
+    PERFORM _v168_decided(KID, 45);   -- re-review S4: both dates past, so only B1 keeps him
     PERFORM _as(REG);
     PERFORM _assert(pupil_claim_clear(HIL) = 0, '§141 (held): the office''s clear removed a concern''s reporter');
     -- The clear's count is the list's: beside him, an ordinary claim past its date; the office's list
     -- shows exactly the claims past their date that the clear then removes (that one, not him).
-    KID2 := _v163_account('held2');
+    KID2 := _v168_account('held2');
     PERFORM _as(KID2); PERFORM pupil_claim_send(HIL, 'Lungi Testcase', NULL);
-    PERFORM _v163_age(KID2, 45);
+    PERFORM _v168_age(KID2, 45);
     PERFORM _as(REG);
     SELECT count(*) INTO n FROM pupil_claims(HIL) x WHERE x.keep_until < sa_today() AND x.state <> 'open';
     m := pupil_claim_clear(HIL);
     PERFORM _assert(n = m AND m >= 1, format('§141 (held): the office''s list shows %s past their date; the clear removed %s', n, m));
     -- After his date his row is gone from the office's list, as a removed claim's is, while his claim stays.
-    SELECT count(*) INTO n FROM pupil_claims(HIL) x WHERE x.id = _v163_claim_id(KID);
-    PERFORM _assert(n = 0 AND _v163_claim_id(KID) IS NOT NULL, format('§141 (held): past his date the office still lists his claim (%s rows)', n));
-    PERFORM _assert(_v163_purge() = 0, '§141 (held): the owner''s sweep removed a concern''s reporter');
-    PERFORM _assert(NOT _v163_would_remove(KID), '§141 (held): the remover itself would remove a concern''s reporter');
+    SELECT count(*) INTO n FROM pupil_claims(HIL) x WHERE x.id = _v168_claim_id(KID);
+    PERFORM _assert(n = 0 AND _v168_claim_id(KID) IS NOT NULL, format('§141 (held): past his date the office still lists his claim (%s rows)', n));
+    PERFORM _assert(_v168_purge() = 0, '§141 (held): the owner''s sweep removed a concern''s reporter');
+    PERFORM _assert(NOT _v168_would_remove(KID), '§141 (held): the remover itself would remove a concern''s reporter');
     PERFORM _as(KID);
     SELECT x.reason INTO why FROM pupil_claim_remove_self() x;
     PERFORM _assert(why = 'kept', format('§141 (held): his own Remove answered %s', coalesce(why, 'ok')));
-    PERFORM _assert(_v163_left(KID) LIKE 'row|true|%|1' AND _v163_claim(KID) LIKE format('recognised|%s|%s|%%', HIL, BOY),
-      format('§141 (held): what is left of him is %s, his claim %s', _v163_left(KID), _v163_claim(KID)));
+    PERFORM _assert(_v168_left(KID) LIKE 'row|true|%|1' AND _v168_claim(KID) LIKE format('recognised|%s|%s|%%', HIL, BOY),
+      format('§141 (held): what is left of him is %s, his claim %s', _v168_left(KID), _v168_claim(KID)));
     SELECT coalesce(s.keep_until::text, '-') INTO v FROM my_pupil_state() s;
     PERFORM _assert(v = '-', format('§141 (held): his own screen dates his removal %s', v));
     -- Re-review S2: his roster row is the concern's tie to him: its delete is refused, in the
     -- words a roster row still referenced elsewhere is refused with, and his claim keeps it.
-    v := _v163_delete_boy(BOY);
+    v := _v168_delete_boy(BOY);
     PERFORM _assert(v = 'update or delete on table "player" violates foreign key constraint "pupil_claim_player_id_fkey" on table "pupil_claim"'
-                    AND _v163_claim(KID) LIKE format('recognised|%s|%s|%%', HIL, BOY),
-      format('§141 (held): deleting his roster row answered %s, and his claim reads %s', v, _v163_claim(KID)));
+                    AND _v168_claim(KID) LIKE format('recognised|%s|%s|%%', HIL, BOY),
+      format('§141 (held): deleting his roster row answered %s, and his claim reads %s', v, _v168_claim(KID)));
     PERFORM _as(KID);
     SELECT count(*) INTO n FROM dso_contacts(HIL);
     PERFORM _assert(n > 0, '§141 (held): kept, he lost his school''s safeguarding card');
@@ -15340,41 +15340,41 @@ BEGIN
   ELSIF p_case = 'declinedclock' THEN
     -- (declinedclock) S1: a declined claim's 30 days run from the decline, so the office
     -- still holds who asked when the DSO reads the decline's notice.
-    KID := _v163_account('declinedclock');
+    KID := _v168_account('declinedclock');
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    PERFORM _v163_age(KID, 29);
-    PERFORM _as(REG); PERFORM pupil_claim_decline(_v163_claim_id(KID));
-    SELECT x.keep_until::text INTO v FROM pupil_claims(HIL) x WHERE x.id = _v163_claim_id(KID);
+    PERFORM _v168_age(KID, 29);
+    PERFORM _as(REG); PERFORM pupil_claim_decline(_v168_claim_id(KID));
+    SELECT x.keep_until::text INTO v FROM pupil_claims(HIL) x WHERE x.id = _v168_claim_id(KID);
     PERFORM _assert(v = (sa_today() + 30)::text, format('§141 (declinedclock): declined today, kept until %s', v));
-    PERFORM _v163_age(KID, 45);
+    PERFORM _v168_age(KID, 45);
     PERFORM _assert(pupil_claim_clear(HIL) = 0, '§141 (declinedclock): removed within 30 days of its decline');
-    PERFORM _v163_decided(KID, 31);
+    PERFORM _v168_decided(KID, 31);
     PERFORM _assert(pupil_claim_clear(HIL) = 1, '§141 (declinedclock): not removed 31 days after its decline');
 
   ELSIF p_case = 'rosterdel' THEN
     -- (rosterdel) S2: a recognised boy's roster row can be deleted; his claim goes back to
     -- the office, unmatched, and may be recognised again against the right row.
-    KID := _v163_account('rosterdel'); BOY := _v163_boy(HIL, 'rosterdel', 15); BOY2 := _v163_boy(HIL, 'rosterdel2', 15);
+    KID := _v168_account('rosterdel'); BOY := _v168_boy(HIL, 'rosterdel', 15); BOY2 := _v168_boy(HIL, 'rosterdel2', 15);
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v163_claim_id(KID), BOY);
-    v := _v163_delete_boy(BOY);
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(KID), BOY);
+    v := _v168_delete_boy(BOY);
     PERFORM _assert(v = 'deleted', format('§141 (rosterdel): his roster row could not be deleted: %s', v));
-    PERFORM _assert(_v163_claim(KID) = format('with_office|%s|-|-|-|Sipho Testcase|-', HIL), format('§141 (rosterdel): his claim reads %s', _v163_claim(KID)));
+    PERFORM _assert(_v168_claim(KID) = format('with_office|%s|-|-|-|Sipho Testcase|-', HIL), format('§141 (rosterdel): his claim reads %s', _v168_claim(KID)));
     PERFORM _as(KID);
     SELECT s.state || '|' || s.safeguarding INTO v FROM my_pupil_state() s;
     PERFORM _assert(v = 'with_office|false', format('§141 (rosterdel): his state reads %s', v));
     PERFORM _as(REG);
-    SELECT x.ok INTO ok_ FROM pupil_claim_recognise(_v163_claim_id(KID), BOY2) x;
+    SELECT x.ok INTO ok_ FROM pupil_claim_recognise(_v168_claim_id(KID), BOY2) x;
     PERFORM _assert(ok_, '§141 (rosterdel): he could not be recognised again against the right row');
 
   ELSIF p_case = 'audit' THEN
     -- (audit) S3: the audit log names a claimant as it names a pupil (an initial and the surname), never
     -- his whole Google name; an adult who said nothing is named whole (the control).
-    KID := _v163_account('audit'); ADULT := _v163_account('auditadult');
+    KID := _v168_account('audit'); ADULT := _v168_account('auditadult');
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    v := _v163_audit(KID);
+    v := _v168_audit(KID);
     PERFORM _assert(v = 'true|V Audit', format('§141 (audit): the log names him %s, not as a pupil is named (V Audit)', v));
-    v := _v163_audit(ADULT);
+    v := _v168_audit(ADULT);
     PERFORM _assert(v = 'false|V163 Auditadult', format('§141 (audit): the control: an adult reads %s', v));
 
   ELSIF p_case = 'race' THEN
@@ -15382,28 +15382,28 @@ BEGIN
     -- two, so the shape is held: the remover locks the account's row before it asks a
     -- single guard; the clear and the sweep take the claim's own advisory lock (the one
     -- re-sending takes) and ask due again after it.
-    v := _v163_src('pupil_claim_remove_account(uuid)');
+    v := _v168_src('pupil_claim_remove_account(uuid)');
     PERFORM _assert(position('FOR UPDATE' IN v) > 0 AND position('FOR UPDATE' IN v) < position('pupil_account_opened(' IN v)
                     AND position('FOR UPDATE' IN v) < position('FROM role_assignment' IN v),
       '§141 (race): the remover does not lock the account before its guards');
     -- Re-review S1: the raise asks "recognised here?" through the locked helper, which takes the
     -- claim's lock before it asks, in a statement of its own.
-    v := _v163_src('safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)');
+    v := _v168_src('safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)');
     PERFORM _assert(position('pupil_recognised_at_locked(v_me, p_school)' IN v) > 0 AND position('pupil_recognised_at(v_me' IN v) = 0,
       '§141 (race): the raise asks "recognised here?" without the claim''s lock');
-    v := _v163_src('pupil_recognised_at_locked(uuid,uuid)');
+    v := _v168_src('pupil_recognised_at_locked(uuid,uuid)');
     PERFORM _assert(position('pg_advisory_xact_lock(hashtextextended(' IN v) > 0
                     AND position('pg_advisory_xact_lock(hashtextextended(' IN v) < position('RETURN pupil_recognised_at(' IN v),
       '§141 (race): the locked helper does not lock before it asks');
     -- Re-review N2: recognise and decline take the claim's lock before the claim's row.
     FOREACH v2 IN ARRAY ARRAY['pupil_claim_recognise(uuid,uuid)', 'pupil_claim_decline(uuid)'] LOOP
-      v := _v163_src(v2);
+      v := _v168_src(v2);
       PERFORM _assert(position('pg_advisory_xact_lock(hashtextextended(' IN v) > 0
                       AND position('pg_advisory_xact_lock(hashtextextended(' IN v) < position('FOR UPDATE' IN v),
         format('§141 (race): %s does not take the claim''s lock first', v2));
     END LOOP;
     FOREACH v2 IN ARRAY ARRAY['pupil_claim_clear(uuid)', 'pupil_claim_purge()'] LOOP
-      v := _v163_src(v2);
+      v := _v168_src(v2);
       PERFORM _assert(position('pg_advisory_xact_lock(hashtextextended(' IN v) > 0
                       AND position('pg_advisory_xact_lock(hashtextextended(' IN v) < position('pupil_claim_due(r.id)' IN v),
         format('§141 (race): %s does not take the claim''s lock and ask due again', v2));
@@ -15413,7 +15413,7 @@ BEGIN
     -- (email) Re-review open point 4: db/118's address rule reads a claimant as a pupil. His
     -- claimed school's office and he himself read his address; a platform administrator, who
     -- reads a no-school account's row, does not; an adult's address is read as before (control).
-    KID := _v163_account('email'); ADULT := _v163_account('emailadult');
+    KID := _v168_account('email'); ADULT := _v168_account('emailadult');
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
     PERFORM _as(KID);
     PERFORM _assert(app_user_email_seen(KID, NULL, 'v163.email@example.invalid') IS NOT NULL, '§141 (email): he cannot read his own address');
@@ -15429,27 +15429,27 @@ BEGIN
   ELSIF p_case = 'resend' THEN
     -- (resend) S5: sending again, still with the office, moves the claim to the school now
     -- named (the old school's office no longer lists it) and restarts its clock.
-    KID := _v163_account('resend');
+    KID := _v168_account('resend');
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    PERFORM _v163_age(KID, 20);
+    PERFORM _v168_age(KID, 20);
     SELECT x.ok INTO ok_ FROM pupil_claim_send(WES, 'Sipho Testcase', 'Grade 10') x;
     PERFORM _assert(ok_, '§141 (resend): sending again was refused');
     PERFORM _as(REG);
-    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pupil_claims(HIL) x WHERE x.id = _v163_claim_id(KID)), '§141 (resend): Hilton''s office still lists it');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pupil_claims(HIL) x WHERE x.id = _v168_claim_id(KID)), '§141 (resend): Hilton''s office still lists it');
     PERFORM _as(WESOFF);
-    SELECT x.state || '|' || x.typed_year || '|' || x.keep_until INTO v FROM pupil_claims(WES) x WHERE x.id = _v163_claim_id(KID);
+    SELECT x.state || '|' || x.typed_year || '|' || x.keep_until INTO v FROM pupil_claims(WES) x WHERE x.id = _v168_claim_id(KID);
     PERFORM _assert(v = format('with_office|Grade 10|%s', sa_today() + 30), format('§141 (resend): Westville''s office reads %s', coalesce(v, '(nothing)')));
 
   ELSIF p_case = 'cuts' THEN
     -- (cuts) S5: a support hour at Hilton as its office, and a pad's credential, reach no
     -- claim: they list nothing, recognise, decline and clear nothing; under a pad the
     -- boy sends nothing and reads no state.
-    KID := _v163_account('cuts'); BOY := _v163_boy(HIL, 'cuts', 15);
+    KID := _v168_account('cuts'); BOY := _v168_boy(HIL, 'cuts', 15);
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    c := _v163_claim_id(KID);
-    PERFORM _v163_age(KID, 31);
+    c := _v168_claim_id(KID);
+    PERFORM _v168_age(KID, 31);
     FOREACH v2 IN ARRAY ARRAY['support', 'pad'] LOOP
-      IF v2 = 'support' THEN PERFORM _as(_v163_support('cuts'));
+      IF v2 = 'support' THEN PERFORM _as(_v168_support('cuts'));
       ELSE PERFORM _as(REG); PERFORM set_config('app.scope', 'pad', true);
       END IF;
       SELECT count(*) INTO n FROM pupil_claims(HIL);
@@ -15467,13 +15467,13 @@ BEGIN
     SELECT count(*) INTO n FROM my_pupil_state();
     PERFORM _assert(n = 0, format('§141 (cuts): under a pad he reads %s states', n));
     PERFORM set_config('app.scope', '', true);
-    PERFORM _assert(_v163_claim(KID) LIKE 'with_office|%', format('§141 (cuts): his claim moved: %s', _v163_claim(KID)));
+    PERFORM _assert(_v168_claim(KID) LIKE 'with_office|%', format('§141 (cuts): his claim moved: %s', _v168_claim(KID)));
 
   ELSIF p_case = 'declinedask' THEN
     -- (declinedask) S5: a declined account still asks for nothing.
-    KID := _v163_account('declinedask');
+    KID := _v168_account('declinedask');
     PERFORM _as(KID); PERFORM pupil_claim_send(HIL, 'Sipho Testcase', NULL);
-    PERFORM _as(REG); PERFORM pupil_claim_decline(_v163_claim_id(KID));
+    PERFORM _as(REG); PERFORM pupil_claim_decline(_v168_claim_id(KID));
     PERFORM _as(KID);
     BEGIN
       INSERT INTO role_request (person_id, role, school_id) VALUES (KID, 'spectator', HIL);
@@ -15488,7 +15488,7 @@ BEGIN
 
   ELSIF p_case = 'follow' THEN
     -- (follow) Q10: following by the school's id is db/160's door, for anybody signed in.
-    KID := _v163_account('follow');
+    KID := _v168_account('follow');
     PERFORM _as(KID);
     SELECT x.ok || '|' || x.school_name INTO v FROM follow_school_by_id(HIL) x;
     PERFORM _assert(v = 'true|Hilton College', format('§141 (follow): following Hilton answered %s', v));
@@ -15505,7 +15505,7 @@ BEGIN
     FOREACH v IN ARRAY ARRAY['pupil_claim_send(uuid,text,text,date)', 'my_pupil_state()', 'pupil_claims(uuid)',
                              'pupil_claim_recognise(uuid,uuid)', 'pupil_claim_decline(uuid)', 'pupil_claim_clear(uuid)',
                              'pupil_claim_remove_self()', 'follow_school_by_id(uuid)'] LOOP
-      PERFORM _assert(_v163_acl(v) = 'scrbrd_app:EXECUTE', format('§141 (grants): %s is granted %s', v, coalesce(_v163_acl(v), '(missing)')));
+      PERFORM _assert(_v168_acl(v) = 'scrbrd_app:EXECUTE', format('§141 (grants): %s is granted %s', v, coalesce(_v168_acl(v), '(missing)')));
     END LOOP;
     FOREACH v IN ARRAY ARRAY['pupil_account_opened(uuid)', 'pupil_claim_waiting(uuid)', 'pupil_recognised_at(uuid,uuid)',
                              'pupil_claim_office(uuid)', 'pupil_claim_keep_until(uuid)', 'pupil_claim_log(text,uuid,uuid[])',
@@ -15513,7 +15513,7 @@ BEGIN
                              'pupil_claim_refuses_asking()', 'person_is_pupil(uuid)',
                              'pupil_claim_held(uuid)', 'pupil_claim_player_gone()', 'audit_names_pupil(uuid)',
                              'pupil_recognised_at_locked(uuid,uuid)', 'pupil_claim_office_until(uuid)'] LOOP
-      PERFORM _assert(_v163_acl(v) = '', format('§141 (grants): %s is granted %s', v, coalesce(_v163_acl(v), '(missing)')));
+      PERFORM _assert(_v168_acl(v) = '', format('§141 (grants): %s is granted %s', v, coalesce(_v168_acl(v), '(missing)')));
     END LOOP;
     v := coalesce(_v157_public_at_start(), '');
     PERFORM _assert(v !~ '(pupil_claim|my_pupil_state|follow_school_by_id)', format('§141 (grants): PUBLIC reaches a claim door: %s', left(v, 600)));
@@ -15522,7 +15522,7 @@ BEGIN
   END IF;
   PERFORM set_config('app.user_id', '', true);
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
--- └── db/163 (section 141) ─────────────────────────────────────────────
+-- └── db/168 (section 141) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -47072,11 +47072,11 @@ $m130$;
       '§140 (body): match_official_shown_while_on is not one RESTRICTIVE SELECT policy asking official_shown(match_id) beside match_official_read');
   END;
   -- └── db/166 (section 140) ──────────────────────────────────────────
-  -- ┌── db/163 (section 141) ─────────────────────────────────────────
-  -- ── 141. "I am a pupil here": the pupil's claim, recognised and waiting, and the basic view's own reads (db/163; SCRBRD-140 honesty model, Migration A) ──
-  -- Each case seeds its own people (_v163_account: a first Google sign-in,
-  -- as the exchange makes one; _v163_boy: a roster row of a given age) and
-  -- runs as scrbrd_app under each person's session (_v163_case, an
+  -- ┌── db/168 (section 141) ─────────────────────────────────────────
+  -- ── 141. "I am a pupil here": the pupil's claim, recognised and waiting, and the basic view's own reads (db/168; SCRBRD-140 honesty model, Migration A) ──
+  -- Each case seeds its own people (_v168_account: a first Google sign-in,
+  -- as the exchange makes one; _v168_boy: a roster row of a given age) and
+  -- runs as scrbrd_app under each person's session (_v168_case, an
   -- invoker). Labels:
   --   (nothing)    §60's sweep run again for each new state: an account
   --                whose claim is with the office, recognised and waiting,
@@ -47146,7 +47146,7 @@ $m130$;
   --   (follow)     Q10: follow_school_by_id() is db/160's door by id
   --   (grants)     the doors are scrbrd_app's alone; everything else nobody's
   --
-  -- Falsified once each, on a database at main 0e177065 with db/163 applied,
+  -- Falsified once each, on a database at main 0e177065 with this file applied (then db/163),
   -- the change made as the owner inside the run, and red at its own assertion
   -- (21 changes, each in a run of its own):
   --   recognising also writes a selfaccess role and its verified self link
@@ -47178,29 +47178,29 @@ $m130$;
   --                                           index (pupil_claim_one_per_player)
   --   the adult test out                       → (recognise) red: nineteen
   --   my_pupil_state() answering the roster's name → (own) red
-  PERFORM _v163_case('nothing');
-  PERFORM _v163_case('own');
-  PERFORM _v163_case('raise');
-  PERFORM _v163_case('ask');
-  PERFORM _v163_case('pupil');
-  PERFORM _v163_case('born');
-  PERFORM _v163_case('office');
-  PERFORM _v163_case('recognise');
-  PERFORM _v163_case('decline');
-  PERFORM _v163_case('keep');
-  PERFORM _v163_case('held');
-  PERFORM _v163_case('declinedclock');
-  PERFORM _v163_case('rosterdel');
-  PERFORM _v163_case('audit');
-  PERFORM _v163_case('race');
-  PERFORM _v163_case('email');
-  PERFORM _v163_case('resend');
-  PERFORM _v163_case('cuts');
-  PERFORM _v163_case('declinedask');
-  PERFORM _v163_case('follow');
-  PERFORM _v163_case('grants');
+  PERFORM _v168_case('nothing');
+  PERFORM _v168_case('own');
+  PERFORM _v168_case('raise');
+  PERFORM _v168_case('ask');
+  PERFORM _v168_case('pupil');
+  PERFORM _v168_case('born');
+  PERFORM _v168_case('office');
+  PERFORM _v168_case('recognise');
+  PERFORM _v168_case('decline');
+  PERFORM _v168_case('keep');
+  PERFORM _v168_case('held');
+  PERFORM _v168_case('declinedclock');
+  PERFORM _v168_case('rosterdel');
+  PERFORM _v168_case('audit');
+  PERFORM _v168_case('race');
+  PERFORM _v168_case('email');
+  PERFORM _v168_case('resend');
+  PERFORM _v168_case('cuts');
+  PERFORM _v168_case('declinedask');
+  PERFORM _v168_case('follow');
+  PERFORM _v168_case('grants');
   PERFORM set_config('app.user_id', '', true);
-  -- └── db/163 (section 141) ─────────────────────────────────────────
+  -- └── db/168 (section 141) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;

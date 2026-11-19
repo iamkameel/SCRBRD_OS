@@ -27,7 +27,7 @@
  *      the removal is refused (GA-I03, db/85), the remover's own answered
  *      with a fresh token for its device
  *   7. the limits: per address, and per Google account
- *   9. "I am a pupil here" (db/163, the honesty model's Migration A): a boy
+ *   9. "I am a pupil here" (db/168, the honesty model's Migration A): a boy
  *      under 18 sends his claim (and the date of birth he types is in no
  *      log the server writes); his account still reads nothing, asks for
  *      nothing (a role, a school added, the register), and may follow; the
@@ -117,7 +117,7 @@ const sweep = async (token, email) => {
     else if (r.status === 200 && r.body?.rows?.length && resource !== "my_sign_ins") {
       const rows = r.body.rows;
       const own = ((resource === "users" || resource === "accounts") && rows.length === 1 && rows[0].email === email)
-        // His own notice settings: a pupil's account (db/163's third case of
+        // His own notice settings: a pupil's account (db/168's third case of
         // person_is_pupil()) has quiet hours on, about no child (db/120).
         || (resource === "my_notification_prefs" && rows.every((x) => x.subject_player_id === null && x.player_name === null));
       const nothing = rows.every((x) => Object.values(x).every((v) => v === null || v === 0 || v === false || v === ""
@@ -329,7 +329,7 @@ try {
     ok("one Google account from many addresses: six, then 429", byUid.slice(0, 6).every((s) => s === 200) && byUid.slice(6).every((s) => s === 429), byUid);
   }
 
-  group("9. \"I am a pupil here\" (db/163): a claim asks for nothing and opens nothing");
+  group("9. \"I am a pupil here\" (db/168): a claim asks for nothing and opens nothing");
   {
     const KID_UID = `walk-kid-${RUN}`, KID_EMAIL = `walk.kid.${RUN}@example.invalid`;
     const BORN = `${new Date().getUTCFullYear() - 14}-07-19`;
@@ -410,7 +410,7 @@ try {
     r = await api("/api/pupil/claim", { method: "POST", token: k2, body: { schoolId: HIL, name: "Zebedee Walkerson" } });
     ok("...and cannot send it again", r.status === 409 && r.body?.error === "already_answered", r);
 
-    // Q9: 30 days past its claim and its decline (db/163 S1), the office removes it; his Google account then makes a new account.
+    // Q9: 30 days past its claim and its decline (db/168 S1), the office removes it; his Google account then makes a new account.
     await own.query(`update pupil_claim set last_claim_at = now() - interval '31 days', decided_at = now() - interval '31 days' where user_id = (select id from app_user where email = $1)`, [K2_EMAIL]);
     r = await api("/api/pupil-claims/clear", { method: "POST", token: coach, body: { schoolId: HIL } });
     ok("a coach removes nothing", r.status === 200 && r.body?.removed === 0, r);

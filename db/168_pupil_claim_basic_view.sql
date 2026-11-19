@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════
---  163 · "I am a pupil here": the pupil's claim, the recognised-and-
+--  168 · "I am a pupil here": the pupil's claim, the recognised-and-
 --        waiting state, and the under-18 basic view's own reads
 --        (SCRBRD-140, the honesty model, Migration A)
 -- ══════════════════════════════════════════════════════════════════
@@ -122,38 +122,38 @@ BEGIN
      OR to_regprocedure('sa_today()') IS NULL OR to_regprocedure('sa_date(timestamptz)') IS NULL
      OR to_regprocedure('majority_on(date)') IS NULL OR to_regprocedure('api_role_reach(name)') IS NULL
      OR to_regclass('school_add_request') IS NULL OR to_regclass('followed_school') IS NULL OR to_regclass('auth_identity') IS NULL THEN
-    RAISE EXCEPTION 'db/163: app_user_id() (db/01), person_is_pupil() or dso_contacts() (db/57), safeguarding_concern_raise() (db/116), declined_claim_notice() (db/93), lift_cuts_ok() (db/70), follow_school() (db/160), school_add_request (db/158), auth_identity (db/81), sa_today() (db/128) or api_role_reach() (db/157) is missing; apply them first';
+    RAISE EXCEPTION 'db/168: app_user_id() (db/01), person_is_pupil() or dso_contacts() (db/57), safeguarding_concern_raise() (db/116), declined_claim_notice() (db/93), lift_cuts_ok() (db/70), follow_school() (db/160), school_add_request (db/158), auth_identity (db/81), sa_today() (db/128) or api_role_reach() (db/157) is missing; apply them first';
   END IF;
   -- person_is_pupil(): db/57's as db/128 left it, or this file's own.
   v := md5((SELECT prosrc FROM pg_proc WHERE oid = 'person_is_pupil(uuid)'::regprocedure));
   IF v NOT IN ('4ab87c3767211d5c959c4a43da18a2b9', '789b48b1592771d01f3407776a7f276e') THEN
-    RAISE EXCEPTION 'db/163: person_is_pupil() is neither db/57''s as db/128 left it nor this file''s (md5 %); factor the version now in place and move these hashes', v;
+    RAISE EXCEPTION 'db/168: person_is_pupil() is neither db/57''s as db/128 left it nor this file''s (md5 %); factor the version now in place and move these hashes', v;
   END IF;
   -- The two safeguarding doors: as db/57 and db/116 left them, or with
   -- this file's condition already in (a second paste; checked in §6).
   v := (SELECT prosrc FROM pg_proc WHERE oid = 'dso_contacts(uuid)'::regprocedure);
   IF md5(v) NOT IN ('5ef59c7361a95eaf32b01558fc7ce145', 'c2fdf9bc7f3321135656d683a020d2bb') THEN
-    RAISE EXCEPTION 'db/163: dso_contacts() is neither db/57''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v);
+    RAISE EXCEPTION 'db/168: dso_contacts() is neither db/57''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v);
   END IF;
   v := (SELECT prosrc FROM pg_proc WHERE oid = 'safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)'::regprocedure);
-  -- db/116's, an earlier db/163's (unlocked condition, replaced in §6), or this file's.
+  -- db/116's, an earlier paste of this file's (as db/163; unlocked condition, replaced in §6), or this file's.
   IF md5(v) NOT IN ('6982c7aa0395aaf8d4a54d670143546d', '31bd5b3610e7ba29ceefbccd7b671d45', '584ca1d9dd566fa9a1dfe1593bcd8d20') THEN
-    RAISE EXCEPTION 'db/163: safeguarding_concern_raise() is neither db/116''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v);
+    RAISE EXCEPTION 'db/168: safeguarding_concern_raise() is neither db/116''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v);
   END IF;
   -- audit_names_pupil(): db/79's, or this file's own (S3).
   IF to_regprocedure('audit_names_pupil(uuid)') IS NULL
      OR md5((SELECT prosrc FROM pg_proc WHERE oid = 'audit_names_pupil(uuid)'::regprocedure))
         NOT IN ('31f55d10bc253893a6d884b63aa7f241', 'ba193b7840d630e9f685c93622735fa8') THEN
-    RAISE EXCEPTION 'db/163: audit_names_pupil() is neither db/79''s nor this file''s; factor the version now in place and move its hash';
+    RAISE EXCEPTION 'db/168: audit_names_pupil() is neither db/79''s nor this file''s; factor the version now in place and move its hash';
   END IF;
   -- app_user_email_seen(): db/118's, or this file's own (re-review open point 4).
   IF to_regprocedure('app_user_email_seen(uuid,uuid,text)') IS NULL
      OR md5((SELECT prosrc FROM pg_proc WHERE oid = 'app_user_email_seen(uuid,uuid,text)'::regprocedure))
         NOT IN ('7116c9e13ddd993d8b65c9a6656255cf', 'b8f0ead148cc454cf36ce622e3739857') THEN
-    RAISE EXCEPTION 'db/163: app_user_email_seen() is neither db/118''s nor this file''s; factor the version now in place and move its hash';
+    RAISE EXCEPTION 'db/168: app_user_email_seen() is neither db/118''s nor this file''s; factor the version now in place and move its hash';
   END IF;
   IF to_regclass('safeguarding_concern_reporter') IS NULL THEN
-    RAISE EXCEPTION 'db/163: safeguarding_concern_reporter (db/57) is missing; apply it first';
+    RAISE EXCEPTION 'db/168: safeguarding_concern_reporter (db/57) is missing; apply it first';
   END IF;
 END $guard$;
 
@@ -206,7 +206,7 @@ CREATE INDEX IF NOT EXISTS pupil_claim_school_idx ON pupil_claim (school_id, sta
 CREATE INDEX IF NOT EXISTS pupil_claim_player_idx ON pupil_claim (player_id) WHERE player_id IS NOT NULL;
 
 COMMENT ON TABLE pupil_claim IS
-  'db/163 (SCRBRD-140 honesty model, Migration A): an account that said it is a pupil under 18 at a school. Holds what he typed and the state; never a date of birth. Functions only.';
+  'db/168 (SCRBRD-140 honesty model, Migration A): an account that said it is a pupil under 18 at a school. Holds what he typed and the state; never a date of birth. Functions only.';
 
 ALTER TABLE pupil_claim ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON pupil_claim FROM PUBLIC;
@@ -723,14 +723,14 @@ BEGIN
     SELECT p.prosrc, array_to_string(p.proconfig, ','), p.proacl::text, p.prosecdef
       INTO v_src, v_cfg, v_acl, v_sec FROM pg_proc p WHERE p.oid = r.fn;
     IF position(r.now_ IN v_src) > 0 THEN CONTINUE; END IF;   -- a second run
-    -- Over an earlier db/163 (before the re-review's S1): its unlocked condition is what is replaced.
+    -- Over an earlier paste of this file, as db/163 (before the re-review's S1): its unlocked condition is what is replaced.
     IF position(r.was IN v_src) = 0
        AND position('IF p_school IS NULL OR NOT (person_live_at(v_me, p_school) OR pupil_recognised_at(v_me, p_school)) THEN' IN v_src) > 0 THEN
       r.was := 'IF p_school IS NULL OR NOT (person_live_at(v_me, p_school) OR pupil_recognised_at(v_me, p_school)) THEN';
     END IF;
     n := (length(v_src) - length(replace(v_src, r.was, ''))) / length(r.was);
     IF n <> 1 THEN
-      RAISE EXCEPTION 'db/163: % holds its school condition % times, not once', r.fn, n;
+      RAISE EXCEPTION 'db/168: % holds its school condition % times, not once', r.fn, n;
     END IF;
     v_def := pg_get_functiondef(r.fn);
     EXECUTE replace(v_def, r.was, r.now_);
@@ -738,7 +738,7 @@ BEGIN
        OR (SELECT array_to_string(p.proconfig, ',') FROM pg_proc p WHERE p.oid = r.fn) IS DISTINCT FROM v_cfg
        OR (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = r.fn) IS DISTINCT FROM v_acl
        OR (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = r.fn) IS DISTINCT FROM v_sec THEN
-      RAISE EXCEPTION 'db/163: re-emitting % changed more than its school condition', r.fn;
+      RAISE EXCEPTION 'db/168: re-emitting % changed more than its school condition', r.fn;
     END IF;
   END LOOP;
 END $sg$;
@@ -764,14 +764,14 @@ BEGIN
   SELECT p.prosrc, array_to_string(p.proconfig, ','), p.proacl::text, p.prosecdef INTO v_src, v_cfg, v_acl, v_sec FROM pg_proc p WHERE p.oid = v_fn;
   IF position(v_now IN v_src) > 0 THEN RETURN; END IF;   -- a second run
   IF (length(v_src) - length(replace(v_src, v_was, ''))) / length(v_was) <> 1 THEN
-    RAISE EXCEPTION 'db/163: app_user_email_seen() does not hold its pupil arms as db/118 wrote them';
+    RAISE EXCEPTION 'db/168: app_user_email_seen() does not hold its pupil arms as db/118 wrote them';
   END IF;
   EXECUTE replace(pg_get_functiondef(v_fn), v_was, v_now);
   IF (SELECT p.prosrc FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM replace(v_src, v_was, v_now)
      OR (SELECT array_to_string(p.proconfig, ',') FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_cfg
      OR (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_acl
      OR (SELECT p.prosecdef FROM pg_proc p WHERE p.oid = v_fn) IS DISTINCT FROM v_sec THEN
-    RAISE EXCEPTION 'db/163: re-emitting app_user_email_seen() changed more than its pupil arm';
+    RAISE EXCEPTION 'db/168: re-emitting app_user_email_seen() changed more than its pupil arm';
   END IF;
 END $email$;
 
@@ -817,44 +817,44 @@ DO $check$
 DECLARE f text; v text; w text;
 BEGIN
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'pupil_claim'::regclass) THEN
-    RAISE EXCEPTION 'db/163: pupil_claim is not under row-level security';
+    RAISE EXCEPTION 'db/168: pupil_claim is not under row-level security';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'pupil_claim')
      OR has_table_privilege('scrbrd_app', 'pupil_claim', 'SELECT') OR has_table_privilege('scrbrd_app', 'pupil_claim', 'INSERT')
      OR has_table_privilege('scrbrd_app', 'pupil_claim', 'UPDATE') OR has_table_privilege('scrbrd_app', 'pupil_claim', 'DELETE') THEN
-    RAISE EXCEPTION 'db/163: the application can reach pupil_claim other than through its functions';
+    RAISE EXCEPTION 'db/168: the application can reach pupil_claim other than through its functions';
   END IF;
   -- N4: the table's ACL holds the owner alone (a managed host's roles included).
   IF EXISTS (SELECT 1 FROM pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) x
               WHERE c.oid = 'pupil_claim'::regclass AND x.grantee <> c.relowner) THEN
-    RAISE EXCEPTION 'db/163: pupil_claim is granted to somebody other than its owner';
+    RAISE EXCEPTION 'db/168: pupil_claim is granted to somebody other than its owner';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'player'::regclass AND tgname = 'player_pupil_claim_gone' AND tgenabled = 'O') THEN
-    RAISE EXCEPTION 'db/163: the trigger player_pupil_claim_gone is missing or disabled';
+    RAISE EXCEPTION 'db/168: the trigger player_pupil_claim_gone is missing or disabled';
   END IF;
   IF position('FROM pupil_claim c WHERE c.user_id = p_user' IN (SELECT prosrc FROM pg_proc WHERE oid = 'app_user_email_seen(uuid,uuid,text)'::regprocedure)) = 0 THEN
-    RAISE EXCEPTION 'db/163: app_user_email_seen() does not read a claimant as a pupil';
+    RAISE EXCEPTION 'db/168: app_user_email_seen() does not read a claimant as a pupil';
   END IF;
   IF position('FROM pupil_claim c WHERE c.user_id = p_person' IN (SELECT prosrc FROM pg_proc WHERE oid = 'audit_names_pupil(uuid)'::regprocedure)) = 0 THEN
-    RAISE EXCEPTION 'db/163: audit_names_pupil() does not hold its third case';
+    RAISE EXCEPTION 'db/168: audit_names_pupil() does not hold its third case';
   END IF;
   -- No date of birth, by any name, on the claim.
   IF EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = 'pupil_claim'::regclass AND a.attnum > 0 AND NOT a.attisdropped
                 AND (a.atttypid = 'date'::regtype AND a.attname <> 'said_under_18_on' OR a.attname ~ 'born|birth|dob')) THEN
-    RAISE EXCEPTION 'db/163: pupil_claim holds a date other than the day he said he is under 18';
+    RAISE EXCEPTION 'db/168: pupil_claim holds a date other than the day he said he is under 18';
   END IF;
   FOREACH f IN ARRAY ARRAY['role_request', 'school_add_request'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = f::regclass AND tgname = f || '_pupil_waiting' AND tgenabled = 'O') THEN
-      RAISE EXCEPTION 'db/163: the trigger %_pupil_waiting is missing or disabled', f;
+      RAISE EXCEPTION 'db/168: the trigger %_pupil_waiting is missing or disabled', f;
     END IF;
   END LOOP;
   IF position('FROM pupil_claim c WHERE c.user_id = p_person' IN (SELECT prosrc FROM pg_proc WHERE oid = 'person_is_pupil(uuid)'::regprocedure)) = 0 THEN
-    RAISE EXCEPTION 'db/163: person_is_pupil() does not hold its third case';
+    RAISE EXCEPTION 'db/168: person_is_pupil() does not hold its third case';
   END IF;
   IF position('pupil_recognised_at(app_user_id(), sc.id)' IN (SELECT prosrc FROM pg_proc WHERE oid = 'dso_contacts(uuid)'::regprocedure)) = 0
      OR position('pupil_recognised_at_locked(v_me, p_school)' IN (SELECT prosrc FROM pg_proc
           WHERE oid = 'safeguarding_concern_raise(uuid,text,text[],text,text,text,uuid,uuid,text,date,text,text,boolean,uuid)'::regprocedure)) = 0 THEN
-    RAISE EXCEPTION 'db/163: the safeguarding card or the raise does not reach a recognised pupil';
+    RAISE EXCEPTION 'db/168: the safeguarding card or the raise does not reach a recognised pupil';
   END IF;
   FOR f IN SELECT unnest(ARRAY['pupil_claim_send(uuid,text,text,date)', 'my_pupil_state()', 'pupil_claims(uuid)',
                                'pupil_claim_recognise(uuid,uuid)', 'pupil_claim_decline(uuid)', 'pupil_claim_clear(uuid)',
@@ -867,10 +867,10 @@ BEGIN
                                'pupil_recognised_at_locked(uuid,uuid)', 'pupil_claim_office_until(uuid)']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
-      RAISE EXCEPTION 'db/163: % does not pin its search_path', f;
+      RAISE EXCEPTION 'db/168: % does not pin its search_path', f;
     END IF;
     IF f <> 'pupil_claim_purge()' AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
-      RAISE EXCEPTION 'db/163: % is not a definer', f;
+      RAISE EXCEPTION 'db/168: % is not a definer', f;
     END IF;
     -- Read back from the ACL: the owner, and scrbrd_app for a door; nobody else.
     SELECT coalesce(string_agg(coalesce(nullif(x.grantee, 0)::regrole::text, 'PUBLIC') || ':' || x.privilege_type, ',' ORDER BY x.grantee::regrole::text), '')
@@ -881,7 +881,7 @@ BEGIN
                          'pupil_claim_remove_self()', 'follow_school_by_id(uuid)')
               THEN 'scrbrd_app:EXECUTE' ELSE '' END;
     IF v IS DISTINCT FROM w THEN
-      RAISE EXCEPTION 'db/163: % is granted %', f, coalesce(nullif(v, ''), 'to nobody');
+      RAISE EXCEPTION 'db/168: % is granted %', f, coalesce(nullif(v, ''), 'to nobody');
     END IF;
   END LOOP;
 END $check$;
