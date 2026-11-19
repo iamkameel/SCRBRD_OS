@@ -32,7 +32,7 @@ import { DismissalMethodCard, dismissalMethodLabel } from "../src/views/Profiles
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 160)}` : ""); } };
 const group = (t) => console.log("\n" + t);
-const html = (el) => renderToStaticMarkup(el);
+const html = (el) => renderToStaticMarkup(el).replace(/&#x27;/g, "'");
 
 const PLAYER = "p1";
 const card = (live, side = "batting") => html(h(DismissalMethodCard, {
@@ -71,8 +71,8 @@ try {
   setToken("fixture-token");
 
   group("Loading and error, told apart from an honest empty answer");
-  ok("loading says loading", /Reading…/.test(card({ rows: [], loading: true, error: null })));
-  ok("error is not the same claim as empty", /Could not read this/.test(card({ rows: [], loading: false, error: "unreachable" })));
+  ok("loading says loading", /Reading dismissals…/.test(card({ rows: [], loading: true, error: null })));
+  ok("error is not the same claim as empty", /Couldn't load dismissals/.test(card({ rows: [], loading: false, error: "unreachable" })));
   ok("a real empty answer says so in the card's own words",
      /No dismissals yet\./.test(card({ rows: [], loading: false, error: null })));
 

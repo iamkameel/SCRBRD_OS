@@ -52,7 +52,7 @@ export function DsoCard({ onRaise = null, testid = "dso-card" }) {
     <Card label="Worried about a child?" testid={testid}>
       <Line>Tell the school&apos;s Designated Safeguarding Officer (DSO). You do not need to be sure.</Line>
       {c.loading && <Line quiet>Reading who the DSO is…</Line>}
-      {c.error && <Line quiet testid={`${testid}-unread`}>Could not read who the DSO is just now. The Safeguarding screen in the header still reaches them.</Line>}
+      {c.error && <Line quiet testid={`${testid}-unread`}>Couldn't load who the DSO is just now. The Safeguarding screen in the header still reaches them.</Line>}
       {schools.map(([id, s]) => (
         <div key={id} data-testid={`${testid}-school`} style={{ display: "grid", gap: "2px" }}>
           {schools.length > 1 && <Line strong>{s.name}</Line>}

@@ -22,7 +22,12 @@
  *   4. The floors: no text under 12px, nothing tapped under 44px in the
  *      sheet, a choice is a radio (never colour alone); no console error.
  *   5. A parent and the 2XI coach arrive on the same fixture: no sheet at
- *      all, and the API gives them no side to decide.
+ *      all, and the API gives them no side to decide. CRI-3.3: nor a
+ *      spectator, signed in, nor the public page signed out: no points, no
+ *      working, no rule, from the screen or the API. The coach (step 1) and
+ *      the captain (step 6) read each suggestion's working, "1 wicket (20)
+ *      = 20", under the line that says it is a suggestion and the choice is
+ *      theirs.
  *   6. RECOGNITION R7 (db/144): R Pillay, the season's captain, signed in as
  *      himself on a second finished fixture: his Captain tab says "Nominate
  *      one team-mate. <coach> decides. You cannot choose yourself.", the
@@ -191,6 +196,16 @@ try {
   ok("...based on batting and bowling only", (await tid(co.page, "mc-potm-basis").innerText().catch(() => "")) === "Based on batting and bowling only.");
   const sugg = await co.page.$$eval('[data-testid="mc-potm-suggestions"] label', (ls) => ls.map((l) => l.innerText.replace(/\s+/g, " ").trim()));
   ok("...two suggestions, each with its figures", sugg.length === 2 && /T Bekker 1\/0 \(0\.3\)/.test(sugg[0]) && /James Whitfield 17\* \(6\)/.test(sugg[1]), sugg.join(" | "));
+  // CRI-3.3 (Kameel, 19 Nov 2026): simple points, the working shown to the chooser, a suggestion only.
+  ok("CRI-3.3: each suggestion shows its working", (await tid(co.page, `mc-potm-working-${BEKKER}`).innerText().catch(() => "")) === "1 wicket (20) = 20"
+     && (await tid(co.page, `mc-potm-working-${WHITFIELD}`).innerText().catch(() => "")) === "17 runs = 17",
+     sugg.join(" | "));
+  ok("...says it is a suggestion, how points are counted, and leaves the choice with him",
+     (await tid(co.page, "mc-potm-rule").innerText().catch(() => "")) === "Suggestions from the scorecard, with their working. They decide nothing: the choice is yours. Points: runs, plus 20 a wicket.",
+     await tid(co.page, "mc-potm-rule").innerText().catch(() => "∅"));
+  ok("...no tie, so none is said; every wicket was bowled, so no unnamed-fielder line",
+     await co.page.locator('[data-testid^="mc-potm-tied-"]').count() === 0 && await tid(co.page, "mc-potm-unnamed").count() === 0
+     && await tid(co.page, "mc-potm-also-tied").count() === 0);
   ok("...none chosen for him", await co.page.$$eval('[data-testid="mc-potm"] input[type="radio"]', (rs) => rs.every((r) => !r.checked)));
   ok("...and the award waits for his choice", await tid(co.page, "mc-potm-award").isDisabled()
      && /Choose a player first/.test(await tid(co.page, "mc-potm-award").innerText()));
@@ -315,6 +330,10 @@ try {
   const csugg = await pu.page.$$eval('[data-testid="mc-captain-potm-suggestions"] label', (ls) => ls.map((l) => l.innerText.replace(/\s+/g, " ").trim()));
   ok("...the coach's two suggestions, with the figures he reads on the scorecard",
      csugg.length === 2 && /T Bekker 1\/0 \(0\.3\)/.test(csugg[0]) && /J(ames)? Whitfield 17\* \(6\)/.test(csugg[1]), csugg.join(" | "));
+  ok("CRI-3.3: the captain, who may choose, reads the same working",
+     (await tid(pu.page, `mc-captain-potm-working-${BEKKER}`).innerText().catch(() => "")) === "1 wicket (20) = 20"
+     && /^Suggestions from the scorecard, with their working\. They decide nothing: the choice is yours\./.test(await tid(pu.page, "mc-captain-potm-rule").innerText().catch(() => "")),
+     csugg.join(" | "));
   ok("...none chosen for him, and the tap waits", await pu.page.$$eval('[data-testid="mc-captain-potm"] input[type="radio"]', (rs) => rs.every((r) => !r.checked))
      && await tid(pu.page, "mc-captain-potm-nominate").isDisabled() && /Choose a team-mate first/.test(await tid(pu.page, "mc-captain-potm-nominate").innerText()));
   await tid(pu.page, "mc-captain-potm-more").click();
@@ -505,6 +524,34 @@ try {
     ok(`...and the API gives ${who} no side to decide`, ((await call(`/api/matches/${M}/player-of-match`, { token: tok })).body?.sides ?? ["x"]).length === 0);
     ok(`no console errors (${who})`, s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
+  }
+
+  // CRI-3.3: the suggestion and its points never reach a spectator, signed
+  // in or not, nor the public page.
+  {
+    const sp = await open();
+    const opened = await arrive(sp.page, M, /watcher@example\.invalid|Spectator/);
+    await afterReads(sp.page, 1500);
+    const body = await sp.page.locator("body").innerText().catch(() => "");
+    ok(`CRI-3.3: a spectator (the fixture ${opened ? "opens" : "does not open"}) sees no Player of the Match sheet and no points`,
+       await tid(sp.page, "mc-potm").count() === 0 && await sp.page.locator('[data-testid*="potm-working-"]').count() === 0
+       && !/Suggestions from the scorecard|wicket \(20\) = 20|17 runs = 17/.test(body), body.slice(0, 300));
+    const tok = (await call("/api/auth/dev-login", { method: "POST", body: { email: "watcher@example.invalid", deviceId: "potm-watch" } })).body?.token;
+    const st = (await call(`/api/matches/${M}/player-of-match`, { token: tok })).body;
+    ok("...the API gives him no side, no points and no rule", (st?.sides ?? ["x"]).length === 0 && st?.rule == null && st?.unnamed == null, JSON.stringify(st).slice(0, 200));
+    const nm = (await call(`/api/matches/${M}/player-of-match/nomination`, { token: tok })).body;
+    ok("...nor the captain's door", nm == null || ((nm.captain ?? []).length === 0 && !JSON.stringify(nm).includes("working")), JSON.stringify(nm).slice(0, 200));
+    ok("no console errors (the spectator)", sp.errors.length === 0, sp.errors.join(" | "));
+    await sp.ctx.close();
+    const pub = await open();
+    await pub.page.goto(`http://localhost:${WEB_PORT}/live/${M}`, { waitUntil: "networkidle" });
+    await afterReads(pub.page, 1500);
+    const ptext = await pub.page.locator("body").innerText().catch(() => "");
+    ok("...and the public page, signed out, carries none of it", await pub.page.locator('[data-testid*="potm"]').count() === 0
+       && !/Suggestions from the scorecard|= 20\b|17 runs = 17|Player of the Match/.test(ptext), ptext.slice(0, 300));
+    const anon = await call(`/api/matches/${M}/player-of-match`);
+    ok("...and the door answers no one signed out with a side", (anon.body?.sides ?? []).length === 0 && !JSON.stringify(anon.body ?? {}).includes("working"), JSON.stringify(anon).slice(0, 200));
+    await pub.ctx.close();
   }
 
   ok("the API logged no errors", apiErr.join("").trim() === "", apiErr.join("").slice(0, 3000));

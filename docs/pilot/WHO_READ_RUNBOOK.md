@@ -26,6 +26,7 @@ The reading of your own question is on the record too: it names the child in the
 
 - Every read of a **restricted field** of his record at this school (a date of birth, an injury note, a clinical note), and every read of his record made from **outside** the school (the platform, or a support session).
 - For each: the reader's name (the office sees it), the kind of record (`players`, `injuries` ...), the fields that came back, how many records, the time, and how they reached the school.
+- **The platform's own reads.** Every read the platform owner's key (or a platform administrator) made of his record shows as **SCRBRD platform** in the Who column, marked **Platform**, never a person's name. That includes the pages outside the record itself: his public name and his guardians' answers, the team sheet, his own account, a notice about him (PLATFORM_CONTROLS slice 6a, db/167).
 - Newest first, up to 500 rows, this school's rows only. Another school's office sees none of this school's reads.
 
 ## What it never shows
@@ -37,7 +38,7 @@ The reading of your own question is on the record too: it names the child in the
 
 ## What you tell the parent
 
-By **role, school and kind of record**: "In the last term, the school's physio and the U15A coach read his injury record on [dates]." The names of staff stay with the office; give one in person only if the parent asks. This is the same line as `ACCESS_REQUEST_RUNBOOK.md` section 6.
+By **role, school and kind of record**: "In the last term, the school's physio and the U15A coach read his injury record on [dates]." The names of staff stay with the office; give one in person only if the parent asks. A **SCRBRD platform** row is told as it reads: "the SCRBRD platform opened his public-name page on [date]"; it has no person's name to give. This is the same line as `ACCESS_REQUEST_RUNBOOK.md` section 6.
 
 ## Gap, until the screen has a child picker
 

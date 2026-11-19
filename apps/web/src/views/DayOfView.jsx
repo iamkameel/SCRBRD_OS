@@ -154,8 +154,8 @@ function DriverDayView({ role }) {
         </p>
       </div>
 
-      {loading && <EmptyState loading/>}
-      {!loading && error && <EmptyState error/>}
+      {loading && <EmptyState loading what="your trips"/>}
+      {!loading && error && <EmptyState error={error} what="your trips" onRetry={() => setNonce((n) => n + 1)}/>}
       {!loading && !error && live && mine.length === 0 && (
         <EmptyState icon="bus" message="No trips are arranged for you."/>
       )}
@@ -271,7 +271,8 @@ function QuickPitchForm({ matchId, role, onSaved }) {
 }
 
 function GroundskeeperDayView({ role }) {
-  const { rows: MATCHES, live, loading, error } = useLive("matches", role);
+  const [nonce, setNonce] = useState(0);
+  const { rows: MATCHES, live, loading, error } = useLive("matches", role, nonce);
   const [openId, setOpenId] = useState(null);
   const todayStr = dateStr(today);
   const todays = MATCHES.filter((m) => m.date === todayStr)
@@ -288,8 +289,8 @@ function GroundskeeperDayView({ role }) {
         </p>
       </div>
 
-      {loading && <EmptyState loading/>}
-      {!loading && error && <EmptyState error/>}
+      {loading && <EmptyState loading what="today's matches"/>}
+      {!loading && error && <EmptyState error={error} what="today's matches" onRetry={() => setNonce((n) => n + 1)}/>}
       {!loading && !error && live && todays.length === 0 && (
         <EmptyState icon="ground" message="No fixtures at your grounds today."/>
       )}

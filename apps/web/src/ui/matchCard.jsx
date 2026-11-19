@@ -1,6 +1,8 @@
 import { T } from "../design/tokens.js";
 import { cardModel } from "../lib/matchCard.js";
 import { Icon } from "./icons.jsx";
+import { ReadState } from "./primitives.jsx";
+import { readState } from "../lib/readState.js";
 
 /**
  * THE MATCH CARD (redesign slice 1; DESIGN_DIRECTION §2.2): one match, drawn
@@ -34,9 +36,9 @@ import { Icon } from "./icons.jsx";
  * after the reader's line: what a screen keeps beside the match (the
  * answer, the ready chips), never a second copy of a fact the card says.
  *
- * `loading` draws a still skeleton of the same shape (no shimmer, so reduced
- * motion has nothing to stop); `error` draws "Couldn't load this match." and
- * a Retry in the card's place.
+ * `loading` and `error` draw slice 7's one state in the card's place: its
+ * Skeleton, or "Couldn't load this match." and a Retry (ui/primitives.jsx
+ * ReadState).
  */
 
 const SIZE = {
@@ -103,16 +105,6 @@ function SideRow({ side, size, testid }) {
   );
 }
 
-/** The skeleton: the card's own shape, still. @param {{size: string, testid?: string}} p */
-export function MatchCardSkeleton({ size = "card", testid }) {
-  const bar = (/** @type {string} */ w, /** @type {string} */ h) => <span style={{ display: "block", width: w, height: h, borderRadius: T.radius.sm, background: T.surface.interactive }}/>;
-  return (
-    <div data-testid={testid} data-part="skeleton" role="status" aria-label="Loading the match" style={{ display: "grid", gap: SIZE[size].gap(), padding: SIZE[size].pad() }}>
-      {bar("30%", "12px")}{bar("70%", size === "row" ? "16px" : "20px")}{bar("60%", size === "row" ? "16px" : "20px")}{bar("80%", "14px")}
-    </div>
-  );
-}
-
 /**
  * @param {{
  *   size?: "row" | "card" | "board",
@@ -132,14 +124,13 @@ export function MatchCard({ size = "card", match, fold = null, innings = null, r
   const s = SIZE[size];
   const row = size === "row";
   const frame = { position: "relative", padding: s.pad(), borderBottom: row && !last ? `1px solid ${T.line.subtle}` : "none", minHeight: "44px" };
-  if (loading) return <div data-testid={testid} data-state="loading" style={frame}><MatchCardSkeleton size={size}/></div>;
-  if (error) {
+  // Loading and a failed read are slice 7's one state (ui/primitives.jsx ReadState, lib/readState.js): its Skeleton,
+  // "Couldn't load this match." and Retry, in the card's place. Not a second copy of either.
+  if (loading || error) {
+    const read = readState({ rows: [], loading, error: error ? "unreachable" : null, live: true }, { what: "this match" });
     return (
-      <div data-testid={testid} data-state="failed" role="alert" style={{ ...frame, display: "flex", flexWrap: "wrap", alignItems: "center", gap: T.space.sm }}>
-        <span style={{ ...T.role.body, color: T.content.primary, display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
-          <Icon name="triangle-alert" style={{ color: T.semantic.criticalText }}/>Couldn't load this match.
-        </span>
-        {onRetry && <ActionButton a={{ label: "Retry", onClick: onRetry, aria: "Retry loading this match" }} primary={false}/>}
+      <div data-testid={testid} data-state={read.state} style={frame}>
+        <ReadState read={read} onRetry={onRetry ?? undefined} compact={row} testId="match-card-read"/>
       </div>
     );
   }

@@ -27,7 +27,7 @@ import { confirmFollow, dismissFollow } from "../lib/follow.js";
  *             or a link's question waits)
  */
 export function FollowedSchools({ followed, lead = false }) {
-  const { loading, failed, schools, data, note, ask, unfollow } = followed;
+  const { loading, failed, schools, data, note, ask, unfollow, reload } = followed;
   const [busy, setBusy] = useState(/** @type {string | null} */ (null));
   const [problem, setProblem] = useState("");
   const [answering, setAnswering] = useState(false);
@@ -73,7 +73,13 @@ export function FollowedSchools({ followed, lead = false }) {
       ) : (
         <>
           {data?.fixtures === null && !failed && <p data-testid="followed-off" style={{ ...T.role.body, margin: "0 0 12px", color: T.content.secondary }}>Match pages are switched off on SCRBRD just now.</p>}
-          {failed && !data && <p role="status" data-testid="followed-failed" style={{ ...T.role.body, margin: "0 0 12px", color: T.content.secondary }}>Could not load today's matches. They show here when the connection is back.</p>}
+          {failed && !data && (
+            <div role="status" data-testid="followed-failed" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: T.space.md, margin: "0 0 12px" }}>
+              <p style={{ ...T.role.body, margin: 0, color: T.content.secondary }}>Couldn't load today's matches. They show here when the connection is back.</p>
+              {reload && <button type="button" onClick={reload} data-testid="followed-retry" className="pressBtn" style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill,
+                border: `1px solid ${T.line.normal}`, background: "transparent", color: T.content.primary, fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, cursor: "pointer" }}>Retry</button>}
+            </div>
+          )}
           {data?.fixtures && list.length === 0 && (
             <p data-testid="followed-quiet" style={{ ...T.role.body, margin: "0 0 12px", color: T.content.secondary }}>No matches listed today for the schools you follow.</p>
           )}

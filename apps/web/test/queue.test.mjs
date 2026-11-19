@@ -104,7 +104,7 @@ group("The count: N to resolve, and could not read X for each read that failed")
   ok("three open: '3 to resolve'", three.line === "3 to resolve" && !three.clear && three.unread.length === 0);
   ok("one open: '1 to resolve' (the number, not a plural word)", countOf({ open: 1, reads: answered(), gate: COACH }).line === "1 to resolve");
 
-  ok("a null read gives 'Could not read the bus'", countOf({ open: 2, reads: { ...answered(), trips: null }, gate: COACH }).unread.map((r) => r.text).join() === "Could not read the bus");
+  ok("a null read gives 'Couldn't load the bus'", countOf({ open: 2, reads: { ...answered(), trips: null }, gate: COACH }).unread.map((r) => r.text).join() === "Couldn't load the bus");
   ok("...and the count beside it is still the number open", countOf({ open: 2, reads: { ...answered(), trips: null }, gate: COACH }).line === "2 to resolve");
   ok("an empty read gives no row", countOf({ open: 0, reads: { ...answered(), trips: [] }, gate: COACH }).unread.length === 0);
   ok("an empty read is a read that answered: still 'Nothing to resolve'", countOf({ open: 0, reads: { ...answered(), trips: [], duties: [], readiness: [] }, gate: COACH }).line === "Nothing to resolve");
@@ -288,7 +288,7 @@ group("A read that failed is a row that says so; one that answered nothing is no
   ok("every read answered and nothing waiting: 'Nothing to resolve', clear", g0.clear && g0.line === "Nothing to resolve" && g0.open === 0 && g0.failed === 0 && g0.rows.length === 0, g0);
   const bad = fixtureRows({ match: SAT, gate: DIRECTOR_G, reads: answered({ duties: null }), errors: { duties: "unreachable" }, now: THU });
   ok("a null duties read gives a could_not_read row with the read's name and its error, never an empty group",
-     bad.unread.length === 1 && bad.unread[0].state === "could_not_read" && bad.unread[0].read === "duties" && bad.unread[0].fact === "Could not read the duties (unreachable)", bad.unread);
+     bad.unread.length === 1 && bad.unread[0].state === "could_not_read" && bad.unread[0].read === "duties" && bad.unread[0].fact === "Couldn't load the duties (unreachable)", bad.unread);
   ok("...zero blockers and a failed read do not look alike: '0 to resolve', not clear, one failed",
      bad.line === "0 to resolve" && !bad.clear && bad.failed === 1 && bad.open === 0 && bad.line !== g0.line);
   ok("...and it has a door to read it again, not a door to somewhere else", bad.unread[0].action.kind === "retry");
@@ -296,7 +296,7 @@ group("A read that failed is a row that says so; one that answered nothing is no
      fixtureRows({ match: SAT, gate: DIRECTOR_G, reads: answered({ duties: [] }), now: THU }).unread.length === 0
      && fixtureRows({ match: SAT, gate: DIRECTOR_G, reads: answered({ duties: [] }), now: THU }).rows.filter((r) => r.rule === "O4").length === 2);
   ok("a failed readiness read says 'who has answered', whatever else is open",
-     fixtureRows({ match: SAT, gate: DIRECTOR_G, reads: answered({ readiness: null }), now: THU }).unread.map((r) => r.fact).join() === "Could not read who has answered");
+     fixtureRows({ match: SAT, gate: DIRECTOR_G, reads: answered({ readiness: null }), now: THU }).unread.map((r) => r.fact).join() === "Couldn't load who has answered");
   ok("a failed conditions read is the document read failing",
      fixtureRows({ match: SAT, gate: DIRECTOR_G, reads: answered({ conditions: { state: "failed", cap: null, freeHit: null } }), now: THU }).unread.map((r) => r.read).join() === "conditions");
   ok("a read the gate never asked for is not a failure: the principal asked for no side and no bus",
@@ -381,7 +381,7 @@ group("The office list: who holds which row, and O1, O2, O3 (§2.3, §3.3)");
   ok("...nothing owed is no row", officeRows({ school: HIL, may, register: [reg({ status: "current", expiresOn: "2027-01-01" })], now: NOW }).rows.length === 0);
   const down = officeRows({ school: HIL, may, requests: null, claims: null, register: null, now: NOW, errors: { requests: "unreachable" } });
   ok("a failed office read is a row that says so, in the read's own name; an empty one is none",
-     down.unread.map((r) => r.fact).join("|") === "Could not read the requests (unreachable)|Could not read the sign-ins|Could not read the clearance register" && down.rows.length === 0 && down.failed === 3);
+     down.unread.map((r) => r.fact).join("|") === "Couldn't load the requests (unreachable)|Couldn't load the sign-ins|Couldn't load the clearance register" && down.rows.length === 0 && down.failed === 3);
   ok("a read the capability does not cover is never asked for, so a null there is not a failure",
      officeRows({ school: HIL, may: { requests: false, claims: false, register: true }, requests: null, claims: null, register: [], now: NOW }).unread.length === 0);
   ok("the lift exceptions are S4b's own five sentences, by name, on a tap",

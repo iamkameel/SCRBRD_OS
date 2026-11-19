@@ -194,6 +194,7 @@ function EntrantsStep({ comp, say }) {
   const [entrants, setEntrants] = useState(/** @type {any[] | null} */ (null));
   const [loadErr, setLoadErr] = useState(/** @type {string | null} */ (null));
   const [nonce, setNonce] = useState(0);
+  const [loadNonce, setLoadNonce] = useState(0);
   const [find, setFind] = useState("");
   const [pick, setPick] = useState({ schoolId: "", teamCode: "1XI", displayName: "" });
   const [err, setErr] = useState(/** @type {string | null} */ (null));
@@ -203,7 +204,7 @@ function EntrantsStep({ comp, say }) {
     let off = false;
     api(`/api/competitions/${comp.id}/schools`).then((d) => { if (!off) setSchools(d.schools ?? []); }).catch((e) => { if (!off) setLoadErr(leagueRefusal(e)); });
     return () => { off = true; };
-  }, [comp.id]);
+  }, [comp.id, loadNonce]);
 
   // The standing of every invitation, live: asked again every few seconds and
   // whenever the organiser asks (the schools answer from their own screens).
@@ -242,7 +243,7 @@ function EntrantsStep({ comp, say }) {
           <h3 style={S.h3}>Invite a school's team</h3>
           <p style={S.meta}>A school's side plays in the league only when the school accepts. You run the league, so you cannot accept on a school's behalf.</p>
         </div>
-        {schools === null && !loadErr && <EmptyState loading/>}
+        {schools === null && !loadErr && <EmptyState loading what="the schools"/>}
         {schools !== null && schools.length === 0 && <p data-testid="lw-no-schools" style={S.body}>You may not invite schools to this league.</p>}
         {schools !== null && schools.length > 0 && (
           <form onSubmit={(e) => { e.preventDefault(); invite(pick); }} style={{ display: "flex", flexDirection: "column", gap: T.space.md }}>
@@ -276,7 +277,7 @@ function EntrantsStep({ comp, say }) {
         <p role="status" aria-live="polite" data-testid="lw-entrant-summary" style={{ ...S.body, color: T.content.primary, fontWeight: 600 }}>
           {entrants === null ? "Loading…" : list.length ? entrantSummary(list) : "No side has been invited yet."}
         </p>
-        <Alert words={loadErr} testid="lw-entrants-error"/>
+        {loadErr && <EmptyState error={loadErr} what="the schools" onRetry={() => { setLoadErr(null); setLoadNonce((n) => n + 1); }}/>}
         {list.length > 0 && (
           <p data-testid="lw-cannot-accept" style={S.meta}>
             A side enters the league when its school accepts. The organiser of a league cannot accept for a school, even when the league
@@ -375,7 +376,7 @@ function ConditionsStep({ comp, others, onState, say }) {
   useEffect(() => { if (setId) setTicks(loadTicks(setId)); }, [setId]);
 
   if (!data || !catalogue) {
-    return <div data-testid="lw-conditions" style={S.card}>{state.error ? <Alert words={state.error}/> : <EmptyState loading={state.loading}/>}</div>;
+    return <div data-testid="lw-conditions" style={S.card}>{state.error ? <EmptyState error={state.error} what="the playing conditions" onRetry={() => { setState((s) => ({ ...s, loading: true, error: null })); setNonce((n) => n + 1); }}/> : <EmptyState loading={state.loading} what="the playing conditions"/>}</div>;
   }
   const refresh = () => setNonce((n) => n + 1);
   const words = (/** @type {any} */ e) => leagueRefusal(e, (x) => refusalWords(x, catalogue));
@@ -709,7 +710,7 @@ export function LeagueWizard({ role, competitionId = null, onClose }) {
       </div>
     );
   }
-  if (step === 0) return <div data-testid="lw-root" style={S.card}>{header}<EmptyState loading/></div>;
+  if (step === 0) return <div data-testid="lw-root" style={S.card}>{header}<EmptyState loading what="the league"/></div>;
 
   return (
     <div data-testid="lw-root" style={{ display: "flex", flexDirection: "column", gap: T.space.lg, fontFamily: T.type.body }}>

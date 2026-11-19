@@ -22,7 +22,9 @@
  *      office finds ONE child by name in Settings › School, and the list is
  *      the server's per-child answer (the medic's read of his injuries, named
  *      with the reader's role and a date), no safeguarding read, no other
- *      child; the asking is on the record; a coach has no picker.
+ *      child; the asking is on the record; a coach has no picker. The owner's
+ *      key opening his public name is on the list as "SCRBRD platform",
+ *      marked Platform, the key-holder's name nowhere (slice 6a, db/167).
  *
  * Falsified twice. Loosening the tab's gate in SettingsView.jsx to draw it
  * for everyone turned "there is no Support tab" red; loosening the panel's
@@ -328,6 +330,13 @@ try {
     await dbq(`insert into access_log (school_id, person_id, resource, record_ids, record_count, fields)
                values ($1, $2, 'safeguarding_concern', array[$3::uuid], 1, '{account}'), ($1, $2, 'players', array[$4::uuid], 1, '{born}')`,
       [HIL, medicRow.id, P_CHILD, P_OTHER]);
+    // The owner's key opens his public name and his guardians' answers, a page
+    // off the read path (PLATFORM_CONTROLS slice 6a, db/167): it must be on the
+    // same list, the reader said as the platform.
+    const ownerKey = await login("owner@example.invalid");
+    const opened = await fetch(`${API}/api/players/${P_CHILD}/public-name`, { headers: { authorization: `Bearer ${ownerKey}` } });
+    ok("the owner's key opens the child's public name", opened.status === 200, opened.status);
+    const [ownerAcct] = await dbq(`select name from app_user where lower(email) = 'owner@example.invalid'`);
     const [child] = await dbq(`select full_name from player where id = $1`, [P_CHILD]);
     const [other] = await dbq(`select full_name from player where id = $1`, [P_OTHER]);
 
@@ -354,6 +363,10 @@ try {
     ok(`the list is the server's per-child answer (${shown.length} rows, the API's ${answer.length})`, shown.length > 0 && shown.length === answer.length, `${shown.join()} | ${answer.map((r) => r.resource).join()}`);
     ok("...the medic's read of his injuries is on it, named with his role", shown.includes("injuries") && /L van Wyk · \S/.test(section), section.slice(0, 400));
     ok("...with the fields and a date the office can write down", /\d{1,2} \w{3} \d{4}/.test(section), section.slice(0, 400));
+    const keyRow = await off.page.$$eval('[data-testid="who-read-row"][data-resource="public_name"]', (els) => els.map((e) => e.innerText));
+    ok("the owner's key's read is on it, as \"SCRBRD platform\", marked Platform",
+       keyRow.length === 1 && /SCRBRD platform/.test(keyRow[0]) && /platform/i.test(keyRow[0].replace("SCRBRD platform", "")), keyRow.join(" | "));
+    ok("...and the key-holder's own name is nowhere in the section", !section.includes(ownerAcct.name), section.slice(0, 400));
     ok("no safeguarding read is listed, though one names him", shown.every((r) => !String(r).startsWith("safeguarding")) && !/safeguarding_concern/.test(section), shown.join());
     ok("the other child's read is not on his list, and the other child is not named", !section.includes(other.full_name), section.slice(0, 400));
     const asked = await dbq(`select count(*)::int n from access_log l join app_user u on u.id = l.person_id

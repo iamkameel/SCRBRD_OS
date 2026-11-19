@@ -16,8 +16,9 @@
  *   E. the facts: fielding lines for linked boys only, never a super over,
  *      never a scorebook card; a corrected log's credit goes with its ball
  *   F. P8: a no-ball's four all run is runs and no four, in the fold and the facts
- *   G. Player of the Match: fielding counts where every fielding wicket names
- *      its fielders, and D17's line goes; otherwise batting and bowling only
+ *   G. Player of the Match: fielding counts wherever the log names a fielder
+ *      (CRI-3.3), and D17's line goes; a log naming none is batting and
+ *      bowling only
  *
  *   node packages/scoring/test/fielding.test.mjs
  */
@@ -230,8 +231,11 @@ group("G. Player of the Match: the basis, and fielding in the order");
   ok("...his figures in words", s1[1]?.figures === "2 catches · 1 run out", s1);
   const unnamed = named.map((e) => (e.kind === "ball" && e.dismissal === "run_out" ? strip(e) : e));
   const g = deriveFacts(unnamed, sheet);
-  ok("one wicket naming nobody: fielding unknown, batting and bowling only", g.unattributed === 1 && potmBasis(g) === POTM_BASIS);
-  ok("...and the fielder is not suggested on it", !suggestPlayerOfMatch(g, sheet).some((x) => x.playerId === F1.id));
+  // CRI-3.3 (Kameel, 19 Nov 2026): a fielder is credited wherever the log
+  // names him; a wicket that names nobody credits nobody, and the card says so.
+  ok("one wicket naming nobody: still the fielding basis, one unattributed", g.unattributed === 1 && potmBasis(g) === POTM_BASIS_FIELDING);
+  ok("...the fielder keeps the catches that name him, not the run out that does not",
+     suggestPlayerOfMatch(g, sheet).find((x) => x.playerId === F1.id)?.figures === "2 catches", suggestPlayerOfMatch(g, sheet));
   ok("a stored basis is read as stored: the old basis over the new log leaves fielding out",
      !suggestPlayerOfMatch(f, sheet, undefined, POTM_BASIS).some((x) => x.playerId === F1.id)
      && matchFigures(f, [F1.id], POTM_BASIS)[0].field === undefined);

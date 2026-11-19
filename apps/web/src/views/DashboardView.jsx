@@ -256,7 +256,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
               board={board
                 // No last-wicket row on the day sheet's board (CRI-1.1 is the Match Centre's and the public page's).
                 ? <Board {...board} lastWicket={undefined} testid="day-board"/>
-                : <EmptyState loading={boardState.loading} error={boardState.error} message="The live score is not available yet." icon="scorebook"/>}
+                : <EmptyState loading={boardState.loading} error={boardState.error} what="the live score" onRetry={onRetry} message="The live score is not available yet." icon="scorebook"/>}
               action={nowAction ?? (holds("scoring.edit")
                 ? { label: "Resume scoring", onClick: () => onOpenScorer && onOpenScorer(liveMatch), testid: "day-now-open" }
                 : { label: openMatch ? openWords(liveMatch) : "Match Centre", onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" })}/>

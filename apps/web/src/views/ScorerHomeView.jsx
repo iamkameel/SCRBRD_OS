@@ -328,7 +328,7 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                 )}
                 {nowShown.map((it) => {
                   const shown = it.error
-                    ? <p role="alert" style={{ ...line(), color: T.semantic.criticalText }} data-testid={`resume-${it.matchId}-unread`}>Could not read this match's balls on this phone. Nothing is deleted.</p>
+                    ? <p role="alert" style={{ ...line(), color: T.semantic.criticalText }} data-testid={`resume-${it.matchId}-unread`}>Couldn't load this match's balls on this phone. Nothing is deleted.</p>
                     : it.board
                     ? <Board {...it.board} size="card" compact testid={`resume-${it.matchId}-board`}/>
                     : <p style={line()} data-testid={`resume-${it.matchId}-noboard`}>No ball on the board yet.</p>;
@@ -395,7 +395,7 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
             ) : (
               <div style={stack()}>
                 {pilotServer.asked && pilotServer.error && (
-                  <p role="status" data-testid="scorer-pilots-server" style={line()}>Could not read SCRBRD's copies, so these are this phone's.</p>
+                  <p role="status" data-testid="scorer-pilots-server" style={line()}>Couldn't load SCRBRD's copies, so these are this phone's.</p>
                 )}
                 {finished.length === 0 ? (
                   <p style={line()} data-testid="scorer-pilots-empty">{SANDBOX_WORDS.empty}</p>
@@ -455,7 +455,7 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                           )}
                           {sessionError && (
                             <p data-testid={`fixture-${m.id}-session-read`} role="alert" style={{ ...line(), color: T.semantic.criticalText }}>
-                              Could not read who is scoring this match.
+                              Couldn't load who is scoring this match.
                             </p>
                           )}
                           {w.note && <p style={line()}>{w.note}</p>}

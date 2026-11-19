@@ -28,9 +28,16 @@
  * side's notice says them); the figures are worked out from the log as he
  * reads it, as the scorecard he already reads.
  *
+ * CRI-3.3 (Kameel, 19 Nov 2026): the points and their working ride with
+ * the suggestions and his side's sheet, as the coach's do, ties marked and
+ * boys level past the third named (`alsoTied`), with `rule` and `unnamed`
+ * said only to a captain who may nominate. He reads his team-mates' figures
+ * on the scorecard already; the points are those figures, added.
+ *
  * WHAT HE WRITES. Ids and figures. There is no text field to send.
  */
-import { deriveFacts, fromRow, suggestPlayerOfMatch, matchFigures, figuresWords, basisWords, potmBasis, POTM_BASIS, FACTS_VERSION } from "@scrbrd/scoring";
+import { deriveFacts, fromRow, potmCard, matchFigures, figuresWords, workingWords, potmPoints, basisWords, ruleWords, unnamedWords,
+         potmBasis, POTM_BASIS, FACTS_VERSION } from "@scrbrd/scoring";
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { EVENT_COLUMNS_SEEN, matchFoldContext } from "./events-api.mjs";
 import { potmWords } from "./potm-api.mjs";
@@ -118,8 +125,11 @@ export function nominationRoutes({ pool, secret }) {
     // RECOGNITION R12: with fielding where every fielding wicket names its
     // fielders (potmBasis); the nomination and the award store which.
     const basis = potmBasis(facts);
-    const figures = new Map(matchFigures(facts, roster, basis).map((f) => [f.playerId, figuresWords(f)]));
-    return { figures, basis, suggestions: suggestPlayerOfMatch(facts, roster, undefined, basis) };
+    const figs = matchFigures(facts, roster, basis);
+    const figures = new Map(figs.map((f) => [f.playerId, figuresWords(f)]));
+    const points = new Map(figs.map((f) => [f.playerId, { points: potmPoints(f).total, working: workingWords(f) }]));
+    const card = potmCard(facts, roster, undefined, basis);
+    return { figures, points, basis, suggestions: card.suggestions, alsoTied: card.alsoTied, unnamed: card.unnamed };
   }
 
   /** The side's full sheet, as ids, through the door that answered the side (his own id first). @param {any} s @param {string | null} me */
@@ -134,26 +144,35 @@ export function nominationRoutes({ pool, secret }) {
       const mine = r.self_id ?? null;
       /** @type {any[]} */
       let suggestions = [];
+      /** @type {any[]} */
+      let alsoTied = [];
       /** @type {Map<string, string>} */
       let figures = new Map();
+      /** @type {Map<string, {points: number, working: string}>} */
+      let points = new Map();
+      let unnamed = 0;
       /** @type {string | null} */
       let basis = null;
       if (r.may_nominate) {
         const w = await working(client, id, rosterOf({ sheet }, mine));
         figures = w.figures;
+        points = w.points;
         basis = w.basis;
+        unnamed = w.unnamed;
         const names = new Map(sheet.map((/** @type {any} */ x) => [x.playerId, x.name]));
         // The coach's suggestions, as he sees them; the captain's own name is
         // left off his list (he cannot choose himself), never re-ranked.
         suggestions = w.suggestions.filter((x) => names.has(x.playerId)).map((x) => ({ ...x, name: names.get(x.playerId) }));
+        alsoTied = w.alsoTied.filter((x) => names.has(x.playerId)).map((x) => ({ ...x, name: names.get(x.playerId) }));
       }
       out.push({
         side: r.side, heading: r.heading, nominatedAs: r.nominated_as, coachName: r.coach_name ?? null, basisKey: basis,
         mayNominate: r.may_nominate === true, refusal: r.refusal ?? null,
         refusalWords: r.refusal ? captainWords(r.refusal) : null,
         closesAt: r.closes_at, headSeq: r.head_seq,
-        suggestions,
-        sheet: sheet.map((/** @type {any} */ x) => ({ playerId: x.playerId, name: x.name, figures: figures.get(x.playerId) ?? null })),
+        suggestions, alsoTied, unnamed: r.may_nominate ? unnamedWords(unnamed) : null, rule: r.may_nominate && basis ? ruleWords(basis) : null,
+        sheet: sheet.map((/** @type {any} */ x) => ({ playerId: x.playerId, name: x.name, figures: figures.get(x.playerId) ?? null,
+          points: points.get(x.playerId)?.points ?? null, working: points.get(x.playerId)?.working ?? null })),
         mine: r.nomination_id ? {
           nominationId: r.nomination_id, nomineeName: r.nominee_name, status: r.status,
           nominatedAt: r.nominated_at, decidedAt: r.decided_at, closesAt: r.closes_at,

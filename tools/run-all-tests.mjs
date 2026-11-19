@@ -314,12 +314,12 @@ const SUITES = [
   ["skills-history", "apps/web/test/skillsHistory.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
-  // per-fixture count: "N to resolve" and "Could not read X", a failed read
+  // per-fixture count: "N to resolve" and "Couldn't load X", a failed read
   // never the same as nothing.
   ["queue", "apps/web/test/queue.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The parent's action list, phase A0 (GA-I20): R1 an answer owed and R2
   // answer again, over a side's worth of rows narrowed to his own; the
-  // fourteen-day fold; "N to do" and "Could not read X", a failed read never
+  // fourteen-day fold; "N to do" and "Couldn't load X", a failed read never
   // the same as nothing; no reason, no note, no "done".
   ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
@@ -544,6 +544,9 @@ const SUITES = [
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   // Which commit /api/health says the process was built from (GA I14).
   ["revision", "services/api/revision.test.mjs"],
+  // The owner's key off the read path (PLATFORM_CONTROLS slice 6a, db/167):
+  // what each answer offers the log, and every GET route decided.
+  ["platform-reads", "services/api/read/platform-reads.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
   // The Claude Code usage report and status line: each reply counted once, in
