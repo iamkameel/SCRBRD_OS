@@ -196,8 +196,8 @@ group("G. A run out credits no bowler");
 
 group("H. A corrected ball changes the points");
 {
-  const six = flog.find((e) => e.kind === "ball" && e.innings === 0 && e.value === 6);
-  const catchBall = flog.find((e) => e.kind === "ball" && e.dismissal === "caught" && e.fielders?.[0] === H[3]);
+  const six = /** @type {any} */ (flog.find((e) => e.kind === "ball" && e.innings === 0 && e.value === 6));
+  const catchBall = /** @type {any} */ (flog.find((e) => e.kind === "ball" && e.dismissal === "caught" && e.fielders?.[0] === H[3]));
   const f0 = potmCard(deriveFacts(flog, [...H, ...A]), H);
   const f1 = potmCard(deriveFacts([...flog, I(voidEvent({ target: six.id }), 0)], [...H, ...A]), H);
   const p = (/** @type {any} */ c, /** @type {string} */ id) => c.suggestions.find((/** @type {any} */ x) => x.playerId === id);
