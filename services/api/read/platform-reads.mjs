@@ -1,5 +1,5 @@
 /**
- * THE OWNER'S KEY OFF THE READ PATH (PLATFORM_CONTROLS slice 6a, db/166).
+ * THE OWNER'S KEY OFF THE READ PATH (PLATFORM_CONTROLS slice 6a, db/167).
  *
  * read-api.mjs puts a platform-wide reader's every read on the record (db/20)
  * and a support session's the same way (db/22). The GET routes outside
@@ -7,7 +7,7 @@
  * public name and his guardians' answers, the team sheet, the ball log or a
  * pupil's account left no row at his school. server.mjs names those routes
  * (PLATFORM_LOGGED) and, after one answers, hands this the answer it is about
- * to send. log_platform_read() (db/166) decides the rest in one statement:
+ * to send. log_platform_read() (db/167) decides the rest in one statement:
  * nothing for a school reader; for the key, a platform administrator or a
  * support session, one row per school, naming each child whose id came back.
  *

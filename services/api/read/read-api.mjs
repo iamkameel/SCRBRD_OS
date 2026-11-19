@@ -3690,7 +3690,7 @@ export const READ_QUERIES = {
   },
   access_log: {
     // THE PLATFORM IS NAMED AS THE PLATFORM (PLATFORM_CONTROLS slice 6a,
-    // db/166): a read made with the owner's key or by a platform
+    // db/167): a read made with the owner's key or by a platform
     // administrator, outside a support session, reads "SCRBRD platform",
     // never a person's name, whatever app_user's own policy would show.
     // A support session's row keeps its reader: support_access names him.

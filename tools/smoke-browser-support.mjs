@@ -24,7 +24,7 @@
  *      with the reader's role and a date), no safeguarding read, no other
  *      child; the asking is on the record; a coach has no picker. The owner's
  *      key opening his public name is on the list as "SCRBRD platform",
- *      marked Platform, the key-holder's name nowhere (slice 6a, db/166).
+ *      marked Platform, the key-holder's name nowhere (slice 6a, db/167).
  *
  * Falsified twice. Loosening the tab's gate in SettingsView.jsx to draw it
  * for everyone turned "there is no Support tab" red; loosening the panel's
@@ -331,7 +331,7 @@ try {
                values ($1, $2, 'safeguarding_concern', array[$3::uuid], 1, '{account}'), ($1, $2, 'players', array[$4::uuid], 1, '{born}')`,
       [HIL, medicRow.id, P_CHILD, P_OTHER]);
     // The owner's key opens his public name and his guardians' answers, a page
-    // off the read path (PLATFORM_CONTROLS slice 6a, db/166): it must be on the
+    // off the read path (PLATFORM_CONTROLS slice 6a, db/167): it must be on the
     // same list, the reader said as the platform.
     const ownerKey = await login("owner@example.invalid");
     const opened = await fetch(`${API}/api/players/${P_CHILD}/public-name`, { headers: { authorization: `Bearer ${ownerKey}` } });

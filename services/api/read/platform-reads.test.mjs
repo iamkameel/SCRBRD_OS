@@ -1,4 +1,4 @@
-// The owner's key off the read path (PLATFORM_CONTROLS slice 6a, db/166):
+// The owner's key off the read path (PLATFORM_CONTROLS slice 6a, db/167):
 // what the dispatcher hands log_platform_read() for one answer, and that
 // every GET route the dispatcher mounts is decided, logged or not. The rows
 // themselves are db/99 §144's; the live routes are tools/smoke-who-read.mjs's.

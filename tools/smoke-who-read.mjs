@@ -24,7 +24,7 @@
  *      fixture's availability and readiness) is on the same list: a row for
  *      each, naming him, under Hilton, as the key, marked platform-wide
  *      (Kameel, 5 Nov 2026, the guardian's terms Q6; db/139)
- *  10. off the read path too (PLATFORM_CONTROLS slice 6a, db/166): the key
+ *  10. off the read path too (PLATFORM_CONTROLS slice 6a, db/167): the key
  *      opening his public name and his guardians' answers, the team sheet,
  *      his own account and a notice about him is on the same list, and every
  *      read the key made reads "SCRBRD platform", never a person's name; a
@@ -106,7 +106,7 @@ try {
   }
   const [ownerRow] = await q(`select id from app_user where lower(email) = 'owner@example.invalid'`);
 
-  group("The owner's key opens his record off the read path (slice 6a, db/166)");
+  group("The owner's key opens his record off the read path (slice 6a, db/167)");
   const PUPIL = "88888888-0000-0000-0000-000000000009";   // his own account (self-access to him)
   const OFF_PATH = [[`/api/players/${P_INJURED}/public-name`, "public_name"], [`/api/matches/${MATCH}/sheet`, "fixture_sheet"],
                     [`/api/auth/users/${PUPIL}/preview`, "account_preview"], ["/api/read/notifications", "notifications"]];

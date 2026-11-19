@@ -543,7 +543,7 @@ const SUITES = [
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   // Which commit /api/health says the process was built from (GA I14).
   ["revision", "services/api/revision.test.mjs"],
-  // The owner's key off the read path (PLATFORM_CONTROLS slice 6a, db/166):
+  // The owner's key off the read path (PLATFORM_CONTROLS slice 6a, db/167):
   // what each answer offers the log, and every GET route decided.
   ["platform-reads", "services/api/read/platform-reads.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],

@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════
---  166 · The owner's key is logged off the read path too, and the
+--  167 · The owner's key is logged off the read path too, and the
 --        school's record names it as the platform
 -- ══════════════════════════════════════════════════════════════════
 --
@@ -57,13 +57,13 @@ BEGIN
   IF to_regprocedure('log_restricted_read(text, uuid[], text[], uuid)') IS NULL
      OR to_regprocedure('app_is_platform_wide()') IS NULL
      OR to_regprocedure('app_support_access_id(uuid)') IS NULL THEN
-    RAISE EXCEPTION 'db/166 needs db/20 and db/22 (log_restricted_read, app_is_platform_wide, app_support_access_id): paste them first';
+    RAISE EXCEPTION 'db/167 needs db/20 and db/22 (log_restricted_read, app_is_platform_wide, app_support_access_id): paste them first';
   END IF;
   IF to_regprocedure('access_log_platform_stamp()') IS NULL THEN
-    RAISE EXCEPTION 'db/166 needs db/139 (access_log_platform_stamp): paste it first';
+    RAISE EXCEPTION 'db/167 needs db/139 (access_log_platform_stamp): paste it first';
   END IF;
   IF to_regprocedure('api_role_reach(name)') IS NULL THEN
-    RAISE EXCEPTION 'db/166 needs db/157 (api_role_reach): paste it first';
+    RAISE EXCEPTION 'db/167 needs db/157 (api_role_reach): paste it first';
   END IF;
 END $guard$;
 
@@ -184,23 +184,23 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'access_log_platform_reader(uuid)'::regprocedure
                     AND p.prosecdef AND p.provolatile = 's'
                     AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))) THEN
-    RAISE EXCEPTION 'db/166: access_log_platform_reader() is not a STABLE SECURITY DEFINER with a pinned search_path';
+    RAISE EXCEPTION 'db/167: access_log_platform_reader() is not a STABLE SECURITY DEFINER with a pinned search_path';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'log_platform_read(text, uuid[], uuid, uuid, boolean)'::regprocedure
                     AND NOT p.prosecdef
                     AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}'))) THEN
-    RAISE EXCEPTION 'db/166: log_platform_read() is not an invoker with a pinned search_path';
+    RAISE EXCEPTION 'db/167: log_platform_read() is not an invoker with a pinned search_path';
   END IF;
   FOREACH v IN ARRAY ARRAY['access_log_platform_reader(uuid)', 'log_platform_read(text, uuid[], uuid, uuid, boolean)'] LOOP
     IF NOT has_function_privilege('scrbrd_app', v, 'EXECUTE')
        OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
                    WHERE p.oid = v::regprocedure AND x.privilege_type = 'EXECUTE'
                      AND x.grantee NOT IN (p.proowner, 'scrbrd_app'::regrole)) THEN
-      RAISE EXCEPTION 'db/166: % is not granted to scrbrd_app alone', v;
+      RAISE EXCEPTION 'db/167: % is not granted to scrbrd_app alone', v;
     END IF;
   END LOOP;
   IF EXISTS (SELECT 1 FROM api_role_reach('public') x WHERE x ~ '(access_log_platform_reader|log_platform_read)\(') THEN
-    RAISE EXCEPTION 'db/166: PUBLIC reaches one of db/166''s functions';
+    RAISE EXCEPTION 'db/167: PUBLIC reaches one of db/167''s functions';
   END IF;
 END $check$;
 

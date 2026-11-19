@@ -26,7 +26,7 @@ The reading of your own question is on the record too: it names the child in the
 
 - Every read of a **restricted field** of his record at this school (a date of birth, an injury note, a clinical note), and every read of his record made from **outside** the school (the platform, or a support session).
 - For each: the reader's name (the office sees it), the kind of record (`players`, `injuries` ...), the fields that came back, how many records, the time, and how they reached the school.
-- **The platform's own reads.** Every read the platform owner's key (or a platform administrator) made of his record shows as **SCRBRD platform** in the Who column, marked **Platform**, never a person's name. That includes the pages outside the record itself: his public name and his guardians' answers, the team sheet, his own account, a notice about him (PLATFORM_CONTROLS slice 6a, db/166).
+- **The platform's own reads.** Every read the platform owner's key (or a platform administrator) made of his record shows as **SCRBRD platform** in the Who column, marked **Platform**, never a person's name. That includes the pages outside the record itself: his public name and his guardians' answers, the team sheet, his own account, a notice about him (PLATFORM_CONTROLS slice 6a, db/167).
 - Newest first, up to 500 rows, this school's rows only. Another school's office sees none of this school's reads.
 
 ## What it never shows

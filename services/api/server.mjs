@@ -1422,7 +1422,7 @@ async function servePad(req, res) {
 const OWN_DEDUP = new Set([events.append, pilotMatch.append]);
 
 /**
- * THE OWNER'S KEY OFF THE READ PATH (PLATFORM_CONTROLS slice 6a, db/166).
+ * THE OWNER'S KEY OFF THE READ PATH (PLATFORM_CONTROLS slice 6a, db/167).
  * The GET routes outside /api/read/ whose answer is about children or their
  * fixtures: after one answers the key, a platform administrator or a support
  * session, the answer is on each school's record before it leaves
@@ -1684,7 +1684,7 @@ const server = createServer(async (req, res) => {
       }
 
       await handler(request, out);
-      // THE KEY'S READ IS ON THE RECORD BEFORE IT LEAVES (slice 6a, db/166):
+      // THE KEY'S READ IS ON THE RECORD BEFORE IT LEAVES (slice 6a, db/167):
       // a 2xx answer from a route PLATFORM_LOGGED names, for the key, a
       // platform administrator or a support session; nothing for anybody
       // else. A row that cannot be written refuses the answer rather than
