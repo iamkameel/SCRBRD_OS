@@ -281,7 +281,21 @@ export function PublicMatch({ matchId, view }) {
 
   if (data.loading) return <Frame><Quiet testid="public-loading">Loading the match…</Quiet></Frame>;
   if (data.missing) return <Frame><Quiet testid="public-missing">This page is not available. The link may be wrong, or the match may not be public.</Quiet></Frame>;
-  if (!match) return <Frame><Quiet testid="public-error">Could not load this match{data.error === "busy" ? " — too many requests; try again shortly" : ""}.</Quiet></Frame>;
+  // A ground with poor signal is where this page is opened: a failed read offers the same read again, and says nothing
+  // more than it did (glossary review item 5).
+  if (!match) return (
+    <Frame>
+      <div aria-live="polite">
+        <Quiet testid="public-error">Could not load this match{data.error === "busy" ? " — too many requests; try again shortly" : ""}.</Quiet>
+        <button type="button" data-testid="public-retry" onClick={() => { if (!data.refreshing) data.refresh(); }} className="pressBtn os-state"
+          style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", background: "transparent",
+            border: `1px solid ${T.brand.accentText}`, borderRadius: T.radius.pill, cursor: "pointer", color: T.brand.accentText,
+            fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+          {data.refreshing ? "Trying again…" : "Try again"}
+        </button>
+      </div>
+    </Frame>
+  );
 
   const sides = sidesOf(match);
   const isLive = match.status === "live";

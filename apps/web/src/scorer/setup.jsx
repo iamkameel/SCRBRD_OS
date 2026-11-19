@@ -594,23 +594,32 @@ function SetupScreen({onStart,practice=null}){
         <div style={{width:"60px",height:"2px",background:D.grad,borderRadius:"2px",margin:"12px auto 0"}}/>
       </div>
       {practice&&<PracticeEntry {...practice}/>}
-      {/* Steps */}
-      <div style={{display:"flex",gap:"6px",marginBottom:"20px",flexWrap:"wrap",justifyContent:"center"}}>
+      {/* Steps. Each is a button, its dot and its word inside one 44px target: a step already done takes the scorer
+          back to it, the one he is on says so (aria-current), and one not reached yet is disabled, as the opening
+          step's own sub-step tabs are. Going back changes the screen only, never what the pad records. */}
+      <ol data-testid="setup-steps" aria-label="Set-up steps" style={{display:"flex",gap:"6px",flexWrap:"wrap",justifyContent:"center",listStyle:"none",padding:0,margin:"0 0 20px"}}>
         {STEPS.map((s,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:"6px"}}>
-            <div style={{
-              width:"28px",height:"28px",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
-              fontFamily:D.mono,fontSize:"12px",fontWeight:600,cursor:i<step?"pointer":"default",
-              background:i===step?D.grad:i<step?`${D.emerald}22`:D.surf2,
-              color:i===step?T.light.ink:i<step?D.emerald:D.textMuted,
-              border:`1px solid ${i===step?D.indigo+"66":i<step?D.emerald+"44":D.border}`,
-              transition:"background-color .3s, border-color .3s, color .3s",
-            }} onClick={()=>i<step&&setStep(i)}>{i<step?"✓":i+1}</div>
-            <span style={{fontFamily:D.body,fontSize:"12px",color:i===step?D.textPrimary:D.textMuted,fontWeight:i===step?600:400}}>{s}</span>
-            {i<3&&<div style={{width:"16px",height:"1px",background:D.border}}/>}
-          </div>
+          <li key={i} style={{display:"flex",alignItems:"center",gap:"6px"}}>
+            <button type="button" data-testid={`setup-step-${i}`} className="pressBtn"
+              aria-label={`Step ${i+1} of ${STEPS.length}: ${s}${i<step?", done":""}`}
+              aria-current={i===step?"step":undefined} disabled={i>step}
+              onClick={()=>i<step&&setStep(i)}
+              style={{display:"flex",alignItems:"center",gap:"6px",minHeight:"44px",minWidth:"44px",padding:"0 4px",
+                background:"none",border:"none",borderRadius:D.pill,cursor:i<step?"pointer":"default"}}>
+              <span aria-hidden="true" style={{
+                width:"28px",height:"28px",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
+                fontFamily:D.mono,fontSize:"12px",fontWeight:600,
+                background:i===step?D.grad:i<step?`${D.emerald}22`:D.surf2,
+                color:i===step?T.light.ink:i<step?D.emerald:D.textMuted,
+                border:`1px solid ${i===step?D.indigo+"66":i<step?D.emerald+"44":D.border}`,
+                transition:"background-color .3s, border-color .3s, color .3s",
+              }}>{i<step?"✓":i+1}</span>
+              <span style={{fontFamily:D.body,fontSize:"12px",color:i===step?D.textPrimary:D.textMuted,fontWeight:i===step?600:400}}>{s}</span>
+            </button>
+            {i<3&&<span aria-hidden="true" style={{width:"16px",height:"1px",background:D.border}}/>}
+          </li>
         ))}
-      </div>
+      </ol>
       <div style={{width:"100%",maxWidth:"520px"}}>
         <Glass style={{padding:"24px 22px"}}>
           {step===0&&(

@@ -258,6 +258,36 @@ try {
   await signInAndOpen(phoneA);
   ok("the start screen offers Start Practice Match", await phoneA.has("start-practice"));
   ok("...and no My Pilot Matches", !(await phoneA.has("pilot-list-open")));
+  {
+    // The set-up's step dots are buttons (glossary review item 3): 44px, the one he is on marked, the ones not reached
+    // disabled, a step done takes him back to it, by keyboard too, and going back records nothing.
+    const steps = () => phoneA.page.evaluate(() => [...document.querySelectorAll('[data-testid="setup-steps"] [data-testid^="setup-step-"]')].map((b) => {
+      const r = b.getBoundingClientRect();
+      return { tag: b.tagName, name: b.getAttribute("aria-label"), current: b.getAttribute("aria-current"), disabled: /** @type {HTMLButtonElement} */ (b).disabled, w: r.width, h: r.height };
+    }));
+    const s0 = await steps();
+    ok("the set-up's steps are five buttons, each a 44px target", s0.length === 5 && s0.every((s) => s.tag === "BUTTON" && s.w >= 44 && s.h >= 44), JSON.stringify(s0));
+    ok("...named \"Step 1 of 5: Match\" and onward, the first the current step",
+       s0[0]?.name === "Step 1 of 5: Match" && s0[1]?.name === "Step 2 of 5: Team 1" && s0[0]?.current === "step" && s0.slice(1).every((s) => s.current === null), JSON.stringify(s0));
+    ok("...and the ones not reached yet are disabled", s0.slice(1).every((s) => s.disabled) && !s0[0]?.disabled, JSON.stringify(s0));
+    const before = (await phoneA.keys()).length;
+    for (const team of ["Australia", "India"]) {
+      await phoneA.page.locator("button", { hasText: /^Select team…/ }).first().click({ timeout: 4000 }).catch(() => {});
+      await phoneA.page.locator("button", { hasText: team }).first().click({ timeout: 4000 }).catch(() => {});
+    }
+    await phoneA.page.locator("button:not([disabled])", { hasText: /^Select Australia XI/ }).first().click({ timeout: 4000 }).catch(() => {});
+    await phoneA.page.waitForTimeout(300);
+    const s1 = await steps();
+    ok("on step 2 the first step is done, named so, and he can go back to it", s1[0]?.name === "Step 1 of 5: Match, done" && !s1[0]?.disabled
+       && s1[1]?.current === "step" && s1[0]?.current === null, JSON.stringify(s1));
+    await phoneA.tid("setup-step-0").focus();
+    await phoneA.page.keyboard.press("Enter");
+    await phoneA.page.waitForTimeout(300);
+    const s2 = await steps();
+    ok("...by keyboard: Enter on it takes him back to Match", s2[0]?.current === "step" && s2[0]?.name === "Step 1 of 5: Match", JSON.stringify(s2));
+    ok("...and going back and forth wrote nothing to the phone", (await phoneA.keys()).length === before);
+    await freshStart(phoneA);
+  }
   await phoneA.tap("start-practice");
   ok("the setup asks nothing about sending, and is labelled as phase 1", !(await phoneA.has("pilot-choice")) && !(await phoneA.has("pilot-label"))
      && (await phoneA.tid("practice-label").first().innerText().catch(() => "")).includes("Practice match · kept on this phone"));

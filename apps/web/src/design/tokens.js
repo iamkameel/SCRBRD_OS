@@ -1055,13 +1055,21 @@ button{touch-action:manipulation}
   .os-search-text{display:none}
   /* The header carries the bell, "Raise a concern", the name and the role on every screen (EXPERIENCE_PASS §1.2). */
   .os-topbar{gap:6px!important;padding:0 8px!important}
+  /* "Raise a concern" keeps its words on a phone, on two lines ("Raise a" over "concern"), so the bar still fits 320. */
+  .os-concern{padding:0 4px!important;gap:4px!important}
+  .os-concern-text{white-space:normal!important;width:min-content}
 }
-/* The narrowest phones: the live chip is its pulsing dot alone, still named "Live matches", and the header's gaps close
-   up, so its six 44px controls keep their room. */
-@media(max-width:359px){
+/* The narrower phones: the live chip is its pulsing dot alone, still named "Live matches", the role button its icon
+   (aria-haspopup still says it opens a menu), and the header's gaps close up, so its six 44px controls and the words
+   of "Raise a concern" keep their room. */
+@media(max-width:399px){
   .os-topbar{gap:4px!important}
   .os-topbar-live{padding:0!important;min-width:44px;justify-content:center}
-  .os-topbar-live-text{display:none}
+  .os-topbar-live-text,.os-role-caret{display:none}
+}
+@media(max-width:359px){
+  .os-topbar{gap:2px!important;padding:0 6px!important}
+  .os-concern{padding:0!important}
 }
 /* A phone at 200% zoom is under 200px wide: the bars wrap into a second row rather than run off the screen, and the
    page leaves room under the taller bottom bar (I32). */
