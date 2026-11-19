@@ -61,7 +61,10 @@
 --   duty_suspended, duty_suspend, duty_lift, broadcast_state, audit_log,
 --   account_offboard_preview, role_assignment_linked_guard) are owned by the
 --   table's owner and bypass its row security, so none of them moves: a
---   duty keeps its lifecycle and its audit while hidden.
+--   duty keeps its lifecycle and its audit while hidden. So the office's
+--   audit rows for a suspension ("Suspended a match duty: scorer", with the
+--   subject's id; db/80, db/132) are still listed to it while Officials is
+--   off. That is the record the rule keeps; they name no official.
 --
 --   Not touched: db/01, db/09, feature_enabled(), match_official_read, the
 --   appointment writes, broadcast_state(), the stored appointments. Nothing
@@ -73,6 +76,11 @@
 --
 -- One transaction: the paste runs the file inside one, so there is no BEGIN
 -- or COMMIT here. Its proof is db/99 §140; the walk is smoke-officials.
+--
+-- LOCKS: the first paste's CREATE POLICY takes ACCESS EXCLUSIVE on
+-- match_official, so it waits at most ten seconds for it (section 0 below)
+-- rather than queueing the overlay and the scorer's home behind an open
+-- appointment sheet. Paste it outside a match; on lock_timeout, paste again.
 
 CREATE OR REPLACE FUNCTION pg_temp._v162_fold(t text) RETURNS text AS $$
   SELECT md5(regexp_replace(btrim(t), '\s+', ' ', 'g'))
@@ -113,6 +121,15 @@ BEGIN
     RAISE EXCEPTION 'db/162: duty_link(uuid) is missing or not the body this file was written against (md5 % of its folded body); look before replacing it', v;
   END IF;
 END $guard$;
+
+-- ── 0 · Ten seconds for a lock, or nothing (db/158, db/161, db/165) ──
+-- A plain SET, after the guard, so it holds for every statement after it
+-- however the file is run (psql -1, the SQL editor's single run, statement
+-- by statement); the file's last statement RESETs it, so a pooled connection
+-- is handed back as it came. Inside a transaction a stopped paste rolls back
+-- whole; statement by statement, a second paste finishes what a stopped one
+-- left (every step below is made once or made in place).
+SET lock_timeout = '10s';
 
 
 -- ── 1 · An appointment is read only while Officials is on for its fixture's school ──
@@ -235,3 +252,6 @@ BEGIN
 END $after$;
 
 DROP FUNCTION pg_temp._v162_fold(text);
+
+-- ── 4 · The lock limit back as it was: a pooled connection is handed back as it came ──
+RESET lock_timeout;

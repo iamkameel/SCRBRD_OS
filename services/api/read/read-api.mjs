@@ -179,8 +179,6 @@ export const REACH_ONE_MATE = /* reach_one_mate:begin */`($2::uuid is not null a
 /** REACH_ONE_MATE asked of the read's parameter $n. @param {number} n */
 export const reachOneMate = (n) => REACH_ONE_MATE.replaceAll("$2::uuid", `$${n}::uuid`);
 
-// The dismissals that are not the bowler's, as a SQL list, from the one set
-// the reducer reads — so a query cannot restate the law differently.
 /**
  * A fixture's officials are named only while Officials is on (SCRBRD-144;
  * Kameel, 13 Nov 2026: switched off is hidden, and still records).
@@ -204,6 +202,8 @@ export const reachOneMate = (n) => REACH_ONE_MATE.replaceAll("$2::uuid", `$${n}:
 const OFFICIALS_ON = (matchCol) =>
   `(feature_enabled('officials', match_school(${matchCol}), null::uuid) and my_feature_enabled('officials'))`;
 
+// The dismissals that are not the bowler's, as a SQL list, from the one set
+// the reducer reads — so a query cannot restate the law differently.
 const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
 // Runs that are the striker's, as SQL over ball_event `b`: runsOffBat() in
 // packages/scoring. A no-ball's and a wicket ball's are, unless payload.nbRuns
@@ -1517,8 +1517,12 @@ export const READ_QUERIES = {
    * read above, assignment_suspended()) and not the reason.
    */
   duty_suspensions: {
-    // The suspension is the office's record and is always listed; the name
+    // The suspension is the office's record and is always listed. The name
     // on the duty follows the Officials switch like every other read of it.
+    // While Officials is off, an office that may not appoint (a registrar, a
+    // school administrator without officiating.assign) reads no row of
+    // match_official at all (db/162's policy), so the join leaves match_id and
+    // duty NULL too: the suspension is listed, but anonymous. That fails closed.
     text: `select s.id, s.duty_id, o.match_id, o.duty,
                   case when ${OFFICIALS_ON("o.match_id")} then o.person_name end as person_name,
                   s.suspended_at, s.reason, sb.name as suspended_by_name,
