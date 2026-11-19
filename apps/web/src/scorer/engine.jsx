@@ -4,7 +4,7 @@ import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
   ball as ballEvent, revision as revisionEvent, retire as retireEvent, sealInnings,
   newEventId, KIND, battingFirst, tossFromRow, firstInningsSides, fromRow,
-  CAPTURE_PROFILE, batHandOf,
+  batHandOf,
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
   lastUndoableIndex, likelyCause, keeper as keeperEvent, keeperOf,
 } from "@scrbrd/scoring";
@@ -47,7 +47,7 @@ import { RetireSheet } from "./retireSheet.jsx";
 import { retireHurtEvent, resumeChoices, consentChoices } from "./retire.js";
 import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords, suspensionsInMatch } from "./suspension.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
-import { ExitKey, Pad, PadBoard } from "./pad.jsx";
+import { ExitKey, Pad, PadBoard, asksOneTap, usePinnedBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
 import { SecondAccountSheet, PenStandsLine, PenStandsSheet } from "./secondAccount.jsx";
 import { TossSheet } from "./toss.jsx";
@@ -404,6 +404,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // a person's choice — does it: never the first render, and never a refresh
   // of the score or the sync state, which do not touch activeTab.
   const padMainRef=useRef(null);
+  const pinLayoutRef=usePinnedBoard();
   const tabWas=useRef(activeTab);
   useEffect(()=>{
     if(tabWas.current===activeTab)return;
@@ -1250,12 +1251,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   };
 
   // ── Basic Scoring (DESIGN_DIRECTION §4, decision 3) ─────
-  // The three-phase pad is the default; Basic Scoring is the one-tap pad,
-  // outcome only, and an option. It IS the `quick` capture profile: the
-  // innings setup declares it (the setup screen, the openers sheet and the
-  // innings break, whose picker names quick "Basic Scoring"), through the
-  // innings_start they have always written, and an innings declared quick
-  // opens on it; full and standard open on the three phases.
+  // Basic Scoring is the one-tap pad, outcome only, and since redesign
+  // slice 3 the default (asksOneTap, pad.jsx). It IS the `quick` capture
+  // profile: the innings setup declares it (the setup screen, the openers
+  // sheet and the innings break, whose picker names quick "Basic Scoring"),
+  // through the innings_start they have always written. An innings declared
+  // quick, or not declared at all, opens on it; full and standard open on
+  // the three phases.
   //
   // The menu's switch does NOT declare. The QUICK MODE toggle it replaces
   // never touched the declaration, and a switch that did would write an
@@ -1265,7 +1267,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // the switch changes how the pad asks, for this innings on this device,
   // and says what the innings is declared; each ball records its own profile
   // either way, exactly as it always has (commitBall).
-  const basic=basicChoice?.innings===curIn?basicChoice.basic:inn?.declaredProfile===CAPTURE_PROFILE.QUICK;
+  //
+  // Runs first (§3.4 Flow B, question 1): an innings that declared nothing
+  // opens on one tap too, not only one declared quick. Full and standard,
+  // which asked for the shot and where it went, open on the three phases.
+  const basic=asksOneTap(inn?.declaredProfile,basicChoice?.innings===curIn?basicChoice.basic:null);
   const toggleBasic=()=>{
     setBasicChoice({innings:curIn,basic:!basic});
     setUiMode("focus");
@@ -1273,8 +1279,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   const PROFILE_WORD={full:"Full",standard:"Standard",quick:"Basic Scoring"};
   const declaredWords=inn?.declaredProfile?`This innings is declared ${PROFILE_WORD[inn.declaredProfile]}`:"This innings has no declaration";
   const basicHint=canDeclare
-    ?`Runs, extras and wickets only. ${declaredWords}; to declare it Basic Scoring, choose that on the openers sheet.`
-    :`Runs, extras and wickets only. ${declaredWords}; switching changes only how the pad asks.`;
+    ?`One tap a ball: runs, extras and wickets. Off, the pad asks the shot and where it went first. ${declaredWords}; the openers sheet declares it.`
+    :`One tap a ball: runs, extras and wickets. Off, the pad asks the shot and where it went first. ${declaredWords}; switching changes only how the pad asks.`;
 
   // ── The first innings of a live fixture (SCRBRD-067) ─────
   // The side the toss put in bats; each end's squad (the side its coach
@@ -2924,10 +2930,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
           )}
         </header>
 
-        <div className={`pad-layout${split?" pad-split":""}`}>
+        <div ref={pinLayoutRef} className={`pad-layout${split?" pad-split":""}`}>
           <div className="pad-head">
-            {/* The board, once (§1, §4). Always black, in both themes. */}
-            {inn&&<PadBoard inn={inn} match={match} target={target2} flash={eventOverlay} onFlashDone={onOverlayDone}/>}
+            {/* The board, once (§1, §4). Always black, in both themes, and
+                pinned under the title bar: the score never leaves the screen
+                (§3.4 Flow B 1; usePinnedBoard). */}
+            {inn&&<div className="pad-pin" data-testid="pad-pin"><PadBoard inn={inn} match={match} target={target2} flash={eventOverlay} onFlashDone={onOverlayDone}/></div>}
             {/* The moment's words, heard and not seen: the flash is on the
                 board, the celebration on the spectators' screens. */}
             <div className="sr-only" role="status" aria-live="polite" data-testid="pad-moment">{moment}</div>

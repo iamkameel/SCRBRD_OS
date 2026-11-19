@@ -50,7 +50,17 @@ const GS = () => (
     .os-board-flash{animation:boardFlash 160ms ease-out both}
     @media (prefers-reduced-motion: reduce){.os-board-flash{animation:none}}
     .pad-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:${T.space.sm};padding:${T.space.sm} ${T.space.lg};max-width:640px;margin:0 auto}
-    .pad-head{display:grid;gap:${T.space.sm};align-content:start;min-width:0}
+    /* The board is pinned and always whole (DESIGN_DIRECTION §3.4 Flow B 1):
+       under the title bar, over everything that scrolls, on every tab. The
+       head's own box steps aside (display: contents) so the pin's sticky
+       range is the whole pad, not the head alone; its items keep the same
+       gap, the layout's. The canvas ring masks what scrolls beneath, as the
+       strip's does. --pad-bar-h is the title bar's height, measured
+       (pad.jsx usePinnedBoard). Beside the pad at a desktop the head is its
+       own sticky column again, and the board sits in it. */
+    .pad-head{display:contents}
+    .pad-pin{position:sticky;top:var(--pad-bar-h,52px);z-index:20;background:${T.surface.canvas};
+      box-shadow:0 0 0 ${T.space.sm} ${T.surface.canvas};border-radius:${T.radius.lg}}
     .pad-main{min-width:0}
     /* The pad's strip (Wide, No ball, Dot, Undo) on a phone: where the pad
        is taller than the screen — a small Android, the shot grid in four
@@ -75,7 +85,8 @@ const GS = () => (
     @media(min-width:1024px){
       .pad-layout{max-width:1320px}
       .pad-layout.pad-split{max-width:1200px;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:${T.space.xl};align-items:start}
-      .pad-split .pad-head{position:sticky;top:72px}
+      .pad-split .pad-head{display:grid;gap:${T.space.sm};align-content:start;min-width:0;position:sticky;top:72px}
+      .pad-split .pad-pin{position:static;box-shadow:none}
     }
     .pro-score-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
     .sc-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}

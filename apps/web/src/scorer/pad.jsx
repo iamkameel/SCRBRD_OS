@@ -13,10 +13,12 @@ import { EXTRAS, NB_DEFAULT, NB_FROM, NB_TYPES, extraCall, extraOf, nbFreeHit, n
 /**
  * THE PAD — step 2 of the redesign (DESIGN_DIRECTION §4).
  *
- * The score once, at the top, on the black board; the state in one line under
- * it; then the pad asks. By default it asks in three phases — Shot, Area,
- * Outcome — with a stepper that shows where the scorer is and steps back.
- * BASIC SCORING asks for the outcome alone. The extras (wide, no ball, bye,
+ * The score once, at the top, on the black board, pinned under the title bar
+ * (usePinnedBoard); the state in one line under it; then the pad asks. By
+ * default it asks one tap a ball, BASIC SCORING: the outcome alone (redesign
+ * slice 3, asksOneTap). An innings declared full or standard, or the menu's
+ * switch, asks in three phases — Shot, Area, Outcome — with a stepper that
+ * shows where the scorer is and steps back. The extras (wide, no ball, bye,
  * leg bye), dot and undo are on every phase, in the same place, so the
  * commonest deliveries never need the three steps (SCRBRD-100: an extra is
  * two taps, its kind then its runs; dot and 1 are the biggest run keys).
@@ -85,6 +87,41 @@ export function PadBoard({ inn, match, target, flash = null, onFlashDone }) {
       <BoardFlash event={flash} onDone={onFlashDone}/>
     </div>
   );
+}
+
+/**
+ * The board pinned under the title bar (§3.4 Flow B 1; `.pad-pin` in ui.jsx).
+ * The bar's height is measured, not assumed — the sides' names wrap and a
+ * practice label adds a line — and handed to the pin as --pad-bar-h on the
+ * layout `ref` returns. While the pad is open the page's scroll padding is
+ * the bar and the board, so a key reached by Tab, or a field scrolled to, is
+ * never left under them (WCAG 2.4.11); what it was is put back on the way out.
+ * Moves nothing a tap records.
+ */
+export function usePinnedBoard() {
+  // A callback ref: the pad's layout mounts after the toss and the setup
+  // screens, long after the scorer itself, and goes when they come back.
+  const [el, layout] = useState(/** @type {HTMLElement | null} */ (null));
+  useEffect(() => {
+    if (!el || typeof document === "undefined") return undefined;
+    const root = document.documentElement, was = root.style.scrollPaddingTop;
+    const measure = () => {
+      const bar = document.querySelector('[data-testid="pad-titlebar"]');
+      const pin = el.querySelector('[data-testid="pad-pin"]');
+      const barH = bar instanceof HTMLElement ? bar.offsetHeight : 52;
+      el.style.setProperty("--pad-bar-h", `${barH}px`);
+      const stuck = pin instanceof HTMLElement && getComputedStyle(pin).position === "sticky";
+      root.style.scrollPaddingTop = `${barH + (stuck ? pin.offsetHeight + RING : 0) + RING}px`;
+    };
+    measure();
+    const ro = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    const bar = document.querySelector('[data-testid="pad-titlebar"]');
+    if (bar) ro?.observe(bar);
+    ro?.observe(el);
+    addEventListener("resize", measure);
+    return () => { ro?.disconnect(); removeEventListener("resize", measure); root.style.scrollPaddingTop = was; };
+  }, [el]);
+  return layout;
 }
 
 /** How long the moment stays on the board. */
@@ -522,7 +559,12 @@ const FIELD_MAX = 332;
 function clearBand(strip) {
   const head = document.querySelector('[data-testid="pad-titlebar"]');
   const tabs = document.querySelector('[data-testid="pad-tabs"]');
-  const top = (head ? Math.max(0, head.getBoundingClientRect().bottom) : 0) + RING;
+  // The pinned board (usePinnedBoard) is under the bar wherever the page has
+  // scrolled at all, so the band starts under it: where it is pinned, not
+  // where it sits before the first scroll, which is a ring's width lower.
+  const pin = document.querySelector('[data-testid="pad-pin"]');
+  const pinned = pin instanceof HTMLElement && getComputedStyle(pin).position === "sticky" ? pin.offsetHeight + RING : 0;
+  const top = (head ? Math.max(0, head.getBoundingClientRect().bottom) : 0) + pinned + RING;
   const barTop = tabs ? tabs.getBoundingClientRect().top : innerHeight;
   const docks = typeof matchMedia === "function" && matchMedia("(max-width: 880px)").matches;
   return { top, barFloor: barTop - RING, dockFloor: docks ? barTop - DOCK_ABOVE_BAR - strip.getBoundingClientRect().height - RING : null };
@@ -629,6 +671,28 @@ function useFocusClearOfStrip(stripRef) {
     return () => document.removeEventListener("focusin", onFocus);
   }, [stripRef]);
 }
+
+/**
+ * Whether the pad asks one tap a ball (Basic Scoring) or the three phases.
+ *
+ * RUNS FIRST (DESIGN_DIRECTION §3.4 Flow B; Kameel, question 1, answered as
+ * recommended on 18–19 Nov 2026): a school fixture is scored one tap a ball.
+ * The shot and where it went are asked only where someone asked for them:
+ * an innings DECLARED full or standard (the setup screen, the openers sheet,
+ * the innings break) opens on the three phases, and the pad's menu switches
+ * either way for this innings on this device (`choice`, which never writes
+ * a declaration: see engine.jsx). An innings that declared nothing, or
+ * declared quick, opens on one tap.
+ *
+ * It decides how the pad ASKS, never what a ball records: a one-tap ball is
+ * the call Basic Scoring always made (no shot, no placement, profile quick),
+ * and a three-phase ball the call the three phases always made.
+ *
+ * @param {string | null | undefined} declared  the innings' declaredProfile (the fold's)
+ * @param {boolean | null | undefined} [choice] the menu's switch for this innings, if flipped
+ */
+export const asksOneTap = (declared, choice = null) =>
+  choice != null ? !!choice : !(declared === "full" || declared === "standard");
 
 /**
  * The pad. `basic` is Basic Scoring: the outcome keys alone. Otherwise the
