@@ -14707,11 +14707,11 @@ BEGIN
   INSERT INTO role_assignment (person_id, role, school_id, team_code, active, revoked_at)
   VALUES ('88888888-0000-0000-0000-000000000009', 'player', '22222222-2222-2222-2222-222222222222', '1XI', false, now());
   INSERT INTO role_assignment (person_id, role, school_id, team_code, valid_until)
-  VALUES ('88888888-0000-0000-0000-000000000009', 'player', '22222222-2222-2222-2222-222222222222', '1XI', current_date - 1);
+  VALUES ('88888888-0000-0000-0000-000000000009', 'player', '22222222-2222-2222-2222-222222222222', '1XI', sa_today() - 1);
   WITH a AS (INSERT INTO role_assignment (person_id, role, school_id)
              VALUES ('88888888-0000-0000-0000-000000000009', 'selfaccess', '11111111-1111-1111-1111-111111111111') RETURNING id)
   INSERT INTO assignment_subject (assignment_id, player_id, valid_from, valid_until, relationship, verification_state, verified_by, verified_at)
-  SELECT a.id, 'bbbbbbbb-0000-0000-0000-000000000001', current_date - 30, current_date - 1, 'self', 'verified',
+  SELECT a.id, 'bbbbbbbb-0000-0000-0000-000000000001', sa_today() - 30, sa_today() - 1, 'self', 'verified',
          '88888888-0000-0000-0000-00000000000c', now() FROM a;
   -- The granter's stamp (created_at, revoked_at: now) held off for this one
   -- row, so it can say when it was made and when it ended.

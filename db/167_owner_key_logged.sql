@@ -68,8 +68,9 @@ DO $guard$
 BEGIN
   IF to_regprocedure('app_is_platform_wide()') IS NULL
      OR to_regprocedure('app_support_access_id(uuid)') IS NULL
-     OR to_regprocedure('app_device_id()') IS NULL THEN
-    RAISE EXCEPTION 'db/167 needs db/20 and db/22 (app_is_platform_wide, app_support_access_id): paste them first';
+     OR to_regprocedure('app_device_id()') IS NULL
+     OR to_regprocedure('sa_today()') IS NULL OR to_regprocedure('sa_date(timestamptz)') IS NULL THEN
+    RAISE EXCEPTION 'db/167 needs db/20, db/22 and db/128 (app_is_platform_wide, app_support_access_id, sa_today, sa_date): paste them first';
   END IF;
   IF to_regprocedure('access_log_platform_stamp()') IS NULL THEN
     RAISE EXCEPTION 'db/167 needs db/139 (access_log_platform_stamp): paste it first';
@@ -108,8 +109,8 @@ CREATE OR REPLACE FUNCTION access_log_platform_reader(p_person uuid, p_at timest
        AND a.role IN ('superadmin', 'platformadmin')
        AND a.created_at <= p_at
        AND (a.active OR a.revoked_at > p_at)
-       AND (a.valid_from  IS NULL OR a.valid_from  <= p_at::date)
-       AND (a.valid_until IS NULL OR a.valid_until >  p_at::date)
+       AND (a.valid_from  IS NULL OR a.valid_from  <= sa_date(p_at))
+       AND (a.valid_until IS NULL OR a.valid_until >  sa_date(p_at))
        AND (a.expires_at  IS NULL OR a.expires_at  >  p_at))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -188,8 +189,8 @@ BEGIN
     WITH live AS (
       SELECT a.* FROM role_assignment a
        WHERE p_account IS NOT NULL AND a.person_id = p_account AND a.active
-         AND (a.valid_from  IS NULL OR a.valid_from  <= current_date)
-         AND (a.valid_until IS NULL OR a.valid_until >  current_date)
+         AND (a.valid_from  IS NULL OR a.valid_from  <= sa_today())
+         AND (a.valid_until IS NULL OR a.valid_until >  sa_today())
          AND (a.expires_at  IS NULL OR a.expires_at  >  now())
     ), named AS (
       SELECT p.school_id, p.id FROM player p WHERE p.id = ANY (coalesce(p_seen, '{}'))
@@ -206,8 +207,8 @@ BEGIN
         JOIN assignment_subject g ON g.assignment_id = a.id
         JOIN player p ON p.id = g.player_id
        WHERE a.role = 'selfaccess'
-         AND (g.valid_from  IS NULL OR g.valid_from  <= current_date)
-         AND (g.valid_until IS NULL OR g.valid_until >  current_date)
+         AND (g.valid_from  IS NULL OR g.valid_from  <= sa_today())
+         AND (g.valid_until IS NULL OR g.valid_until >  sa_today())
       UNION
       SELECT a.school_id, p_account FROM live a WHERE a.school_id IS NOT NULL
     ), schools AS (
