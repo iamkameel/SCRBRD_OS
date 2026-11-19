@@ -403,7 +403,10 @@ try {
   // sealed. Staged after Matches, whose checks are about other fixtures.
   const R4_SEASON = (await q(`select id from season where level = 'school' and label = '2026'`))[0].id;
   const R4W = (await q(`insert into honour (player_id, kind, season_id) values ($1, 'half_colours', $2) returning id`, [PILLAY, R4_SEASON]))[0].id;
-  await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: awarded in error' where id = $1`, [R4W]);
+  // The day it was withdrawn, as the app says it: the database's SA day of the
+  // stamp itself (sa_date, db/117), never this process's clock read later.
+  const R4W_ON = (await q(`update honour set withdrawn_at = now(), withdrawn_reason = 'the walk: awarded in error' where id = $1
+                           returning sa_date(withdrawn_at)::text as d`, [R4W]))[0].d;
   const R4M = (await q(`insert into match (school_id, team_code, opponent, starts_at, format, overs, status)
                         values ($1, '1XI', 'Verify R4 XI', '2026-09-19 09:00+02', 'T20', 20, 'complete') returning id`, [HIL]))[0].id;
   for (let g = 1; g <= 5; g++) {
@@ -412,9 +415,9 @@ try {
              values ($1, $2, $3, 0, 1, $4, 'r4-walk', $5, $3, now(), 'ball', 'W', 0, $6, 'bowled', '{}')`, [R4M, HIL, g, scorer, `r4-walk-${g}`, PILLAY]);
   }
   const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const saToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg" }).format(new Date());
-  const [ty, tm, td] = saToday.split("-").map(Number);
-  const DM = `${td} ${MON3[tm - 1]}`, DMY = `${DM} ${ty}`;
+  // "2026-11-20" → "20 Nov", as lib/recognitionWords.js's dayMonth() says a date.
+  const dayMonth = (/** @type {string} */ iso) => { const [, m, d] = iso.split("-").map(Number); return `${d} ${MON3[m - 1]}`; };
+  const DMY = `${dayMonth(R4W_ON)} ${R4W_ON.slice(0, 4)}`;
 
   group("Passport: his figures, on the board; the Wheel tab");
   ok("Passport opens", await go(s.page, "passport"));
@@ -1258,15 +1261,21 @@ try {
     ok("no scoping refusals and no page errors", fam.refusals.length === 0 && fam.errors.length === 0, fam.refusals[0] ?? fam.errors.join(" | "));
     await fam.ctx.close();
     // The scorer seals the innings: the figures he read back are the log's.
-    await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts, kind, payload)
+    // The day the seal stands for is the SA day of this row's server_ts
+    // (milestone_seal_at, db/140, through sa_date): read back from the row,
+    // not from a clock read when the walk began. A run that started before
+    // midnight in Johannesburg seals after it, and the card is right to say
+    // the later day (CI, 19 Nov 22:15 UTC: "20 Nov", the walk expected 19).
+    const SEALED_ON = (await q(`insert into ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id, idempotency_key, client_seq, client_ts, kind, payload)
              values ($1, $2, 6, 0, 1, $3, 'r4-walk', 'r4-walk-6', 6, now(), 'innings_end',
-                     '{"reason":"declared","confirmed":{"runs":0,"wickets":5,"balls":5}}')`, [R4M, HIL, scorer]);
+                     '{"reason":"declared","confirmed":{"runs":0,"wickets":5,"balls":5}}')
+             returning sa_date(server_ts)::text as d`, [R4M, HIL, scorer]))[0].d;
     const sealed = await open();
     await signInAs(sealed.page, "parent@example.invalid");
     await afterReads(sealed.page, 1500);
     const after = (await inner(sealed.page, "season-milestone")).trim();
     ok("sealed: her card says so, and when, in §7's words",
-       new RegExp(`^R Pillay's (first )?(five-for · 5 wickets|hat-trick ·) v Verify R4 XI · sealed by the scorer, ${DM}$`).test(after), after);
+       new RegExp(`^R Pillay's (first )?(five-for · 5 wickets|hat-trick ·) v Verify R4 XI · sealed by the scorer, ${dayMonth(SEALED_ON)}$`).test(after), after);
     ok("...beside the medal", await sealed.page.locator('[data-testid="season-milestone-seal"][data-sealed="true"]').count() === 1);
     ok("...and she is told, now and not before", /R Pillay's (first )?(five-for|hat-trick)/.test(await inner(sealed.page, "notices-card")), await inner(sealed.page, "notices-card"));
     await sealed.ctx.close();
