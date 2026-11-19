@@ -39465,17 +39465,19 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   --   (support)  a support session at Hilton writes its row with the session
   --   (office)   Hilton's office finds the key's rows about the boy, each
   --              named the platform; the league account (platform-wide, not
-  --              the platform) is not named so, nor is the office; Westville's
-  --              office finds none of Hilton's
+  --              the platform) is not named so, nor is the office, and its
+  --              read of a boy it cannot read is filed under no school;
+  --              Westville's office finds none of Hilton's
   --   (grants)   the label a pinned definer, the writer a pinned invoker,
   --              each executable by scrbrd_app and not by PUBLIC
-  -- Falsified against this database, each in its own rolled-back run:
-  -- log_platform_read() made to write for every caller → (school) red; its
-  -- player branch dropped → (child), (account) red; its squad branch dropped
-  -- → (squad) red; the fixture's away school dropped → (match) red; the
-  -- "no row at all" fallback dropped → (nowhere) red; the label made true
-  -- for any platform-wide assignment → (office) red at the league account.
-  -- Without db/166 every case is red: neither function exists.
+  -- Falsified against a fresh pc6a, each mutation in its own rolled-back run
+  -- of this section: log_platform_read() made to write for every caller →
+  -- (school) red; its player branch dropped → (child) red; its squad branch
+  -- dropped → (squad) red; the fixture's away school dropped → (match) red;
+  -- its self-access branch dropped → (account) red; the "no row at all"
+  -- fallback dropped → (nowhere) red; the label made true for any
+  -- platform-wide assignment → (office) red at the league account. Without
+  -- db/166 every case is red: neither function exists.
   DECLARE
     OWNR uuid := '88888888-0000-0000-0000-000000000022';
     PLAT uuid := '88888888-0000-0000-0000-000000000014';
@@ -39570,13 +39572,19 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
     PERFORM _assert(n = 1, format('§144 (support): the session''s read wrote %s rows with the session, not 1', n));
 
     -- (office)
+    -- The league account is platform-wide and not the platform, and reads no
+    -- Hilton boy: its read naming him is filed under no school (no new reach).
     PERFORM _as(LEAG);
     PERFORM log_platform_read('v166_league', ARRAY[KID]);
+    PERFORM _as(OWNR);    -- the league reads no log; the platform reads the unfiled rows
+    SELECT count(*) INTO n FROM access_log l WHERE l.resource = 'v166_league' AND l.person_id = LEAG
+       AND l.school_id IS NULL AND l.record_ids = '{}' AND l.platform_wide;
+    PERFORM _assert(n = 1, format('§144 (office): the league account''s read of a boy it cannot read wrote %s unfiled rows, not 1', n));
     PERFORM _as(OFFH);
     SELECT string_agg(l.resource || ':' || access_log_platform_reader(l.person_id)::text, ' ' ORDER BY l.resource)
       INTO got FROM access_log l
      WHERE l.record_ids @> ARRAY[KID] AND l.resource IN ('v166_child', 'v166_account', 'v166_league', 'v166_squad');
-    PERFORM _assert(got = 'v166_account:true v166_child:true v166_league:false v166_squad:true',
+    PERFORM _assert(got = 'v166_account:true v166_child:true v166_squad:true',
       format('§144 (office): Hilton''s office reads the reads of the boy as %s', got));
     PERFORM _assert(NOT access_log_platform_reader(OFFH) AND NOT access_log_platform_reader(LEAG)
                     AND access_log_platform_reader(OWNR) AND access_log_platform_reader(PLAT),

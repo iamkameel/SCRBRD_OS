@@ -151,7 +151,7 @@ try {
   ok("...and the medic's read is still logged as a school reader's", mine?.platform_wide === false, mine);
   for (const [, res] of OFF_PATH) {
     const theirs = rows.filter((r) => r.resource === res && r.person_id === ownerRow.id);
-    ok(`the key's ${res} read, off the read path, is on his list at Hilton, platform-wide`,
+    ok(`the key's ${res} read is on his list at Hilton, platform-wide`,
        theirs.length === 1 && theirs[0].platform_wide === true && theirs[0].school_id === HIL, theirs);
   }
   const theKey = rows.filter((r) => r.person_id === ownerRow.id);

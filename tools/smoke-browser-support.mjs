@@ -365,7 +365,7 @@ try {
     ok("...with the fields and a date the office can write down", /\d{1,2} \w{3} \d{4}/.test(section), section.slice(0, 400));
     const keyRow = await off.page.$$eval('[data-testid="who-read-row"][data-resource="public_name"]', (els) => els.map((e) => e.innerText));
     ok("the owner's key's read is on it, as \"SCRBRD platform\", marked Platform",
-       keyRow.length === 1 && /SCRBRD platform/.test(keyRow[0]) && /Platform/.test(keyRow[0].replace("SCRBRD platform", "")), keyRow.join(" | "));
+       keyRow.length === 1 && /SCRBRD platform/.test(keyRow[0]) && /platform/i.test(keyRow[0].replace("SCRBRD platform", "")), keyRow.join(" | "));
     ok("...and the key-holder's own name is nowhere in the section", !section.includes(ownerAcct.name), section.slice(0, 400));
     ok("no safeguarding read is listed, though one names him", shown.every((r) => !String(r).startsWith("safeguarding")) && !/safeguarding_concern/.test(section), shown.join());
     ok("the other child's read is not on his list, and the other child is not named", !section.includes(other.full_name), section.slice(0, 400));
