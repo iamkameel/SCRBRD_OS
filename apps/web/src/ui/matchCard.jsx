@@ -86,14 +86,17 @@ function SideRow({ side, size, testid }) {
     // The score wraps under the name, never off the screen: at 200% zoom a phone is 188px wide (browser-narrow).
     <div data-testid={testid} data-end={side.end} data-batting={side.batting ? "true" : "false"}
       style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: `0 ${T.space.md}` }}>
-      <span style={{ ...s.name(), color: T.content.primary, minWidth: 0, flex: "1 1 8em", overflowWrap: "anywhere", display: "inline-flex", alignItems: "baseline", gap: T.space.xs }}>
-        <span>{side.name.full}</span>
-        {side.batting && <span style={{ color: T.brand.accentText, display: "inline-flex", alignSelf: "center" }}><Icon name="bat"/><span className="sr-only">batting</span></span>}
+      {/* A plain run of text, not a flex box, so a long name wraps inside its column and the bat follows its last word. */}
+      <span style={{ ...s.name(), color: T.content.primary, minWidth: 0, flex: "1 1 8em", overflowWrap: "anywhere", position: "relative" }}>
+        {side.name.full}
+        {side.batting && <span style={{ color: T.brand.accentText, marginLeft: T.space.xs, whiteSpace: "nowrap" }}><Icon name="bat"/><span className="sr-only">batting</span></span>}
       </span>
       {side.score && (
-        // Each part of the score holds together ("116/4", "· 10 overs"); the line may break between them.
+        // The runs hold together ("116/4"); the overs may break onto the next line on the narrowest phone.
         <span data-part="score" style={{ ...s.score(), color: T.content.primary, marginLeft: "auto", textAlign: "right", minWidth: 0 }}>
-          {side.score.split(" · ").map((part, i) => <span key={i} style={{ whiteSpace: "nowrap" }}>{i ? ` · ${part}` : part}</span>)}
+          {side.score.split(" · ").map((part, i) => (i
+            ? <span key={i}> · {part}</span>
+            : <span key={i} style={{ whiteSpace: "nowrap" }}>{part}</span>))}
         </span>
       )}
     </div>

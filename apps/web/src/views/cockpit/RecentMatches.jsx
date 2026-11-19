@@ -108,7 +108,7 @@ function SideCard({ side, named, onNav }) {
       <div style={{ padding: T.space.lg, display: "grid", gap: T.space.md }}>
         {loading ? <p style={quiet()} data-testid="recent-loading">Reading the scorecards…</p> : (
           <>
-            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid" }} aria-label="The last finished matches, newest first">
+            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr)" }} aria-label="The last finished matches, newest first">
               {side.picks.map(({ match, gate }, i) => {
                 const l = summaries[i].line;
                 const them = theirName(match, gate.end);
