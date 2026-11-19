@@ -29,8 +29,10 @@
  *      of them a wide or no-ball?" — no clause numbers.
  *   F  The haptic tick: one 10 ms buzz per recorded ball, none under reduced
  *      motion, none with the pad menu's switch off.
- *   G  Runs first (redesign slice 3; Kameel, question 1): an undeclared fixture
- *      opens on one tap a ball, nothing switched. A whole over is six taps,
+ *   G  Runs first (redesign slice 3; Kameel, question 1): a fixture that
+ *      declares nothing opens on one tap a ball, nothing switched, its one
+ *      innings_start declaring the quick profile; the heat map and the spider
+ *      say "not captured, by design" rather than "No exact placements". A whole over is six taps,
  *      each one row the server stores as the event Basic Scoring always sent
  *      (no shot, no placement, profile quick), folding to the over's total on
  *      the board, the server and the API. The board stays pinned and whole
@@ -270,8 +272,15 @@ try {
      isReady && (await has("basic-pad")) && !(await has("three-phase-pad")) && !(await has("scoring-blocked")),
      (await text()).slice(0, 400));
   if (!isReady) throw new Error("the pad never became ready");
-  ok("...the innings declared nothing: the one-tap pad is the default, not a declaration",
-     (await serverLog(0)).inn.declaredProfile === null);
+  {
+    // The fixture declares nothing, so its innings_start declares quick: one
+    // innings_start, the event and field it has always had, not a second one.
+    const s0 = await serverLog(0);
+    const starts = s0.rows.filter((r) => r.kind === "innings_start" && (r.innings ?? 0) === 0);
+    ok("...and the innings_start declares the quick profile, once, on the event it always was",
+       s0.inn.declaredProfile === "quick" && starts.length === 1 && starts[0].capture_profile === "quick",
+       JSON.stringify(starts.map((r) => ({ kind: r.kind, capture_profile: r.capture_profile }))));
+  }
   if (SHOTS) {
     await mkdir(SHOTS, { recursive: true });
     for (const scheme of ["light", "dark"]) {
@@ -554,6 +563,20 @@ try {
     ok("opening Pro mode and the switch recorded nothing", (await serverLog(0)).rows.length === rowsPro);
     await tap("pad-menu"); await tap("pad-basic-scoring"); await page.keyboard.press("Escape"); await page.waitForTimeout(400);
     ok("...and back to one tap a ball", await has("basic-pad"));
+
+    // The charts read the gaps as never asked for, not as missing.
+    await page.locator('[data-testid="pad-tabs"] button', { hasText: /Analysis/ }).first().click({ timeout: 3000 });
+    await page.waitForTimeout(800);
+    const said = await page.locator('[data-testid="placement-not-captured"]').allInnerTexts().catch(() => []);
+    ok(`the heat map and the spider: "not captured, by design", declared quick (${JSON.stringify(said)})`,
+       said.length === 2 && said.every((t) => /^Not captured, by design: this innings was declared quick \(runs only\)/.test(t.trim()))
+         && !/No exact placements on record/.test(await text()));
+    await page.locator('[data-testid="pad-tabs"] button', { hasText: /Score/ }).first().click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    ok("...and the Score tab is the one-tap pad again", await has("basic-pad"));
+    const end = await serverLog(0);
+    ok("the innings is still declared quick, by its one innings_start, after the over and the switches",
+       end.inn.declaredProfile === "quick" && end.rows.filter((r) => r.kind === "innings_start" && (r.innings ?? 0) === 0).length === 1);
   }
 
   await agree("the end of the walk");

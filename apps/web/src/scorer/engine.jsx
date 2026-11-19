@@ -4,7 +4,7 @@ import {
   deriveInnings, inningsStart, batters as battersEvent, bowler as bowlerEvent,
   ball as ballEvent, revision as revisionEvent, retire as retireEvent, sealInnings,
   newEventId, KIND, battingFirst, tossFromRow, firstInningsSides, fromRow,
-  batHandOf,
+  CAPTURE_PROFILE, batHandOf,
   DISMISSAL, DISMISSAL_LABEL, RETIRE_REASON, BOWLER_CHANGE_REASON, isMidOver, scoringReadiness, SCORING_BLOCK, lawsRefusal, REFUSAL_TEXT, LOCAL_ONLY,
   lastUndoableIndex, likelyCause, keeper as keeperEvent, keeperOf,
 } from "@scrbrd/scoring";
@@ -865,9 +865,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               homeSquad: homeSquadRef.current, awaySquad: awaySquadRef.current }),
             overs: resume.cfg.overs ?? 20,
             // A fixture that carries a declaration passes it on; none does yet,
-            // so this innings opens undeclared — exactly as before — and the
-            // scorer declares it on the opener sheet before the first ball.
-            captureProfile: resume.cfg.captureProfile ?? undefined,
+            // so this innings opens declared quick: runs first, one tap a ball
+            // (redesign slice 3, question 1). The declaration is what the pad
+            // asks, so the charts read its missing points as never asked for,
+            // not as missing. The scorer may declare Full or Standard on the
+            // opener sheet before the first ball; the latest one stands.
+            captureProfile: resume.cfg.captureProfile ?? CAPTURE_PROFILE.QUICK,
             id: openId,
           })] : [], []];
           if (toss) mintedRef.current.add(openId);
@@ -1295,7 +1298,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const open={...inningsStart({
       ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current,awaySquad:awaySquadRef.current}),
       overs:match.overs??20,
-      captureProfile:match.captureProfile??undefined,
+      // Runs first: undeclared by the fixture, the innings declares quick, as
+      // the opening on hydration does (above). Never a second innings_start.
+      captureProfile:match.captureProfile??CAPTURE_PROFILE.QUICK,
     }),innings:0,id:newEventId(deviceIdRef.current,matchIdRef.current??"local")};
     setEvents(prev=>{
       if((prev[0]??[]).some(e=>e.kind===KIND.INNINGS_START))return prev;
