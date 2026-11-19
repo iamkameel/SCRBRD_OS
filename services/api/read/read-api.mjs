@@ -3724,15 +3724,14 @@ export const READ_QUERIES = {
     // THE PLATFORM IS NAMED AS THE PLATFORM (PLATFORM_CONTROLS slice 6a,
     // db/167): a read made with the owner's key or by a platform
     // administrator, outside a support session, reads "SCRBRD platform",
-    // never a person's name, whatever app_user's own policy would show.
-    // A support session's row keeps its reader: support_access names him.
-    text: `select l.id, l.school_id, l.person_id,
-                  case when l.platform_wide and l.support_access_id is null
-                            and access_log_platform_reader(l.person_id)
-                       then 'SCRBRD platform' else u.name end as person_name,
-                  case when l.platform_wide and l.support_access_id is null
-                            and access_log_platform_reader(l.person_id)
-                       then 'SCRBRD platform' end as reader_role,
+    // never a person's name or id, whatever app_user's own policy would
+    // show; the label asks whether he held the platform assignment when he
+    // read (at occurred_at). A support session's row keeps its reader:
+    // support_access names him.
+    text: `select l.id, l.school_id,
+                  case when k.platform then null else l.person_id end as person_id,
+                  case when k.platform then 'SCRBRD platform' else u.name end as person_name,
+                  case when k.platform then 'SCRBRD platform' end as reader_role,
                   l.resource, l.record_ids, l.record_count, l.fields,
                   l.device_id, l.occurred_at,
                   -- Whether the reader reached this school from outside it.
@@ -3743,6 +3742,8 @@ export const READ_QUERIES = {
                   l.support_access_id,
                   l.person_id = app_user_id() as mine
              from access_log l
+             cross join lateral (select l.platform_wide and l.support_access_id is null
+                                        and access_log_platform_reader(l.person_id, l.occurred_at) as platform) k
              left join app_user u on u.id = l.person_id
             where ($1::uuid is null or l.record_ids @> array[$1::uuid])
             order by l.occurred_at desc

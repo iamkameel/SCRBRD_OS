@@ -17,16 +17,27 @@ const KID = "aaaaaaaa-0000-0000-0000-000000000005";
 const MATCH = "77777777-0000-0000-0000-000000000001";
 const ACCT = "88888888-0000-0000-0000-000000000009";
 
-// ── uuidsIn ──
+// ── uuidsIn: id-shaped fields only (review S5) ──
+const WKID = "bbbbbbbb-0000-0000-0000-000000000001";
 const body = { matchId: MATCH, rows: [{ playerId: KID.toUpperCase(), name: "R Pillay" }, { nested: [{ id: KID }] }],
-               note: `about ${ACCT} and again ${ACCT}` };
-const seen = uuidsIn(body);
-ok("every id in the answer, nested and inside text, once each, lower-cased",
-   seen.length === 3 && seen.includes(KID) && seen.includes(MATCH) && seen.includes(ACCT), JSON.stringify(seen));
-ok("an answer with no ids gives none", uuidsIn({ rows: [{ name: "R Pillay" }] }).length === 0);
-ok("nothing at all gives none", uuidsIn(undefined).length === 0 && uuidsIn(null).length === 0);
-const many = Array.from({ length: MAX_SEEN + 50 }, (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`);
-ok(`at most ${MAX_SEEN} ids are offered`, uuidsIn(many).length === MAX_SEEN);
+               batter_id: ACCT, recordIds: "not an id", subjectIds: [WKID] };
+const { ids: seen, cut: seenCut } = uuidsIn(body);
+ok("the ids in id, *Id and *_id fields, nested, once each, lower-cased",
+   seen.length === 3 && seen.includes(KID) && seen.includes(MATCH) && seen.includes(ACCT) && !seenCut, JSON.stringify(seen));
+// A school user writes another school's child's id into a note, a label or a
+// name: it is his words, not a child the answer was about.
+const planted = uuidsIn({ note: `see ${WKID}`, title: WKID, body: [WKID], name: WKID, label: `${WKID}` });
+ok("an id in free text (a note, a title, a name, a list of words) is never taken", planted.ids.length === 0, JSON.stringify(planted));
+ok("...nor one under a key that only ends like an id word (subjectIds)", !seen.includes(WKID));
+const labels = uuidsIn({ labels: { [KID]: "R Pillay" } });
+ok("a map keyed by id (the ground's labels) gives its keys", labels.ids.length === 1 && labels.ids[0] === KID, JSON.stringify(labels));
+ok("a list under an id field gives each id", uuidsIn({ player_ids_x: 1, team_id: [KID, MATCH] }).ids.length === 2);
+ok("an answer with no ids gives none", uuidsIn({ rows: [{ name: "R Pillay" }] }).ids.length === 0);
+ok("nothing at all gives none", uuidsIn(undefined).ids.length === 0 && uuidsIn(null).ids.length === 0);
+const many = { rows: Array.from({ length: MAX_SEEN + 50 }, (_, i) => ({ playerId: `00000000-0000-0000-0000-${String(i).padStart(12, "0")}` })) };
+const big = uuidsIn(many);
+ok(`at most ${MAX_SEEN} ids are offered, and the cut is said`, big.ids.length === MAX_SEEN && big.cut === true);
+ok("...and an answer under the cap says no cut", uuidsIn({ rows: [{ playerId: KID }] }).cut === false);
 
 // ── platformReadArgs ──
 {
@@ -40,9 +51,13 @@ ok(`at most ${MAX_SEEN} ids are offered`, uuidsIn(many).length === MAX_SEEN);
      ids.includes(ACCT) && match === null && account === ACCT && squad === false);
 }
 {
-  const [, ids, match, account, squad] = platformReadArgs({ resource: "public_name" }, KID, { playerId: KID });
+  const [, ids, match, account, squad, cut] = platformReadArgs({ resource: "public_name" }, KID, { playerId: KID });
   ok("a child's route with no subject kind: his id is offered once, nothing else is asked",
-     ids.length === 1 && ids[0] === KID && match === null && account === null && squad === false);
+     ids.length === 1 && ids[0] === KID && match === null && account === null && squad === false && cut === false);
+}
+{
+  const [, , , , , cut] = platformReadArgs({ resource: "match_events", subject: "match" }, MATCH, many);
+  ok("a cut answer is passed on as cut", cut === true);
 }
 {
   const [, ids, match] = platformReadArgs({ resource: "x", subject: "match", squad: true }, "not-a-uuid", {});
@@ -73,7 +88,11 @@ ok("...and none is in both", both.length === 0, both.join(", "));
 for (const h of ["publicName.read", "sheet.read", "events.list", "signIn.preview", "signIn.accountSignIns", "potm.state"])
   ok(`${h} (a child's data) is logged for the platform`, named(logged, h));
 ok("the dispatcher writes the row before the answer leaves, and refuses one it cannot write",
-   /logPlatformRead\([^)]*\);[\s\S]{0,400}not_logged[\s\S]{0,200}out\.flush\(\)/.test(src));
+   /logPlatformRead\([\s\S]{0,200}?\);[\s\S]{0,400}not_logged[\s\S]{0,200}out\.flush\(\)/.test(src));
+ok("...and asks whether the caller is the platform BEFORE the handler, logging only then (review S2)",
+   /const logIt = asPlatform \? await isPlatformReader\([^;]*;\s*await handler\(request, out\);\s*if \(asPlatform && logIt/.test(src));
+ok("the ground's names are not read as the fixture's whole side (review S3)",
+   /\[groundNames\.read,\s*\{[^}]*\}\]/.test(logged) && !/\[groundNames\.read,\s*\{[^}]*squad: true/.test(logged));
 
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);
