@@ -439,7 +439,7 @@ const HAND_WRITTEN_SINCE_47 = {
   recognition_audit: {},
   // db/148: a decider's review of an award a correction moved is never public as a whole (N5).
   recognition_review: {},
-  // db/163: a pupil's claim (what he typed, his roster row once known) is never public as a whole (N4).
+  // db/168: a pupil's claim (what he typed, his roster row once known) is never public as a whole (N4).
   pupil_claim: {},
   // db/164: the yes and the no for a boy's own sign-in is never public as a whole (N4).
   pupil_signin_consent: {},

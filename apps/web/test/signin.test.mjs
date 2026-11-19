@@ -16,9 +16,9 @@
  *     something that opens nothing (a follow, Q10; a pupil's claim, Q3); a
  *     parent's child is free text that is never looked up; nothing on the
  *     screen says "found" or "not found"; a pupil under eighteen asks for no
- *     role, and his claim (db/163) promises nothing; the staff roles are ones
+ *     role, and his claim (db/168) promises nothing; the staff roles are ones
  *     the policy lets an office grant.
- *   - THE BASIC VIEW (db/163): his state in one true sentence, how long the
+ *   - THE BASIC VIEW (db/168): his state in one true sentence, how long the
  *     account is kept, and none of the asking.
  *   - THE WAYS TO SIGN IN and THE CLAIMS LIST: what a row says, what a refusal
  *     is called, the screens as drawn.
@@ -212,7 +212,7 @@ group("Joining a school never says found or not found, and never looks a child u
      && !/Test Child|Child:/.test(sentWords("parent", "Test School")));
   ok("...which says nothing is linked automatically", /nothing is linked automatically/.test(sentWords("parent", "Test School")));
   ok("a request the server refused is told in words", joinWords(apiError(422, "already_pending")) === JOIN_WORDS.already_pending);
-  ok("a request that never arrived says nothing was sent", /nothing was sent/.test(joinWords(new TypeError("x"))));
+  ok("a request that never arrived says nothing was sent", /Nothing was sent/.test(joinWords(new TypeError("x"))));
   // db/86: the server refuses a platform role when it is filed, with the
   // enrol path's code. Its own words, not the fallback.
   ok("a platform role refused at filing is told in its own words",
@@ -231,7 +231,7 @@ group("Joining a school never says found or not found, and never looks a child u
   ok("no 'Child's name' suggestions: the input is autoComplete off", /data-testid="join-child"/.test(code) && /autoComplete="off"[^>]*data-testid="join-child"/.test(code));
 }
 
-group("A pupil under 18 says who he is (db/163, Q3): it asks for nothing and opens nothing");
+group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and opens nothing");
 {
   const S = "11111111-1111-1111-1111-111111111111";
   let c = buildClaim(S, { name: "  Test   Pupil ", year: " Grade 9 " });
@@ -254,8 +254,13 @@ group("A pupil under 18 says who he is (db/163, Q3): it asks for nothing and ope
   ok("declined: the school has answered, never why", w.title === "The school has answered" && !/because|not on|list|record|known/i.test(w.line), JSON.stringify(w));
   const said = ["with_office", "recognised", "declined", "open"].flatMap((st) => Object.values(stateWords({ state: st, schoolName: "Test School" }))).filter(Boolean);
   ok("no state's words is an oracle, or names a team, a figure or a record", said.every((x) => !FOUND.test(x) && !/\bteam\b|figure|\brecord\b|availability|team-mate/i.test(x)), said.join(" | "));
-  ok("Q9 from the first day: the date, the 30 days, and what then", keepWords({ state: "with_office", keepUntil: "2026-12-18" }) === "This account is kept until 18 December 2026, 30 days from your last claim, while a parent or guardian is asked. If nobody says yes by then, it is removed, with the schools you follow.");
-  ok("...declined, the date and what then", /until 18 December 2026\. Then it is removed, with the schools you follow\./.test(keepWords({ state: "declined", keepUntil: "2026-12-18" })));
+  ok("Q9 from the first day: the date, the 30 days, and what then", keepWords({ state: "with_office", keepUntil: "2026-12-18" }) === "This account is kept until 18 December 2026, 30 days from your last claim, while the school office decides. Your own page opens only once the office has a parent's or guardian's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.");
+  ok("...and promises nobody asks a parent: in Migration A the office decides (review S6)",
+     !/is asked|we ask|will ask/i.test(keepWords({ state: "with_office", keepUntil: "2026-12-18" }) + CLAIM_FORM.keep) && /office decides/.test(CLAIM_FORM.keep));
+  ok("...declined, 30 days from the school's answer, and what then", /until 18 December 2026, 30 days from the school's answer\. Then it is removed, with the schools you follow\./.test(keepWords({ state: "declined", keepUntil: "2026-12-18" })));
+  ok("an account that can't be removed (a kept one among them) is told so neutrally: nothing of a concern (re-review S3(a))",
+     REMOVE_WORDS.not_a_claim === "This account can't be removed from here. Ask a teacher you trust."
+       && !Object.values(REMOVE_WORDS).some((w) => /safeguard|concern|raised|officer/i.test(w)) && !("kept" in REMOVE_WORDS));
   ok("...and nothing once he is opened", keepWords({ state: "open", keepUntil: null }) === null);
   ok("the database's day, as written", dayWords("2027-01-01") === "1 January 2027" && dayWords("x") === "");
   ok("removing the account says what goes before it goes", /sign-in and the schools you follow/.test(REMOVE_WORDS.ask));
@@ -339,7 +344,7 @@ group("The join screen as drawn");
   ok("no list of pupils is drawn", !/pupil-list|child-list|Whitfield|Pillay/.test(html));
   ok("none of the screen's words is an oracle", !FOUND.test(html.replace(/<[^>]+>/g, " ")), html.replace(/<[^>]+>/g, " ").match(FOUND)?.[0]);
   html = renderToStaticMarkup(h(JoinSchool, { schools: [], onSent() {} }));
-  ok("with no schools it says so", /No school is listed/.test(html));
+  ok("with no schools it says so", /No schools are on SCRBRD yet/.test(html));
 }
 
 group("The ways to sign in");
@@ -411,7 +416,7 @@ group("Where it sits in the app");
 {
   const settings = src("../src/views/SettingsView.jsx");
   ok("Me carries the ways to sign in only when signed in for real", /\{live && <Panel><WaysToSignIn\/><\/Panel>\}/.test(settings));
-  ok("People carries the Claims list only for those who may issue a code", /canClaims\s*=\s*holdsCapability\(role,\s*"user\.invite"\)/.test(settings) && /tab === "users" && canClaims && signedIn\(\)/.test(settings));
+  ok("People carries the Claims list only for those who may issue a code", /canClaims\s*=\s*holdsCapability\(role,\s*"user\.invite"\)/.test(settings) && /\{canClaims && signedIn\(\) && \(\s*<ClaimsPanel/.test(settings) && /function PeoplePart\(/.test(settings));  // Slice 6: People is School, People's part
   ok("...and counts it on the People tab", /\(canClaims \? claims\.rows\.length : 0\)/.test(settings));
   const app = src("../src/App.jsx");
   ok("a signed-in account with no assignment goes to the no-school screen", /assignments\.length === 0/.test(app) && /<NoSchool /.test(app) && !/PendingRequests/.test(app));

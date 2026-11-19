@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { SectionHeader } from "../ui/primitives.jsx";
+import { holdsCapability } from "../rbac/index.js";
 import { D, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
@@ -15,17 +17,22 @@ import { OWN_WORDS, PLATFORM_INTRO, askAge, jobLabel, schoolDecideWords, schoolD
 //  (ManagementView RequestsPanel). `decidable` is the server's word. An
 //  answer adds no school: PLATFORM_INTRO says so above the list.
 // ══════════════════════════════════════════════════════
-export function SchoolRequestsPanel() {
+export function SchoolRequestsPanel({ emptyWords = null }) {
   const [nudge, setNudge] = useState(0);
   const [said, setSaid] = useState({});
   const [busy, setBusy] = useState(null);
-  const all = useLive("school_add_requests", "platformadmin", nudge).rows;
+  const read = useLive("school_add_requests", "platformadmin", nudge);
+  const all = read.rows;
   const open = all.filter((r) => r.decidable);
   // Her own, asked before she was made a platform administrator (db/158
   // own_request): shown, and answered by somebody else, so no controls.
   const own = all.filter((r) => r.mine && r.state === "open");
   const gone = Object.entries(said).filter(([id]) => !open.some((r) => r.id === id));
-  if (!open.length && !own.length && !gone.length) return null;
+  if (!open.length && !own.length && !gone.length) {
+    // As a section of its own (the Platform home), an empty list is said, not left blank.
+    if (!emptyWords || read.loading) return null;
+    return <div data-testid="school-requests-none" style={{border:`1px solid ${D.border}`,borderRadius:D.lg,background:D.surf1,padding:"14px",fontFamily:D.body,fontSize:"13px",color:D.textSecondary}}>{emptyWords}</div>;
+  }
   const decide = async (r, state) => {
     if (busy) return;
     setBusy(r.id);
@@ -69,6 +76,24 @@ export function SchoolRequestsPanel() {
           <div style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted}}>{OWN_WORDS}</div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The Platform home's School requests (EXPERIENCE_PASS §1.3, Slice 6): the
+ * same panel ManagementView drew for platform.tenant.manage, as a section of
+ * its own. The menu offers it under that capability (design/roles.js); the
+ * read is the server's, as it was.
+ */
+export function SchoolRequestsView({ role }) {
+  // Courtesy only, as Support and the DLS table carry: the menu offers the section under this capability, and the
+  // read's row security (school_add_request_read) decides again.
+  if (!holdsCapability(role, "platform.tenant.manage")) return null;
+  return (
+    <div className="os-page" data-testid="part-requests">
+      <SectionHeader title="School requests" sub="Schools people asked SCRBRD to add. Each is answered within a week." color={D.indigo}/>
+      <SchoolRequestsPanel emptyWords="Nobody is waiting for a school to be added."/>
     </div>
   );
 }

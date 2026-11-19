@@ -129,7 +129,7 @@ import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs"
 import { liftRoutes } from "./write/lift-api.mjs";
 import { pilotRoutes } from "./write/pilot-api.mjs";
 import { followRoutes } from "./write/follow-api.mjs";
-// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/163).
+// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/168).
 import { pupilClaimRoutes } from "./write/pupil-claim-api.mjs";
 // "Allow his own sign-in" (SCRBRD-140 honesty model, Migration B; db/164).
 import { pupilSigninRoutes } from "./write/pupil-signin-api.mjs";
@@ -729,8 +729,14 @@ const MATCH_ROUTES = [
   [/^\/api\/matches\/([^/]+)\/broadcast$/,          "POST", bcast.publish],
   // Appointing the officials. officiating.assign, which until now had nothing
   // it could be exercised on.
-  // Stays refused while Officials is off until a migration makes broadcast_state() name officials only while it is on (to Fable with db/154).
-  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint, "officials"],
+  // NOT module-gated (SCRBRD-144): switched off records (Kameel, 13 Nov
+  // 2026), so a sheet is stored while Officials is off and named nowhere
+  // until it is on. Every read that names an appointment asks the switch:
+  // the overlay (db/156, broadcast_state()), the table (db/166,
+  // match_official_shown_while_on) and the API's officials, match_duties and
+  // duty_suspensions (read-api.mjs OFFICIALS_ON), for the fixture's school
+  // and the reader both.
+  [/^\/api\/matches\/([^/]+)\/officials$/,         "POST", officials.appoint],
   // The register itself: platform- and competition-level, not a school
   // module, so no module gate — the policies on official/official_accreditation
   // decide (officiating.registry.manage).
@@ -868,9 +874,9 @@ const PLAYER_ROUTES = [
   // platform's answer. Each decision is a db/158 definer's, under the caller.
   [/^\/api\/school-requests$/,                      "POST", requests.schoolAsk],
   [/^\/api\/school-requests\/([^/]+)\/decide$/,      "POST", requests.schoolDecide],
-  // "I am a pupil here" (db/163, the honesty model's Migration A): the boy's
+  // "I am a pupil here" (db/168, the honesty model's Migration A): the boy's
   // own claim, state and way out, and the office's Pupil claims list. Every
-  // decision is a db/163 definer's, under the caller.
+  // decision is a db/168 definer's, under the caller.
   [/^\/api\/pupil\/state$/,                         "GET",  pupilClaims.state],
   [/^\/api\/pupil\/claim$/,                         "POST", pupilClaims.claim],
   [/^\/api\/pupil\/remove$/,                        "POST", pupilClaims.removeSelf],

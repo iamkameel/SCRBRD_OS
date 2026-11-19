@@ -41,6 +41,7 @@ import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const PORT = port(8871);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -179,7 +180,7 @@ const shownPage = (/** @type {any} */ page) => tid(page, "os-main").getAttribute
 /** Opens a destination at either width: the rail, the bar, or the bar's More drawer. */
 async function goTo(/** @type {any} */ page, /** @type {string} */ key, /** @type {string} */ width) {
   if (width === "desktop") {
-    await tid(page, `nav-${key}`).click({ timeout: 6000 }).catch(() => {});
+    await (await destLocator(page, key)).click({ timeout: 6000 }).catch(() => {});
   } else if (await tid(page, `mnav-${key}`).count()) {
     await tid(page, `mnav-${key}`).click({ timeout: 6000 }).catch(() => {});
   } else {

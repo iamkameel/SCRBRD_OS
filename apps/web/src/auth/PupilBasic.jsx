@@ -16,7 +16,7 @@ const ScoringBlock = lazy(() => import("../views/ScoringBlock.jsx").then((m) => 
 const WaysToSignIn = lazy(() => import("../views/signins.jsx").then((m) => ({ default: m.WaysToSignIn })));
 
 // ══════════════════════════════════════════════════════
-//  THE UNDER-18 BASIC VIEW  (SCRBRD-140, the honesty model §3.3; db/163)
+//  THE UNDER-18 BASIC VIEW  (SCRBRD-140, the honesty model §3.3; db/168)
 //
 //  An account that has said "I am a pupil here, and under 18". It is the
 //  front door's view (the schools he follows, their public matches, a
@@ -152,7 +152,10 @@ export function PupilBasic({ name, claim, onSignOut, onRemoved, onOpenPad = null
   const remove = async () => {
     setRemoving(true); setProblem("");
     try { await api("/api/pupil/remove", { method: "POST" }); onRemoved(); return; }
-    catch (e) { setProblem(/** @type {any} */ (e)?.code === "not_a_claim" ? REMOVE_WORDS.not_a_claim : REMOVE_WORDS.fallback); }
+    catch (e) {
+      const code = /** @type {any} */ (e)?.code;
+      setProblem(code === "not_a_claim" ? REMOVE_WORDS.not_a_claim : REMOVE_WORDS.fallback);
+    }
     setRemoving(false);
   };
 
@@ -163,10 +166,10 @@ export function PupilBasic({ name, claim, onSignOut, onRemoved, onOpenPad = null
         <div style={{ ...text(14), marginBottom: "20px", overflowWrap: "anywhere" }}>You are signed in{me?.email ? <> as <span data-testid="no-school-email" style={{ color: T.content.primary }}>{me.email}</span></> : ""}.</div>
 
         {/* His state, first (§3.3): one true sentence, how a yes comes, and Q9's date. */}
-        <section data-testid="pupil-state" data-state={claim.state} aria-labelledby="pupil-state-h" role="status"
+        <section data-testid="pupil-state" data-state={claim.state} aria-labelledby="pupil-state-h"
           style={{ ...card(), border: `1px solid ${T.line.strong}` }}>
           <h2 id="pupil-state-h" style={{ margin: "0 0 6px", fontFamily: FONT.head, fontSize: "18px", fontWeight: 800, color: T.content.primary }}>{words.title}</h2>
-          <div data-testid="pupil-state-line" style={text(15, T.content.primary)}>{words.line}</div>
+          <div data-testid="pupil-state-line" role="status" style={text(15, T.content.primary)}>{words.line}</div>
           {words.how && <div data-testid="pupil-state-how" style={{ ...text(14), marginTop: "8px" }}>{words.how}</div>}
           {/* db/164: a boy the office enrolled, whose page a no closed, sent no claim: nothing he typed to repeat. */}
           {claim.name && <div style={{ ...text(13), marginTop: "10px" }}>You said you are at <strong style={{ color: T.content.primary }}>{claim.schoolName}</strong>, as <span data-testid="pupil-typed-name" style={{ color: T.content.primary }}>{claim.name}</span>{claim.year ? <> ({claim.year})</> : null}.</div>}

@@ -58,6 +58,7 @@ import { inningsStart, batters, bowler, ball, sealInnings, deriveInnings, BALL_T
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab } from "./walk-tabs.mjs";
+import { destLocator } from "./walk-nav.mjs";
 
 const WEB_PORT = port(5371);
 const API_PORT = port(8971);
@@ -364,10 +365,8 @@ try {
   await click(cq.page, /^Sign In$/, 5000);
   await afterReads(cq.page, 2000);
   // To resolve is under Operate on the coach's nav.
-  for (const sel of ['[data-testid="mnav-readiness"]', '[data-testid="nav-readiness"]']) {
-    const l = cq.page.locator(sel).first();
-    if (await l.count()) { await l.click({ timeout: 6000 }).catch(() => {}); break; }
-  }
+  // To resolve is a section of Today (EXPERIENCE_PASS §1.3).
+  { const l = await destLocator(cq.page, "readiness"); if (await l.count()) await l.click({ timeout: 6000 }).catch(() => {}); }
   if ((await tid(cq.page, "queue").count()) === 0) {
     await cq.page.locator("button", { hasText: /^More$|Operate/ }).first().click({ timeout: 3000 }).catch(() => {});
     await cq.page.locator('[data-testid="mnav-readiness"], [data-testid="nav-readiness"], button:has-text("To resolve")').first().click({ timeout: 4000 }).catch(() => {});
@@ -451,10 +450,7 @@ try {
     await click(cr.page, /coach@example\.invalid|Head Coach/, 4000);
     await click(cr.page, /^Sign In$/, 5000);
     await afterReads(cr.page, 2000);
-    for (const sel of ['[data-testid="mnav-readiness"]', '[data-testid="nav-readiness"]']) {
-      const l = cr.page.locator(sel).first();
-      if (await l.count()) { await l.click({ timeout: 6000 }).catch(() => {}); break; }
-    }
+    { const l = await destLocator(cr.page, "readiness"); if (await l.count()) await l.click({ timeout: 6000 }).catch(() => {}); }
     if ((await tid(cr.page, "queue").count()) === 0) {
       await cr.page.locator("button", { hasText: /^More$|Operate/ }).first().click({ timeout: 3000 }).catch(() => {});
       await cr.page.locator('[data-testid="mnav-readiness"], [data-testid="nav-readiness"], button:has-text("To resolve")').first().click({ timeout: 4000 }).catch(() => {});

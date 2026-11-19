@@ -37,6 +37,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4363);
 const API_PORT = port(8898);
@@ -118,7 +119,7 @@ async function signIn(page, email) {
 }
 async function go(page, nav) {
   // The rail, or at phone width the bottom bar.
-  const rail = page.locator(`[data-testid="nav-${nav}"]:visible`).first();
+  const rail = (await destLocator(page, nav));
   const bar = (await rail.count()) ? rail : page.locator(`[data-testid="mnav-${nav}"]:visible`).first();
   let l = bar;
   if (!(await bar.count())) {
@@ -170,11 +171,9 @@ const listed = async () => (await q(`select listed from public_listing where sch
 const token = async (email) => (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
   body: JSON.stringify({ email, deviceId: "browser-listing" }) })).json()).token;
 
-/** Settings → School. */
+/** School, Record: what was Settings → School (EXPERIENCE_PASS §1.6, Slice 6). */
 async function toSchool(page) {
-  return (await go(page, "settings"))
-    && await page.locator("#settings-tab-school").click({ timeout: 4000 }).then(() => true, () => false)
-    && (await page.waitForTimeout(1500), true);
+  return (await openSettingsPart(page, "school")) && (await page.waitForTimeout(1500), true);
 }
 /** Match Centre → the fixture's card, opened. */
 async function toPanel(page, id) {
@@ -221,7 +220,7 @@ try {
 
   ok("Match Centre → the fixture's Public page panel", await toPanel(dos.page, today));
   ok("her school does not list: the line says so, that the fixture will not appear, and where to change it",
-     /^Your school does not list its matches on the SCRBRD home page: this fixture will not appear there\. You can change that in Settings → School\.$/.test(await line(dos.page)), await line(dos.page));
+     /^Your school does not list its matches on the SCRBRD home page: this fixture will not appear there\. You can change that on School, Record\.$/.test(await line(dos.page)), await line(dos.page));
   await tid(dos.page, "publish-home-toggle").click();
   await afterReads(dos.page, 1500);
   ok("she publishes the home side", /published/.test(await tid(dos.page, "publish-home-state").innerText()) && !/not published/.test(await tid(dos.page, "publish-home-state").innerText()));

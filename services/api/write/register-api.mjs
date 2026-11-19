@@ -46,7 +46,7 @@ const STATES = new Set(["open", "claimed", "expired", "withdrawn"]);
 
 /** The sentence a person reads under a cooldown (design §4.2). Their own state; nobody else's. */
 export const COOLDOWN_WORDS = "You can't send a request right now. Ask the school office.";
-// db/163: what an account whose pupil claim is waiting is told when it asks
+// db/168: what an account whose pupil claim is waiting is told when it asks
 // for anything (a role, a school added, the register). The screens never
 // offer it the asking; this is for a request that arrives anyway.
 export const PUPIL_WAITING_WORDS = "This account belongs to a pupil under 18, so it does not ask for anything here. Ask your school office.";
@@ -148,7 +148,7 @@ const fail = (res, e) => {
   if (e.code === "23514" && e.constraint === "request_cooldown") {
     return res.status(409).json({ error: "request_cooldown", detail: COOLDOWN_WORDS });
   }
-  // db/163: an account whose pupil claim waits is turned away from the register.
+  // db/168: an account whose pupil claim waits is turned away from the register.
   if (e.code === "23514" && e.constraint === "pupil_claim_waiting") {
     return res.status(403).json({ error: "ask_your_school_office", detail: PUPIL_WAITING_WORDS });
   }

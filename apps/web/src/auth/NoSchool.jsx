@@ -8,7 +8,7 @@ import {
   KINDS, RELATIONSHIPS, REQUEST_STATE_WORDS, STAFF_ROLES,
   EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, spectatorAsk, withdrawWords, withdrew,
 } from "../lib/joinSchool.js";
-// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/163): the claim form, and the basic view.
+// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/168): the claim form, and the basic view.
 import { CLAIM_FORM, NAME_MAX, YEAR_MAX as CLAIM_YEAR_MAX, buildClaim, claimWords } from "../lib/pupilClaim.js";
 import { followProblem } from "../lib/follow.js";
 import { PupilBasic } from "./PupilBasic.jsx";
@@ -180,7 +180,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
   const enter = async () => {
     setEntering(true); setEnterProblem("");
     try { await onJoined?.(); }
-    catch { setEnterProblem("You are in, but this page could not load the school. Sign out and sign in again."); }
+    catch { setEnterProblem("You're in, but the school page would not open. Sign out, then sign in again."); }
     setEntering(false);
   };
   const shown = schools.filter((s) => s.name.toLowerCase().includes(q.trim().toLowerCase()));
@@ -198,7 +198,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
     setBusy(false);
   };
 
-  // Q3 (db/163): a pupil under 18 says who he is. It asks for nothing and opens nothing;
+  // Q3 (db/168): a pupil under 18 says who he is. It asks for nothing and opens nothing;
   // the screen becomes his basic view (onClaimed).
   const claimIt = async () => {
     const c = buildClaim(schoolId, { name: form.name, year: form.pyear });
@@ -213,7 +213,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
     setBusy(false);
   };
 
-  // Q10 (db/163): "I just want to follow matches" follows the school, at once. No request.
+  // Q10 (db/168): "I just want to follow matches" follows the school, at once. No request.
   const followIt = async () => {
     if (!schoolId) { setProblem("Choose your school first."); return; }
     setBusy(true); setProblem("");
@@ -248,12 +248,12 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
   return (
     <div data-testid="join-school" id="join-school" style={card()}>
       <h2 id="join-school-title" tabIndex={-1} style={{ margin: "0 0 4px", fontFamily: FONT.head, fontSize: "18px", fontWeight: 800, color: T.content.primary, outline: "none" }}>Join a school</h2>
-      <div style={{ ...text(14), marginBottom: "16px" }}>Say which school and who you are. Somebody at the school answers; nothing is given to you until they do.</div>
+      <div style={{ ...text(14), marginBottom: "16px" }}>Pick your school and say who you are. Someone at the school will answer. You won't get access until they do.</div>
 
       {/* 1 · The school */}
       <div role="group" aria-labelledby="join-school-h" style={{ marginBottom: "18px" }}>
         <div id="join-school-h" style={{ fontFamily: FONT.head, fontSize: "13px", fontWeight: 700, color: T.content.primary, marginBottom: "8px" }}>1 · Your school</div>
-        {schools.length === 0 && <div style={text(14)}>No school is listed on this platform yet.</div>}
+        {schools.length === 0 && <div style={text(14)}>No schools are on SCRBRD yet.</div>}
         {schools.length === 0 && onAskSchool && <AskSchoolLink onAsk={() => onAskSchool("")}/>}
         {schools.length === 1 && <div data-testid="join-only-school" style={text(14, T.content.primary)}>{schools[0].name}</div>}
         {schools.length > 1 && <>
@@ -262,7 +262,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
           )}
           <div style={{ maxHeight: "260px", overflowY: "auto" }}>
             {shown.map((s) => <Choice key={s.id} on={s.id === schoolId} title={s.name} data-testid={`join-school-${s.id}`} onClick={() => { setSchoolId(s.id); setProblem(""); }}/>)}
-            {shown.length === 0 && <div data-testid="join-school-none" style={text(14)}>No school's name has those letters in it.{onAskSchool && <> Is your school not on SCRBRD yet?</>}</div>}
+            {shown.length === 0 && <div data-testid="join-school-none" style={text(14)}>No school matches what you typed.{onAskSchool && <> Is your school not on SCRBRD yet?</>}</div>}
             {shown.length === 0 && onAskSchool && <AskSchoolLink onAsk={() => onAskSchool(q.trim())}/>}
           </div>
         </>}
@@ -289,7 +289,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
         <div role="status" data-testid="join-claimed" style={{ ...text(14, T.content.primary), padding: "14px", borderRadius: "12px",
           border: `1px solid ${T.line.strong}`, background: T.surface.base, marginBottom: "14px" }}>
           <div style={{ fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, marginBottom: "6px" }}>{claim.words}</div>
-          <Btn kind="primary" data-testid="join-claimed-continue" disabled={entering} onClick={enter} style={{ marginTop: "8px" }}>{entering ? "Opening…" : "Open the school"}</Btn>
+          <Btn kind="primary" data-testid="join-claimed-continue" disabled={entering} onClick={enter} style={{ marginTop: "8px" }}>{entering ? "Opening the school…" : "Open the school"}</Btn>
           {enterProblem && <div role="alert" data-testid="join-claimed-problem" style={{ ...text(13, T.semantic.criticalText), marginTop: "8px" }}>{enterProblem}</div>}
         </div>
       )}
@@ -342,7 +342,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
         <div data-testid="join-form-pupil">
           <Choice on={form.adult === "yes"} title="I am 18 or older and still at school" data-testid="join-pupil-adult" onClick={() => set("adult", "yes")}/>
           <Choice on={form.adult === "no"} title="I am under 18" data-testid="join-pupil-minor" onClick={() => set("adult", "no")}/>
-          {/* Q3 (db/163): he says who he is. It asks for nothing and opens nothing. */}
+          {/* Q3 (db/168): he says who he is. It asks for nothing and opens nothing. */}
           {form.adult === "no" && (
             <div data-testid="join-pupil-under18">
               <div role="note" style={{ ...text(14), padding: "12px 14px", borderRadius: "10px", border: `1px solid ${T.line.normal}`, background: T.surface.base, marginBottom: "14px" }}>
@@ -359,7 +359,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
             </div>
           )}
           {form.adult === "yes" && (
-            <Field label="Your year or team (optional)" hint="The office matches your request to your place on the school's list.">{(id) => (
+            <Field label="Your year or team (optional)" hint="The office uses this to match you to the school's list.">{(id) => (
               <input id={id} value={form.extra} maxLength={EXTRA_MAX} onChange={(e) => set("extra", e.target.value)} style={input()} autoComplete="off"/>)}</Field>
           )}
         </div>
@@ -419,7 +419,7 @@ function AnsweredNotices() {
           {n.body && <div style={text(13, T.content.secondary)}>{n.body}</div>}
         </div>
       ))}
-      <Btn onClick={() => { void markAll(); }} data-testid="no-school-notices-read">Mark as read</Btn>
+      <Btn onClick={() => { void markAll(); }} data-testid="no-school-notices-read">Got it</Btn>
     </div>
   );
 }
@@ -445,14 +445,14 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   const me = profile()?.user;
   const live = signedIn();
   const followed = useFollowed();
-  // db/163: has this account said "I am a pupil here, and under 18"? Then it is his basic view
+  // db/168: has this account said "I am a pupil here, and under 18"? Then it is his basic view
   // (PupilBasic), not this one. undefined = asking; null = no claim.
   const [pupil, setPupil] = useState(/** @type {any} */ (undefined));
   const [pupilNonce, setPupilNonce] = useState(0);
   useEffect(() => {
     if (!live) return undefined;
     let off = false;
-    api("/api/pupil/state").then((r) => { if (!off) setPupil(r?.claim ?? null); }).catch(() => { if (!off) setPupil(null); });
+    api("/api/pupil/state").then((r) => { if (!off) setPupil(r?.claim ?? null); }).catch(() => { if (!off) setPupil("failed"); });
     return () => { off = true; };
   }, [live, pupilNonce]);
   // Q10: "Ask the school for its signed-in view", from a followed school's card: the spectator request, as before.
@@ -502,14 +502,25 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
       <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", background: T.surface.canvas }}>
         <div style={{ maxWidth: "480px", width: "100%" }} data-testid="no-school-signed-out">
           <h1 style={{ margin: "0 0 8px", fontFamily: FONT.head, fontSize: "22px", color: T.content.primary }}>You were signed out</h1>
-          <div style={{ ...text(14), marginBottom: "16px" }}>For your security SCRBRD does not keep you signed in when the page reloads. Sign in again to see your requests.</div>
+          <div style={{ ...text(14), marginBottom: "16px" }}>SCRBRD signs you out when the page reloads, to keep your account safe. Sign in again to see your requests.</div>
           <Btn kind="primary" onClick={onSignInAgain ?? onSignOut} data-testid="no-school-sign-in-again">Sign in again</Btn>
         </div>
       </div>
     );
   }
 
-  // A pupil's claim (db/163): his basic view, and nothing of this screen's asking.
+  // A pupil's claim (db/168): his basic view, and nothing of this screen's asking.
+  if (pupil === "failed") {
+    return (
+      <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", padding: "24px 16px", background: T.surface.canvas, boxSizing: "border-box" }}>
+        <div role="alert" data-testid="no-school-state-failed" style={{ maxWidth: "520px", width: "100%", ...text(14, T.content.primary) }}>
+          <div style={{ marginBottom: "12px" }}>Could not read your account. Try again.</div>
+          <Btn kind="primary" data-testid="no-school-state-retry" onClick={() => { setPupil(undefined); setPupilNonce((n) => n + 1); }}>Try again</Btn>
+          <Btn style={{ marginLeft: "8px" }} onClick={onSignOut}>Sign out</Btn>
+        </div>
+      </div>
+    );
+  }
   if (pupil === undefined) {
     return (
       <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", padding: "24px 16px", background: T.surface.canvas, boxSizing: "border-box" }}>
@@ -525,8 +536,8 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
     <div data-testid="pending-requests" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", padding: "24px 16px", background: T.surface.canvas, boxSizing: "border-box" }}>
       <main style={{ maxWidth: "520px", width: "100%" }}>
         <h1 data-testid="no-school-title" style={{ margin: "0 0 4px", fontFamily: FONT.head, fontSize: "22px", fontWeight: 800, color: T.content.primary }}>Hello {name || me?.name || "there"}</h1>
-        <div style={{ ...text(14), marginBottom: "4px" }}>You are signed in{me?.email ? <> as <span data-testid="no-school-email" style={{ color: T.content.primary }}>{me.email}</span></> : ""}, and not at a school yet.</div>
-        <div style={{ ...text(14), marginBottom: "20px" }}>Your account holds nothing of a school's until a school says yes.{onOpenPad ? " You can score a match on this phone meanwhile." : " Until then you can see this page and nothing else."}</div>
+        <div style={{ ...text(14), marginBottom: "4px" }}>You are signed in{me?.email ? <> as <span data-testid="no-school-email" style={{ color: T.content.primary }}>{me.email}</span></> : ""}. You are not at a school yet.</div>
+        <div style={{ ...text(14), marginBottom: "20px" }}>Your account holds nothing of a school's until a school says yes.{onOpenPad ? " You can score a match on this phone meanwhile." : " Until then, this page is all you can see."}</div>
 
         {/* §2.2, Q8: Followed schools first while one of them is live, or a link's question waits. */}
         {(followed.live || followed.ask) && <FollowedSchools followed={followed} lead onAskView={askView} viewAsk={viewAsk}/>}

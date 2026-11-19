@@ -269,7 +269,9 @@ try {
     for (const [key, uid] of Object.entries(guardianOf)) {
       await as(uid, `select * from public_name_consent_set($1, false, 'public-names-2026-09')`, [P[/** @type {keyof typeof P} */ (key)]]);
     }
-    await q(`update match set status = 'scheduled', starts_at = now() + interval '3 days' where id = $1`, [LIVE]);
+    // Scored here, so it stays live (db/165: a fixture with a ball log is not
+    // put back to scheduled); only its date moves off today's list.
+    await q(`update match set starts_at = now() + interval '3 days' where id = $1`, [LIVE]);
   };
 
   const { needles, skipped } = await needlesFrom();

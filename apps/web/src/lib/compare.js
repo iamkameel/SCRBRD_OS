@@ -134,10 +134,10 @@ export function childRate(value, balls) {
 export function basisWords(c) {
   if (!c) return null;
   const faced = childRate(null, c.ballsFaced).count, bowled = childRate(null, c.ballsBowled).count;
-  const from = `From ${c.innings} innings: ${faced} faced, ${bowled} bowled.`;
+  const from = `Worked out from ${c.innings} innings: ${faced} faced, ${bowled} bowled.`;
   const book = c.bookInnings > 0
-    ? ` ${c.bookInnings} of ${c.innings} innings from a scorebook${c.inningsWithoutBalls > 0
-        ? `; ${c.inningsWithoutBalls === 1 ? "1 has" : `${c.inningsWithoutBalls} have`} no balls recorded` : ""}.`
+    ? ` ${c.bookInnings} of ${c.innings} innings came from a scorebook${c.inningsWithoutBalls > 0
+        ? `; for ${c.inningsWithoutBalls} of them the balls were not recorded` : ""}.`
     : "";
   return from + book;
 }

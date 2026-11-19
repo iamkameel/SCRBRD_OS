@@ -74,6 +74,7 @@ import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
+import { destByWord, destLocator } from "./walk-nav.mjs";
 // The rankings the tab itself runs (unchanged by SCRBRD-086), so "All
 // seasons" can be held to what the `career` read ranks to — the tab's
 // behaviour before seasons. NOT the new season helpers: the expected season
@@ -220,16 +221,20 @@ async function signIn(page, who) {
   // The pilot accounts appear once the page has found the server.
   if (!(await press(page, who))) return false;
   if (!(await press(page, /^Sign In$/))) return false;
-  return until(page, () => /Match Centre|Dashboard/i.test(document.body.innerText));
+  return until(page, () => /Match Centre|Dashboard|Today|Matches/i.test(document.body.innerText));
 }
 async function nav(page, label) {
   // GA-I30: Leagues is a section of the Competitions home, not a menu entry of its own.
   if (/Leagues/.test(String(label))) {
-    if (!(await press(page, /^Competitions\d*$/, "nav button"))) return false;
+    // Slice 5: Competitions sits under Matches, a link on its bar, for a reader who reaches Matches.
+    const comp = await destLocator(page, "competitions");
+    if (!(await comp.count())) return false;
+    await comp.click({ timeout: 6000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="home-competitions-sections"]', { timeout: 10000 }).catch(() => {});
     if (!(await press(page, /^Leagues$/, '[data-testid="home-competitions-sections"] button'))) return false;
     return until(page, () => /League Management/.test(document.body.innerText));
   }
-  if (!(await press(page, label, "nav button"))) return false;
+  { const l = await destByWord(page, label); if (!(await l.count())) return false; await l.click({ timeout: WAIT }).catch(() => {}); }
   return until(page, () => /League Management/.test(document.body.innerText));
 }
 
@@ -584,7 +589,8 @@ try {
     .map((r) => ({ key: r.season, value: rowFigure(r, metric) == null ? "" : String(rowFigure(r, metric)) }));
   const panelText = (page) => page.locator('[data-testid="season-bars-panel"]').innerText().then((t) => t.replace(/\s+/g, " "));
 
-  ok("Analytics opens", await press(dos.page, /Analytics/, "nav button")
+  // Analytics is Team's Stats section (Slice 5): Team, then Stats.
+  ok("Analytics opens", await (await destByWord(dos.page, /Analytics/)).click({ timeout: WAIT }).then(() => true, () => false)
      && await until(dos.page, () => !!document.querySelector('[data-testid="analytics-teams"]')));
   await dos.page.locator('[data-testid="analytics-team-9XI"]').click({ timeout: WAIT }).catch(() => {});
   ok("...on the 9XI side", await until(dos.page, () => document.querySelector('[data-testid="analytics-team-9XI"]')?.getAttribute("aria-pressed") === "true"));
@@ -700,7 +706,7 @@ try {
     // Profiles → one boy, waiting on his own card's words (`mark`), not on a
     // card being there: the last boy's stays drawn until the read answers.
     const profile = async (page, id, mark) => {
-      await page.locator('[data-testid="nav-profiles"]').first().click({ timeout: WAIT }).catch(() => {});
+      await (await destLocator(page, "profiles")).click({ timeout: WAIT }).catch(() => {});
       await page.locator(`[data-testid="roster-player-${id}"]`).first().click({ timeout: WAIT }).catch(() => {});
       return until(page, (m) => new RegExp(m).test(document.querySelector('[data-testid="recognition-card"]')?.innerText ?? ""), mark);
     };

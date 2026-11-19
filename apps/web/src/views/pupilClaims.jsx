@@ -5,7 +5,7 @@ import { schoolsWhere } from "../lib/session.js";
 import { OFFICE_INTRO, OFFICE_STATE_WORDS, clearWords, dayWords, officeWords, rosterMatches } from "../lib/pupilClaim.js";
 
 // ══════════════════════════════════════════════════════
-//  PUPIL CLAIMS  (Settings → People; SCRBRD-140 honesty model, Migration A; db/163)
+//  PUPIL CLAIMS  (Settings → People; SCRBRD-140 honesty model, Migration A; db/168)
 //
 //  A boy under 18 signed in with Google and said "I am a pupil here". The
 //  office looks, as it would at a parent's request: is this one of ours, and

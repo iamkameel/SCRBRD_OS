@@ -1,6 +1,6 @@
 /**
  * SCRBRD — "I am a pupil here" (SCRBRD-140, the honesty model, Migration A;
- * db/163). The pure half of the pupil's claim form, his basic view and the
+ * db/168). The pure half of the pupil's claim form, his basic view and the
  * office's Pupil claims list: what each state is called, what each refusal
  * says, and what is sent. No React and no network, so apps/web/test holds
  * every sentence to the design.
@@ -24,9 +24,14 @@
  * enrols his account. So the "how" line names the form and the office, and
  * not yet "look under Family", which has nothing to tap until B ships.
  *
- * Q9: the account is kept 30 days from his last claim while a yes is
- * sought, then removed with the schools he follows; his screen says so from
- * the first day (keepWords()).
+ * Q9: the account is kept 30 days from his last claim (or from the school's
+ * answer, if later) while the office decides, then removed with the schools
+ * he follows; his screen says so from the first day (keepWords()). Nobody
+ * asks a parent in Migration A: the words say the office decides, on the
+ * signed form, and change with Migration B. An account that raised a
+ * safeguarding concern is kept (db/168 B1): no date, and his own Remove
+ * answers as any account that is not a claim does, in words that tell
+ * whoever holds his phone nothing (re-review S3(a)).
  */
 
 export const NAME_MAX = 80;
@@ -38,7 +43,7 @@ const clean = (/** @type {unknown} */ v) => String(v ?? "").replace(/\s+/g, " ")
 export const CLAIM_FORM = Object.freeze({
   title: "Tell your school who you are",
   intro: "Type your name as the school would have it. The school office checks it against the school's own list. Nothing about you is opened by this: not your team, not your matches, not your record.",
-  keep: "Sending this tells SCRBRD that this account belongs to a pupil under 18. It then asks for nothing else, and it is kept for 30 days while a parent or guardian is asked. If nobody says yes by then, it is removed, with the schools you follow.",
+  keep: "Sending this tells SCRBRD that this account belongs to a pupil under 18. It then asks for nothing else. It is kept for 30 days while the school office decides: your own page opens only once the office has a parent's or guardian's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.",
   under13: "If you are under 13, Google will not give you an account: ask your school office for a sign-in code instead.",
 });
 
@@ -69,7 +74,6 @@ export const CLAIM_WORDS = Object.freeze({
   ask_your_school_office: "This account cannot send a pupil's claim. Ask your school office.",
   already_recognised: "Your school already knows this is you.",
   already_answered: "The school has already answered. Ask the school office.",
-  born_invalid: "That date could not be used.",
   not_signed_in: "You were signed out. Sign in again to send it.",
   missing_token: "You were signed out. Sign in again to send it.",
   token_expired: "You were signed out. Sign in again to send it.",
@@ -105,7 +109,7 @@ export function stateWords(claim) {
       return { title: "Your school knows this is you.", line: "A parent or guardian needs to say yes before your own page opens.",
                how: `Ask a parent or guardian to give the office at ${at} the school's signed consent form, or ask the office.` };
     case "declined":
-      return { title: "The school has answered", line: "Your own page is not opening from this. If you think that is wrong, ask the school office.", how: null };
+      return { title: "The school has answered", line: "Your own page will not open from this claim. If you think that is wrong, ask the school office.", how: null };
     case "open":
       return { title: "Your own page is open", line: "Sign out, then sign in again, to see it.", how: null };
     // db/164: a yes was taken back (a parent's "Stop his own sign-in", her
@@ -125,15 +129,17 @@ export function stateWords(claim) {
 export function keepWords(claim) {
   if (!claim?.keepUntil) return null;
   const until = dayWords(claim.keepUntil);
-  if (claim.state === "declined") return `This account is kept until ${until}. Then it is removed, with the schools you follow.`;
-  return `This account is kept until ${until}, 30 days from your last claim, while a parent or guardian is asked. If nobody says yes by then, it is removed, with the schools you follow.`;
+  if (claim.state === "declined") return `This account is kept until ${until}, 30 days from the school's answer. Then it is removed, with the schools you follow.`;
+  return `This account is kept until ${until}, 30 days from your last claim, while the school office decides. Your own page opens only once the office has a parent's or guardian's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.`;
 }
 
 /** "Remove this account" (his own way out, now): the question asked first, and the refusals. */
 export const REMOVE_WORDS = Object.freeze({
   ask: "Remove this account now? Its sign-in and the schools you follow go with it. You can sign in with Google again later and start afresh.",
   done: "This account has been removed.",
-  not_a_claim: "This account cannot be removed from here. Ask the school office.",
+  // Also what an account kept for a safeguarding concern reads (db/168 B1; the API answers it as this):
+  // neutral, because whoever holds his phone may be the adult the concern is about (re-review S3(a)).
+  not_a_claim: "This account can't be removed from here. Ask a teacher you trust.",
   fallback: "The account was not removed. Try again.",
 });
 
@@ -149,7 +155,7 @@ export const OFFICE_STATE_WORDS = Object.freeze({
 });
 
 /** What the office is told before it decides. */
-export const OFFICE_INTRO = "A pupil under 18 signed in with Google and said he is at this school. Recognising him matches his account to his place on your list: it opens nothing, not his team, his matches or his record. His own page opens when a parent's or guardian's signed consent form is on file and you enrol his account. If you do not know him, decline: the school's safeguarding officers are told that a claim was declined, without his name.";
+export const OFFICE_INTRO = "A pupil under 18 signed in with Google and said he is at this school. Recognising him matches his account to his place on your list: it opens nothing, not his team, his matches or his record. His own page opens when a parent's or guardian's signed consent form is on file and you enrol his account. If you do not know him, decline: the school's safeguarding officers are told that a claim was declined, without his name. An account is kept 30 days from its last claim, or from your answer.";
 
 /** Each refusal of recognise and decline, in the office's words. */
 export const OFFICE_WORDS = Object.freeze({

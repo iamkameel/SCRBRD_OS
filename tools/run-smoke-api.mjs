@@ -509,6 +509,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // /api/public/ body) scanned for a seeded pupil's name, date of birth,
   // contact or home, a typed name, a mark's reason, health words, coordinates.
   "browser-public-live",
+  // CRI-2.4: Low data on the public match page — on by itself with Save-Data
+  // and always switched off by the reader, remembered on the device; no chart,
+  // no chart chunk, no /par or /shots; the score still updates from ?since=
+  // reads at a quarter of the pace; on 3G, never blank and the score in 3 s.
+  "browser-public-lowdata",
   // SCRBRD-142 phase 2's switch and Fields → Add ground: the director of sport lists
   // the school and the public list carries (then drops) a published fixture, the
   // panel's line follows; a one-side publisher's switch is disabled with its
@@ -525,6 +530,17 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // office's answer is one notice (db/161); the DSO card last on both Homes;
   // the live card leads; the eleven on her child's fixture (Q10).
   "browser-slice4",
+  // EXPERIENCE_PASS Slice 5: each persona's menu is its homes (Today, Matches,
+  // Team, Logistics), no More on a phone; the header; To resolve only for who can
+  // act (Q17); the coach's next fixture first with its chips; the DSO card last
+  // on Today (Q7); the team, player and ground addresses (Q11); the director's
+  // first Needs you row lands on the fix.
+  "browser-homes",
+  // EXPERIENCE_PASS Slice 6: the office's and the director's five homes (School),
+  // the platform's (Platform); Settings taken apart, a parent's name opening only
+  // her own; "A parent is waiting" first, landing on her request; a new school's
+  // set-up list, each line going as it becomes true; the DSO's route (Q7).
+  "browser-office",
   // GA-I19 slice B (db/111): the Injuries screens. The physio's Reviews due, the
   // Record and Review forms (next review required, +7 and +14, clearing asks
   // first), the left-the-school mark; the coach and the director read it with
@@ -626,7 +642,7 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // ways to sign in (add, refuse, remove), and the office's Claims list; 12px
   // and 44px, both themes.
   "browser-signup",
-  // The honesty model's Migration A (db/163): a boy under 18 says "I am a
+  // The honesty model's Migration A (db/168): a boy under 18 says "I am a
   // pupil here"; §3.3's left column is on his screen and its right is not,
   // with the office and once it has recognised him; Raise a concern (Q8),
   // Remove this account (Q9), and the claim_required screen's public pages.
@@ -706,7 +722,14 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // wheel, the parent's result, and the public page's names. It prints the
   // scorer's time per ball with and without the wheel, and says on a line of
   // its own whatever the app cannot do yet.
-  "browser-pilot-flow"];
+  "browser-pilot-flow",
+  // db/165 (18 Nov 2026): a fixture goes live from the pad's first ball, with
+  // no status written in SQL (the walk's source is held to that by
+  // run-smoke-shard.test.mjs); a four reaches the signed-out public page on
+  // its own refresh, naming no child beyond PUBLIC_DATA.md's L2; the scorer's
+  // phone reloads mid-innings, finishes through "Sign in to finish this
+  // match", and Today says Complete.
+  "browser-live-from-pad"];
 
 // Walks that need no database, run by `pnpm smoke` instead. Named here only so
 // the completeness check below knows they are accounted for.

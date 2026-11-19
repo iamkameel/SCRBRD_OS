@@ -59,6 +59,7 @@ import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { SIGNIN_NOTICE } from "../apps/web/src/lib/signinNotice.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
+import { destLocator, openSettingsPart } from "./walk-nav.mjs";
 
 const WEB_PORT = port(4385);
 const API_PORT = port(8985);
@@ -178,16 +179,15 @@ async function devSignIn(h, email) {
   return (await tid(h.page, "os-main").count()) === 1;
 }
 async function go(page, key) {
-  const l = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
+  const l = (await destLocator(page, key));
   if (!(await l.count())) return false;
   try { await l.click({ timeout: 6000 }); } catch { return false; }
   await afterReads(page, 1200);
   return true;
 }
-/** Settings → a tab. */
+/** What was Settings' tab `tab`, where it lives now (Slice 6): People and Import are School, People; Me is the person's own. */
 async function settingsTab(page, tab) {
-  if (!(await go(page, "settings"))) return false;
-  try { await page.locator(`#settings-tab-${tab}`).click({ timeout: 4000 }); } catch { return false; }
+  if (!(await openSettingsPart(page, tab))) return false;
   await afterReads(page, 1200);
   return true;
 }
@@ -239,6 +239,17 @@ try {
     const h = await open({ viewport: PHONE });
     await toLogin(h);
     ok("Continue with Google is on the sign-in screen", (await tid(h.page, "google-button").count()) === 1 && /Continue with Google/.test(await tid(h.page, "google-button").innerText()));
+    // Glossary review item 7: a title true on a first visit, and the line for someone new leading, above the fields.
+    const head = await h.page.evaluate(() => {
+      const y = (/** @type {string} */ s) => document.querySelector(s)?.getBoundingClientRect().top ?? NaN;
+      return { h1: [...document.querySelectorAll("h1")].map((e) => (e.textContent ?? "").trim()), body: document.body.innerText,
+        order: y('[data-testid="login-title"]') < y('[data-testid="login-new-here"]') && y('[data-testid="login-new-here"]') < y('[data-testid="google-button"]')
+          && y('[data-testid="login-new-here"]') < y("#login-email") };
+    });
+    ok("the sign-in title is \"Sign in to SCRBRD\", its one heading, and nobody is welcomed back",
+       head.h1.length === 1 && head.h1[0] === "Sign in to SCRBRD" && !/Welcome back/i.test(head.body), JSON.stringify(head.h1));
+    ok("...the New here line leads, under the title and above Google and the code form",
+       head.order && /^New here\? Tap Continue with Google\./.test((await tid(h.page, "login-new-here").innerText().catch(() => "")).trim()));
     const shown = sentence(await tid(h.page, "google-notice").innerText());
     ok("the privacy paragraph Kameel signed is on the screen, word for word", shown.includes(sentence(SIGNIN_NOTICE)), shown.slice(0, 120));
     ok("the code form is still there, for anyone without Google", (await h.page.locator("#login-email").count()) === 1 && (await h.page.locator("#login-password").count()) === 1);
@@ -278,10 +289,10 @@ try {
 
     await tid(P, `join-school-${HIL}`).click();
     ok("choosing a school offers the kinds", (await tid(P, "join-kind-parent").count()) === 1);
-    // Pupil under 18: offered his claim (db/163), which smoke-browser-under18 sends; nothing is sent here.
+    // Pupil under 18: offered his claim (db/168), which smoke-browser-under18 sends; nothing is sent here.
     await tid(P, "join-kind-pupil").click();
     await tid(P, "join-pupil-minor").click();
-    ok("a pupil under 18 is offered his claim (db/163), not a request: no Send button, and the office's code for under 13", (await tid(P, "join-pupil-under18").count()) === 1 && (await tid(P, "join-send").count()) === 0 && /sign-in code/.test(await tid(P, "join-pupil-under18").innerText()));
+    ok("a pupil under 18 is offered his claim (db/168), not a request: no Send button, and the office's code for under 13", (await tid(P, "join-pupil-under18").count()) === 1 && (await tid(P, "join-send").count()) === 0 && /sign-in code/.test(await tid(P, "join-pupil-under18").innerText()));
 
     // The parent, with a child who IS on the school's list: the seed's invented one.
     await tid(P, "join-kind-parent").click();
@@ -460,7 +471,7 @@ try {
     ok("the Claims list is on People, with the parent's claim", (await tid(o.page, "claims").count()) === 1 && (await parentClaim.count()) === 1, (await tid(o.page, "claims").innerText().catch(() => "")).slice(0, 200));
     ok("...enrolled address beside Google's, no uid", (await parentClaim.locator('[data-testid="claim-enrolled"]').innerText()) === "parent@example.invalid"
        && (await parentClaim.locator('[data-testid="claim-google"]').innerText()) === "parent@example.invalid" && !(await tid(o.page, "claims").innerText()).includes(PARENT_UID));
-    ok("...counted on the People tab", /\d/.test(await o.page.locator("#settings-tab-users").innerText()));
+    ok("...counted on School, People (the People tab before Slice 6)", /\d+ to attend to/.test(await tid(o.page, "people-attention").innerText().catch(() => "")));
     const flc = await floors(o.page, '[data-testid="claims"]');
     ok("the Claims list: nothing under 12px, nothing under 44px", flc.small.length === 0 && flc.tiny.length === 0, [...flc.small, ...flc.tiny].join(" | "));
 

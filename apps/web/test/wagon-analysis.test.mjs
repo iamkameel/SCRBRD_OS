@@ -10,7 +10,7 @@
  * mirror is in `seg` for a sector-era ball, not in theta.
  */
 import {
-  AREAS, CHIP_VALUES, ballArea, chipKeyOf, filterBalls, isPlaced, wagonAnalysis,
+  AREAS, CHIP_VALUES, ballArea, chipKeyOf, filterBalls, isPlaced, wagonAnalysis, shotCoverage, coverageWords,
 } from "../src/scorer/wagonAnalysis.mjs";
 
 let pass = 0, fail = 0;
@@ -117,6 +117,19 @@ group("CRI-2.3: an area's balls, by event id, add up to its runs");
 
 group("Falsification: two edits that should each break a specific assertion")
 console.log("  (see the report for the two edits made and reverted by hand)");
+
+group("B0: coverage counts only real balls and says so");
+{
+  const balls = [pt(40, 4), seg(3, 1), { type: "run", value: 2 }, { type: "run", value: 0 }, pt(200, 0), { type: "run", value: 1, seg: null, theta: null }];
+  const c = shotCoverage(balls);
+  ok("scoring balls counted", c.scoring === 4, c);
+  ok("placed scoring balls", c.placedScoring === 2, c);
+  ok("placed dot drawn but not scoring", c.placedOther === 1 && c.drawn === 3, c);
+  ok("words give the real counts", coverageWords(c).startsWith("Shots placed for 2 of 4 scoring balls."), coverageWords(c));
+  const none = shotCoverage([{ type: "run", value: 1 }, { type: "run", value: 4 }]);
+  ok("none placed: plain empty state", none.drawn === 0 && /No shots placed.*no direction for 2 scoring balls/.test(coverageWords(none)), coverageWords(none));
+  ok("no balls: plain", coverageWords(shotCoverage([])) === "No shots placed.");
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

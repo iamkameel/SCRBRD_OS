@@ -155,6 +155,8 @@
   "159_live_read_target.sql",
   "160_followed_schools.sql",
   "161_school_answered_notice.sql",
-  "163_pupil_claim_basic_view.sql",
-  "164_pupil_signin_gate.sql"
+  "165_live_from_first_ball.sql",
+  "166_officials_signed_in_reads.sql",
+  "168_pupil_claim_basic_view.sql",
+  "169_pupil_signin_gate.sql"
 ]

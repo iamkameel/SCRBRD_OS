@@ -328,9 +328,9 @@ try {
     // module off and nothing is shown. A module that holds a child's data
     // (skills, injuries) keeps refusing, as it always has. Training is the
     // lead's call and keeps refusing until it is made. Fields keeps its gate:
-    // it was not among the seven. Officials keeps its gate too, until
-    // broadcast_state() names officials only while Officials is on (a
-    // migration, with db/154): an appointment is named on the public overlay.
+    // it was not among the seven. Officials records too (SCRBRD-144): its
+    // gate went once every read that names an appointment asked the switch
+    // (db/156 the overlay, db/166 the table, read-api.mjs OFFICIALS_ON).
     // A module that refused reads while still accepting writes would be the
     // worst kind of half-working setting: the half that works is the half
     // nobody checks.
@@ -358,7 +358,7 @@ try {
     // replaces the panel and a ground report corrects the last one, so a
     // row count would not tell a refused write from an upsert.
     const WRITES = [
-      { module: "officials", token: head,
+      { module: "officials", token: head, records: true,
         write: (k) => post(`/api/matches/${m}/officials`, head, { officials: [{ duty: "umpire", name: `Umpire ${k}` }] }),
         landed: (k) => count(`select count(*)::int c from match_official where match_id = $1 and person_name = $2 and not withdrawn`, [m, `Umpire ${k}`]) },
       { module: "training", token: coach,

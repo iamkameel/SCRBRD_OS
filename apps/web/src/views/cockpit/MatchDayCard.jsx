@@ -31,14 +31,26 @@ import { useCockpit, useFeed } from "./useCockpit.js";
  * them. Opening the tab reads everything the drawer needs, so the drawer may
  * hold a signal or two the card could not count.
  *
- * @param {{matches: any[], onNav: (page: string) => void}} p
+ * The day sheet folds the card of its next fixture into that fixture's own card (EXPERIENCE_PASS C13: the same
+ * fixture once, not twice): `only` draws that one fixture's card as a body to be placed inside it, `skip` draws
+ * the others. With neither, it is the card as it always was.
+ *
+ * @param {{matches: any[], onNav: (page: string) => void, only?: string | null, skip?: string | null}} p
  */
-export function MatchDayCard({ matches, onNav }) {
+export function MatchDayCard({ matches, onNav, only = null, skip = null }) {
   const now = useMemo(() => Date.now(), []);
   const assignments = signedIn() ? profile()?.assignments : null;
   // A panel whose module is switched off for this person is not drawn (lib/cockpit.js withSwitches).
   const { features } = useFeatures();
-  const chosen = useMemo(() => chooseFixtures(matches, assignments, now), [matches, assignments, now]);
+  // Folding takes one card out of the list and leaves the list as it was: the same first few and the same Later,
+  // each card numbered among them all, so the fixture folded into the next-fixture card is still "1 of 3".
+  const chosen = useMemo(() => {
+    const c = chooseFixtures(matches, assignments, now);
+    const keep = (/** @type {{match: any}} */ p) => (only ? p.match.id === only : skip ? p.match.id !== skip : true);
+    // The fixture folded into the next-fixture card is drawn there, wherever it falls in the list.
+    if (only) return { all: c.all, shown: c.all.filter(keep), later: [] };
+    return { all: c.all, shown: c.shown.filter(keep), later: c.later.filter(keep) };
+  }, [matches, assignments, now, only, skip]);
   const picks = useMemo(() => {
     const sw = (/** @type {{match: any, gate: any}} */ p) => ({ ...p, gate: withSwitches(p.gate, features) });
     return { all: chosen.all.map(sw), shown: chosen.shown.map(sw), later: chosen.later.map(sw) };
@@ -46,11 +58,12 @@ export function MatchDayCard({ matches, onNav }) {
   const [later, setLater] = useState(false);
   const laterId = useId();
   const total = picks.all.length;
-  if (!total) return null;
+  if (!picks.shown.length && !picks.later.length) return null;
   const several = total > 1;
-  const draw = (/** @type {{match: any, gate: any}} */ { match, gate }, /** @type {number} */ i) => (
-    <Card key={match.id} match={match} gate={gate} onNav={onNav} now={now}
-          title={several ? `Match day · ${i + 1} of ${total}` : "Match day"} named={several}/>
+  const nth = (/** @type {string} */ id) => picks.all.findIndex((p) => p.match.id === id);
+  const draw = (/** @type {{match: any, gate: any}} */ { match, gate }) => (
+    <Card key={match.id} match={match} gate={gate} onNav={onNav} now={now} folded={!!only}
+          title={several ? `Match day · ${nth(match.id) + 1} of ${total}` : "Match day"} named={several}/>
   );
   return (
     <>
@@ -66,7 +79,7 @@ export function MatchDayCard({ matches, onNav }) {
         </BentoCard>
       )}
       {/* Drawn only once opened, so a folded fixture makes none of its reads. */}
-      <div id={laterId} style={{ display: "contents" }}>{later && picks.later.map((p, i) => draw(p, picks.shown.length + i))}</div>
+      <div id={laterId} style={{ display: "contents" }}>{later && picks.later.map((p) => draw(p))}</div>
     </>
   );
 }
@@ -75,8 +88,8 @@ export function MatchDayCard({ matches, onNav }) {
 const btn = () => ({ minHeight: "44px", padding: `0 ${T.space.lg}`, background: "transparent", color: T.content.primary,
   border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 });
 
-/** @param {{match: any, gate: any, onNav: (page: string) => void, now: number, title: string, named: boolean}} p */
-function Card({ match, gate, onNav, now, title, named }) {
+/** @param {{match: any, gate: any, onNav: (page: string) => void, now: number, title: string, named: boolean, folded?: boolean}} p */
+function Card({ match, gate, onNav, now, title, named, folded = false }) {
   const lifts = isMatchDay(match, now);
   const cockpit = useCockpit({ match, gate, lifts, matchups: false });
   const feed = useFeed({ match, gate, cockpit });
@@ -93,12 +106,13 @@ function Card({ match, gate, onNav, now, title, named }) {
   const who = named ? ` · ${ours} v ${opponent}` : "";
   const go = (drawer) => { requestCoach(match.id, drawer); onNav("matches"); };
   const line = { ...T.role.body, color: T.content.secondary, margin: 0 };
-  return (
-    <BentoCard level="b" title={title} data-testid="day-matchday" data-match={match.id}>
-      <div style={{ padding: T.space.lg, display: "grid", gap: T.space.sm }}>
-        {/* With one fixture the card says what it always has; with several, which of his sides it is. */}
-        <p data-testid="matchday-line" style={{ ...T.role.title.md, color: T.content.primary, margin: 0 }}>{named ? `${ours} v ${opponent}` : `v ${opponent}`}</p>
-        <p style={line}>{humanDateTime(match.date, match.time)}</p>
+  const inner = (
+      <div style={{ padding: folded ? 0 : T.space.lg, display: "grid", gap: T.space.sm }}>
+        {/* With one fixture the card says what it always has; with several, which of his sides it is. Folded into the
+            next fixture's card, the fixture is already said above it. */}
+        {folded && <p style={{ ...T.role.label, color: T.content.secondary, margin: 0 }}>{title}</p>}
+        <p data-testid="matchday-line" style={{ ...(folded ? T.role.body : T.role.title.md), fontWeight: 600, color: T.content.primary, margin: 0 }}>{named ? `${ours} v ${opponent}` : `v ${opponent}`}</p>
+        {!folded && <p style={line}>{humanDateTime(match.date, match.time)}</p>}
         {loading ? <p style={line}>Reading the day…</p> : (
           <>
             <p data-testid="matchday-side" style={line}>
@@ -118,6 +132,8 @@ function Card({ match, gate, onNav, now, title, named }) {
           <button type="button" data-testid="matchday-signals" className="os-state" onClick={() => go(true)} aria-label={named ? `See the signals${who}` : undefined} style={btn()}>See the signals</button>
         </div>
       </div>
-    </BentoCard>
   );
+  return folded
+    ? <div data-testid="day-matchday" data-match={match.id} data-folded="true" style={{ marginTop: T.space.md, paddingTop: T.space.md, borderTop: `1px solid ${T.line.subtle}` }}>{inner}</div>
+    : <BentoCard level="b" title={title} data-testid="day-matchday" data-match={match.id}>{inner}</BentoCard>;
 }

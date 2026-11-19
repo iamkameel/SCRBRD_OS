@@ -8,7 +8,11 @@
 import { Suspense, lazy, useState, useEffect, useRef } from "react";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
-import { HOME_OF } from "./design/homes.js";
+import { FRAMED, homeOf } from "./design/homes.js";
+import { forgetSetup } from "./lib/setupList.js";
+import { HomeBar } from "./shell/HomeBar.jsx";
+import { useFix } from "./lib/fixNote.js";
+import { THING_PAGE, teamId, thingOf, thingPath } from "./lib/things.js";
 import { D, GLOBAL_CSS, clr } from "./design/tokens.js";
 import { useTheme } from "./design/theme.js";
 import { canScore, holdsCapability, scoped } from "./rbac/index.js";
@@ -21,7 +25,7 @@ import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
 import { TopBar } from "./shell/TopBar.jsx";
 import { PersonaBar } from "./shell/PersonaBar.jsx";
-import { navOff, personaOf, useFeatures } from "./lib/features.js";
+import { navOff, personaOf, useFeatures, useNav } from "./lib/features.js";
 import { holdsAsHeld } from "./lib/held.js";
 import { scorerLanding } from "./lib/scorerLanding.js";
 import { clearSession, loadSession, saveSession } from "./lib/persist.js";
@@ -82,6 +86,8 @@ const OfficialsView     = view(() => import("./views/OfficialsView.jsx"),     "O
 const SponsorsView      = view(() => import("./views/SponsorsView.jsx"),      "SponsorsView");
 const ModulesView       = view(() => import("./views/ModulesView.jsx"),       "ModulesView");
 const PitchDeckView     = view(() => import("./views/PitchDeckView.jsx"),     "PitchDeckView");
+// The Platform home's School requests (Q22, db/158): the list ManagementView drew for platform.tenant.manage.
+const SchoolRequestsView = view(() => import("./views/schoolRequests.jsx"),  "SchoolRequestsView");
 const ProfilesView      = view(() => import("./views/ProfilesView.jsx"),      "ProfilesView");
 const ReadinessOverview = view(() => import("./views/ReadinessOverview.jsx"), "ReadinessOverview");
 const RulebookView      = view(() => import("./views/RulebookView.jsx"),      "RulebookView");
@@ -93,6 +99,10 @@ const SkillsView        = view(() => import("./views/SkillsView.jsx"),        "S
 const SquadView         = view(() => import("./views/SquadView.jsx"),         "SquadView");
 const StaffView         = view(() => import("./views/StaffView.jsx"),         "StaffView");
 const TrainingView      = view(() => import("./views/TrainingView.jsx"),      "TrainingView");
+// A side's page, opened by its address inside the Team home (EXPERIENCE_PASS Q11, lib/things.js).
+const TeamPage          = view(() => import("./views/TeamPage.jsx"),          "TeamPage");
+// The DSO card, last on the driver's, groundskeeper's and scorer's Todays (Q7); the day sheet draws its own.
+const DsoCard           = view(() => import("./views/family/dso.jsx"),       "DsoCard");
 // Redesign step 4, phase A: the family app and the pupil's app — two small
 // applications inside the same shell, each with its own four destinations.
 const FamilyHome        = view(() => import("./views/family/family.jsx"),     "FamilyHome");
@@ -226,6 +236,9 @@ export default function SCRBRD_OS() {
   const refreshDirectory = () => { setUserEdits(false); setUserNonce((n) => n + 1); };
   const [scorerOpen, setScorerOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState(null);
+  // The thing an address named (/app/players/:id, /app/teams/:id, /app/grounds/:id; lib/things.js), while its
+  // screen is open: { kind, id }, or null.
+  const [thing, setThing] = useState(/** @type {{kind: "players" | "teams" | "grounds", id: string} | null} */ (null));
   const [scorerResume, setScorerResume] = useState(null);
   // The fixture the scorer is on, kept separately from `scorerResume` so it can
   // be persisted: the resume payload carries a whole seeded innings and has no
@@ -330,6 +343,8 @@ export default function SCRBRD_OS() {
   const handleSignOut = ({ keepDoor = false } = {}) => {
     signOut();
     clearSession();
+    // What the set-up list learned from the screens is this account's: the next one to sign in here starts afresh.
+    forgetSetup();
     setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false); setScorerEntry(null);
     setUsers([]); setUserEdits(false);
     setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
@@ -459,7 +474,8 @@ export default function SCRBRD_OS() {
             const r = rows.find((x) => x.id === s.scorerMatchId);
             // The scorer wants the product's vocabulary, and asMatch lives in
             // lib/live.js behind a hook. Only three fields are needed here.
-            if (r) m = { id: r.id, homeTeam: r.team_code, awayTeam: r.opponent,
+            // The home school goes with it: the result screen's "Finish the match" is offered by it (db/130).
+            if (r) m = { id: r.id, homeTeam: r.team_code, awayTeam: r.opponent, schoolId: r.school_id ?? null,
                          overs: r.overs, live: true, status: r.status, startsAt: r.starts_at ?? null, format: r.format ?? null };
           } catch { /* offline: fall through to what this device has */ }
         }
@@ -474,7 +490,8 @@ export default function SCRBRD_OS() {
         // nothing to ask, leave the scorer on the shell mid-over.
         if (!m && !serverAnswered && s.scorerCfg?.live && s.scorerCfg.matchId === s.scorerMatchId) {
           const c = s.scorerCfg;
-          m = { id: c.matchId, homeTeam: c.team1, awayTeam: c.team2, overs: c.overs, live: true, startsAt: c.startsAt ?? null, format: c.format ?? null };
+          m = { id: c.matchId, homeTeam: c.team1, awayTeam: c.team2, overs: c.overs, live: true, schoolId: c.schoolId ?? null,
+                startsAt: c.startsAt ?? null, format: c.format ?? null };
         }
         // The demo: no session and no live fixture, so the client-side scoping.
         if (!m && !signedIn()) m = scoped("matches", s.role ?? role).find(x => x.id === s.scorerMatchId);
@@ -495,6 +512,7 @@ export default function SCRBRD_OS() {
     // the pad, which asks again.
     saveSession({ appState: loginForPad || appState, role, userName, page, scorerMatchId: scorerOpen ? scorerMatchId : null, scorerPractice: scorerOpen && scorerPractice,
       scorerCfg: c ? { matchId: c.matchId, team1: c.team1, team2: c.team2, teamCode: c.teamCode, overs: c.overs, live: true,
+                       ...(c.schoolId ? { schoolId: c.schoolId } : {}),
                        ...(c.startsAt ? { startsAt: c.startsAt } : {}), ...(c.format ? { format: c.format } : {}) } : null });
   }, [appState, role, userName, page, scorerOpen, scorerMatchId, scorerResume, scorerPractice, loginForPad]);
 
@@ -508,15 +526,22 @@ export default function SCRBRD_OS() {
   // does not show. Nothing else here is listening for the address, so a
   // plain replaceState does (the Match Centre reads it when it mounts).
   // Written out rather than imported: the entry graph has a ceiling.
+  // The addresses are opened against the menu the person HOLDS (useNav: the assignments held, narrowed by module),
+  // never the badge role's: a pupil or a parent appointed to score is badged "scorer", and his menu is still his
+  // persona's four (Q2). A persona's app opens no staff screen by address at all.
+  const reach = useNav(role);
+  const reachKey = reach.join(",");
+  const reaches = (/** @type {string} */ k) => !personaOf(role) && reach.includes(k);
   const atMatches = () => /^\/app\/matches(\/|$)/.test(window.location.pathname);
   const toApp = () => window.history.replaceState(window.history.state, "", "/app" + window.location.search);
   useEffect(() => {
     if (appState !== "app") return undefined;
-    const go = () => { if (atMatches()) (ROLES[role]?.nav || []).includes("matches") ? setPage("matches") : toApp(); };
+    const go = () => { if (atMatches()) reaches("matches") ? setPage("matches") : toApp(); };
     go();
     window.addEventListener("popstate", go);
     return () => window.removeEventListener("popstate", go);
-  }, [appState, role]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appState, role, reachKey]);
   // The menu's own Match Centre, tapped while a match is open in it, goes back
   // to the list: the open match is the address (/app/matches/<id>), and the page
   // was already "matches", so the tap changed nothing and the coach stayed in
@@ -535,10 +560,50 @@ export default function SCRBRD_OS() {
     lastPage.current = page;
   }, [page]);
 
+  // Q11: a player's, a team's and a ground's address (lib/things.js), by id only. Arriving on one, once the person
+  // is in, opens the screen that shows it (Team, Players; Team, the side; Fields) on that thing, for a reader whose
+  // menu reaches that screen; anyone else is left at /app. The screen asks its own read, which refuses the rest.
+  // Leaving the screen leaves the address, and the back button onto one is that thing again.
+  useEffect(() => {
+    if (appState !== "app") return undefined;
+    const go = () => {
+      const t = thingOf(window.location.pathname);
+      if (!t) { setThing(null); return; }
+      if (!reaches(THING_PAGE[t.kind])) { setThing(null); toApp(); return; }
+      setThing(t);
+      if (t.kind === "players") setProfileTarget(t.id);
+      setPage(THING_PAGE[t.kind]);
+    };
+    go();
+    window.addEventListener("popstate", go);
+    return () => window.removeEventListener("popstate", go);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appState, role, reachKey]);
+  useEffect(() => {
+    if (thing && page !== THING_PAGE[thing.kind]) { setThing(null); if (thingOf(window.location.pathname)) toApp(); }
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Open a thing from inside the app: its address, then its screen. @param {"players" | "teams" | "grounds"} kind @param {string} id */
+  const openThing = (kind, id) => {
+    const path = thingPath(kind, id);
+    if (path) window.history.pushState(null, "", path + window.location.search);
+    setThing(path ? { kind, id } : null);
+    if (kind === "players") setProfileTarget(id);
+    setPage(THING_PAGE[kind]);
+  };
+  /** The thing in view changed on its own screen (another boy, another ground): the address follows, in place. */
+  const followThing = (/** @type {"players" | "grounds"} */ kind, /** @type {string} */ id) => {
+    const path = thingPath(kind, id);
+    if (!path) return;
+    window.history.replaceState(window.history.state, "", path + window.location.search);
+    setThing({ kind, id });
+  };
+
   // Counted by the SERVER over the notices it agreed to send this person
   // (my_notifications, db/89), from the one store every badge reads. A badge
   // is a disclosure: "3 unread" built from rows nobody authorised states a
   // fact about data the reader may not have.
+  // A "Needs you" row that names one thing on the screen it opens (lib/fixNote.js): brought into view once drawn.
+  useFix(page);
   const { unread: unreadCounted } = useNotifications(role);
   const unreadCount = unreadCounted ?? 0;
   // Invitations to leagues waiting for this person's answer. The API writes no
@@ -635,37 +700,51 @@ export default function SCRBRD_OS() {
   // above; the claim is decided in Postgres.
   const isScorerLanding = !isDriverLanding && !isGroundskeeperLanding
     && scorerLanding((cap) => holdsAsHeld(role, cap));
-  const dashboardView = isDriverLanding ? <DriverDayView role={role}/>
-    : isGroundskeeperLanding ? <GroundskeeperDayView role={role}/>
-    : isScorerLanding ? <ScorerHomeView role={role} onNav={setPage} onOpenScorer={openScorer} onOpenPad={openPad}/>
+  // The DSO card goes last on every Today (Q7; review S3): the day sheet draws its own, and the driver's, the
+  // groundskeeper's and the scorer's Todays carry it under theirs. The same card for everyone at the school.
+  const dsoLast = <div className="os-page" data-testid="today-dso-last" style={{ marginTop: "16px" }}><Suspense fallback={null}><DsoCard onRaise={() => setPage("safeguarding")}/></Suspense></div>;
+  const dashboardView = isDriverLanding ? <><DriverDayView role={role}/>{dsoLast}</>
+    : isGroundskeeperLanding ? <><GroundskeeperDayView role={role}/>{dsoLast}</>
+    : isScorerLanding ? <><ScorerHomeView role={role} onNav={setPage} onOpenScorer={openScorer} onOpenPad={openPad}/>{dsoLast}</>
     : <DashboardView role={role} onNav={setPage} onOpenScorer={openScorer}/>;
   const VIEW_MAP = {
     dashboard:    dashboardView,
-    matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNav={setPage} onNavProfile={(id)=>{setProfileTarget(id);setPage("profiles");}}/>,
+    matches:      <MatchCentreView   role={role} onOpenScorer={openScorer} onNav={setPage} onNavProfile={(id)=>openThing("players", id)}/>,
     competitions: <CompetitionsHome  role={role} section={pageSection}/>,
     // Still a route (a saved session, a link): the Competitions home opened on Leagues.
     leagues:      <CompetitionsHome  role={role} section="leagues"/>,
-    squad:        <SquadView         role={role}/>,
-    profiles:     <ProfilesView      role={role} profileTarget={profileTarget} onClearTarget={()=>setProfileTarget(null)}/>,
+    squad:        thing?.kind === "teams" ? <TeamPage role={role} id={thing.id} onNav={setPage}/> : <SquadView role={role} onOpenTeam={(school, code)=>openThing("teams", teamId(school, code))}/>,
+    profiles:     <ProfilesView      role={role} profileTarget={profileTarget} onClearTarget={()=>setProfileTarget(null)}
+                    addressed={thing?.kind === "players" ? thing.id : null} onSelectPlayer={(id)=>followThing("players", id)}/>,
     analytics:    <AnalyticsView     role={role}/>,
     skills:       <SkillsView        role={role}/>,
     training:     <TrainingView      role={role}/>,
     injuries:     <InjuryView        role={role}/>,
     logistics:    <LogisticsView     role={role} section={pageSection} onNav={setPage}/>,
     calendar:     <CalendarView      role={role} onNav={setPage}/>,
-    fields:       <FieldsView        role={role} onNav={setPage}/>,
+    fields:       <FieldsView        role={role} onNav={setPage}
+                    groundId={thing?.kind === "grounds" ? thing.id : null} onSelectGround={(id)=>followThing("grounds", id)}/>,
     readiness:    <ReadinessOverview role={role} onNav={setPage}/>,
-    staff:        <StaffView         role={role}/>,
+    // School (EXPERIENCE_PASS §1.3, §1.6): People is the staff register's screen with Settings' People and Import
+    // under it; Access is Management with Settings' Roles; Record is Settings' School. Each part as it was.
+    staff:        <><StaffView role={role}/><SettingsView role={role} part="people" users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory}/></>,
+    record:       <SettingsView      role={role} part="record" users={users}/>,
     officials:    <OfficialsView     role={role}/>,
     sponsors:     <SponsorsView      role={role}/>,
     modules:      <ModulesView       role={role}/>,
     news:         <NewsView          role={role}/>,
-    notifications:<NotificationsView role={role}/>,
+    notifications:<NotificationsView role={role} onNav={setPage}/>,
     safeguarding: <SafeguardingView  role={role}/>,
-    settings:     <SettingsView      role={role} users={users} setUsers={setUsersTracked} onDirectoryChanged={refreshDirectory} onSignOut={handleSignOut}/>,
-    management:   <ManagementView    role={role} onDirectoryChanged={refreshDirectory}/>,
+    // The person's own Settings, under their name in the header (§1.6): Me, and their own record's passport.
+    settings:     <SettingsView      role={role} onSignOut={handleSignOut}/>,
+    management:   <ManagementView    role={role} onDirectoryChanged={refreshDirectory} usersAfter={<SettingsView role={role} part="roles" users={users}/>}/>,
     rulebook:     <RulebookView      role={role}/>,
     pitchdeck:    <PitchDeckView     role={role} onNav={setPage}/>,
+    // Platform (§1.3): what no school holds, each under the capability its panel was drawn for.
+    requests:     <SchoolRequestsView role={role}/>,
+    support:      <SettingsView      role={role} part="support"/>,
+    dls:          <SettingsView      role={role} part="dls"/>,
+    roadmap:      <SettingsView      role={role} part="roadmap"/>,
     selection:    <SelectionView/>,
     // The family app (step 4 P1–P7) and the pupil's (S1–S4).
     children:     <FamilyHome        role={role} onNav={setPage} onOpenScorer={openScorer}/>,
@@ -697,7 +776,7 @@ export default function SCRBRD_OS() {
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
         <OffPageGuard page={page} home={home} onNav={setPage}/>
-        {!isMobile&&<Sidebar role={role} active={HOME_OF[page] ?? page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
+        {!isMobile&&<Sidebar role={role} active={page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can
               be reached without a session — the demo entry, a restored
@@ -712,7 +791,7 @@ export default function SCRBRD_OS() {
           )}
           {personaHeader
             ? <PersonaBar active={page} onNav={setPage} onSignOut={handleSignOut} userName={userName}/>
-            : <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName}/>}
+            : <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName} active={page} onSignOut={handleSignOut}/>}
           <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={shown} data-persona={persona ?? undefined} style={{flex:1,overflowY:"auto",outline:"none"}}>
             {/* One boundary round the routed view, keyed on the page: a view
                 that throws is replaced by a card in its own place, and the
@@ -722,12 +801,19 @@ export default function SCRBRD_OS() {
             <Suspense fallback={<Loading what={shown}/>}>
               <ViewChange page={shown} title={NAV_META[shown]?.label ?? page}/>
               <ErrorBoundary key={page} name={NAV_META[page]?.label ?? "page"}>
+                {/* Today, Matches, Team, School and Platform (EXPERIENCE_PASS §1.3): the home's sections over the screen, each section the
+                    destination it came from, drawn only where this reader reaches it (design/homes.js). */}
+                {FRAMED.includes(homeOf(shown)) && (
+                  <div className="os-home-frame" data-testid="home-frame">
+                    <HomeBar home={homeOf(shown)} role={role} section={shown} onSection={(k) => { if (thing) { setThing(null); toApp(); } navTo(k); }} onNav={navTo} scroll invites={invitesWaiting}/>
+                  </div>
+                )}
                 {VIEW_MAP[shown] || VIEW_MAP.dashboard}
               </ErrorBoundary>
             </Suspense>
           </main>
         </div>
-        {isMobile&&<MobileNav role={role} active={HOME_OF[page] ?? page} onNav={navTo} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
+        {isMobile&&<MobileNav role={role} active={page} onNav={navTo} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut}/>}
       </div>
     </>
   );

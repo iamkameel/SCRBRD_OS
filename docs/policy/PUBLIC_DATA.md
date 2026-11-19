@@ -66,6 +66,11 @@ ground for publishing it on these pages is the prior consent of a competent pers
 | D3 | A live link shared on WhatsApp | Expected; the page shows only what this rule allows |
 | D4 | News posts naming pupils | News stays signed-in for now |
 
+*Decisions recorded 18 Nov 2026 (Kameel), under A8 and C2, L2 and D2. The rules above are unchanged.*
+
+- *18 Nov 2026:* a boy without public consent will be shown as his initial and fixed-length dots ("R ••••••") on every public surface, never-public boys alike. Decided, not built; production after counsel.
+- *18 Nov 2026:* a photo may show where a family sets the profile public. Not built; Fable designs it; counsel reads it; A8 stands until then.
+
 ## 3. Never public (N1–N5)
 
 No setting and no consent makes these public:
