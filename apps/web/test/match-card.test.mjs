@@ -82,6 +82,7 @@ group("The card, in order");
   ok("a provisional result says so in the sentence", p.sentence.text === "Hilton College 1XI won by 12 runs · provisional", p.sentence.text);
   const r = cardModel({ match: { ...M, status: "complete" }, resultSaid: "Hilton College 1XI won by 12 runs" });
   ok("a result is the result's words", r.sentence.text === "Hilton College 1XI won by 12 runs" && r.state.words === "Result");
+  ok("...with its day on the right of the state line", r.day === "Sat 21 Nov" && a.day === null, [r.day, a.day]);
   const d = cardModel({ match: { ...M, status: "live" }, scores: { home: "142/6 · 20 overs", away: null, batting: "home" } });
   ok("the demo's scores, handed in", d.sides[0].score === "142/6 · 20 overs" && d.sides[0].batting);
 }

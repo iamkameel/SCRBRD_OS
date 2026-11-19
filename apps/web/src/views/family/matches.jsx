@@ -49,27 +49,27 @@ function PostponedChip({ testid }) {
  * whole row one tap to the fixture or the match. `aside` sits on the state
  * line's right (his answer); `line` is his own line.
  */
-function Row({ m, child, testid, onOpen, aside = null, line = null, lineTestid, fold = null, resultSaid = null }) {
+function Row({ m, child, testid, onOpen, aside = null, line = null, lineTestid, fold = null, resultSaid = null, last = false }) {
   const end = endOf(m, child);
   return (
-    <MatchCard size="row" match={m} ownEnd={end} testid={testid} onOpen={() => onOpen(m)} openLabel={openWords(m, end)}
+    <MatchCard size="row" last={last} match={m} ownEnd={end} testid={testid} onOpen={() => onOpen(m)} openLabel={openWords(m, end)}
       aside={aside} line={line} lineTestid={lineTestid} resultSaid={resultSaid}
       fold={fold?.innings?.length ? { innings: fold.innings, result: fold.result } : null}/>
   );
 }
 
 /** An upcoming row: when, who, home or away — and his answer, as a word. */
-function UpcomingRow({ m, child, role, onOpen }) {
+function UpcomingRow({ m, child, role, onOpen, last = false }) {
   if (m.status === "postponed") {
     // A postponed fixture (db/133): the card says "Postponed"; the row says the day it was set for.
-    return <Row m={m} child={child} testid={`fixture-row-${m.id}`} onOpen={onOpen} aside={<PostponedChip testid={`fixture-chip-${m.id}`}/>}
+    return <Row m={m} child={child} last={last} testid={`fixture-row-${m.id}`} onOpen={onOpen} aside={<PostponedChip testid={`fixture-chip-${m.id}`}/>}
       line={`Was ${whenOf(m)} · new date to follow`}/>;
   }
-  return <AnsweredRow m={m} child={child} role={role} onOpen={onOpen}/>;
+  return <AnsweredRow m={m} child={child} role={role} onOpen={onOpen} last={last}/>;
 }
 
 /** A fixture that is on: when, who, home or away — and his answer, as a word. */
-function AnsweredRow({ m, child, role, onOpen }) {
+function AnsweredRow({ m, child, role, onOpen, last = false }) {
   const read = useLive("availability", role, 0, { matchId: m.id });
   const row = read.rows.find((r) => r.playerId === child.id) ?? null;
   // "No answer" is said only of a read that answered; one that is coming or
@@ -77,7 +77,7 @@ function AnsweredRow({ m, child, role, onOpen }) {
   const said = readState(read, { what: "the answer" });
   const answered = ["ok", "empty"].includes(said.state);
   return (
-    <Row m={m} child={child} testid={`fixture-row-${m.id}`} onOpen={onOpen}
+    <Row m={m} child={child} last={last} testid={`fixture-row-${m.id}`} onOpen={onOpen}
       aside={answered ? <StateChip status={row?.status ?? null} testid={`fixture-chip-${m.id}`}/>
         : <span data-testid={`fixture-chip-${m.id}`} data-state={said.state} style={{ ...T.role.body, fontSize: "14px", fontWeight: 600, color: T.content.secondary }}>{(said.sentence ?? "").replace(/…$|\.$/, "")}</span>}/>
   );
@@ -88,18 +88,18 @@ function AnsweredRow({ m, child, role, onOpen }) {
  * read per match this list already makes of a played row (useFold.js, §5 G7),
  * re-read while the match is live.
  */
-function LiveRow({ m, child, onOpen, self }) {
+function LiveRow({ m, child, onOpen, self, last = false }) {
   const fold = useFold(m);
   const line = lineFor(fold.innings, child.id);
-  return <Row m={m} child={child} testid={`live-row-${m.id}`} onOpen={onOpen} fold={fold}
+  return <Row m={m} child={child} last={last} testid={`live-row-${m.id}`} onOpen={onOpen} fold={fold}
     line={line ? (self ? `You: ${line}` : line) : null} lineTestid={`live-line-${m.id}`}/>;
 }
 
 /** A played row: the result and HIS line, folded from that match's log. */
-function PlayedRow({ m, child, onOpen, self }) {
+function PlayedRow({ m, child, onOpen, self, last = false }) {
   const fold = useFold(m);
   const line = lineFor(fold.innings, child.id);
-  return <Row m={m} child={child} testid={`played-row-${m.id}`} onOpen={onOpen} fold={fold} resultSaid={resultText(m, fold.result)}
+  return <Row m={m} child={child} last={last} testid={`played-row-${m.id}`} onOpen={onOpen} fold={fold} resultSaid={resultText(m, fold.result)}
     line={line ? (self ? `You: ${line}` : line) : null} lineTestid={`played-line-${m.id}`}/>;
 }
 
@@ -128,17 +128,17 @@ export function ChildMatches({ child, role, self = false, head = null }) {
         ? <ReadState compact read={matchesSaid} onRetry={() => setNonce((n) => n + 1)} testId="matches-read-state"/> : null}
       {live.length > 0 && (
         <Card label="Live now" testid="matches-live">
-          {live.map((m) => <LiveRow key={m.id} m={m} child={child} self={self} onOpen={(x) => setOpen({ kind: "match", match: x })}/>)}
+          {live.map((m, n) => <LiveRow key={m.id} last={n === live.length - 1} m={m} child={child} self={self} onOpen={(x) => setOpen({ kind: "match", match: x })}/>)}
         </Card>
       )}
       <Card label="Coming up" testid="matches-upcoming">
-        {upcoming.length || postponed.length ? [...upcoming, ...postponed].map((m) => (
-          <UpcomingRow key={m.id} m={m} child={child} role={role} onOpen={(x) => setOpen({ kind: "fixture", match: x })}/>
+        {upcoming.length || postponed.length ? [...upcoming, ...postponed].map((m, n, all) => (
+          <UpcomingRow key={m.id} last={n === all.length - 1} m={m} child={child} role={role} onOpen={(x) => setOpen({ kind: "fixture", match: x })}/>
         )) : !loading && !error && <Line quiet>{self ? "Nothing arranged for your side yet." : `Nothing arranged for ${name}'s side yet.`}</Line>}
       </Card>
       {played.length > 0 && (
         <Card label="Played" testid="matches-played">
-          {played.map((m) => <PlayedRow key={m.id} m={m} child={child} self={self} onOpen={(x) => setOpen({ kind: "match", match: x })}/>)}
+          {played.map((m, n) => <PlayedRow key={m.id} last={n === played.length - 1} m={m} child={child} self={self} onOpen={(x) => setOpen({ kind: "match", match: x })}/>)}
         </Card>
       )}
     </>

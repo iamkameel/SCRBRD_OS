@@ -135,9 +135,10 @@ export function MatchCard({ size = "card", match, fold = null, innings = null, r
     );
   }
   const m = cardModel({ match, fold, innings, resultSaid, scores, ownEnd, official, now: now ?? Date.now() });
-  const right = updated ?? m.soon;
+  const right = updated ?? m.soon ?? m.day;
   const body = (
-    <div style={{ display: "grid", gap: s.gap() }}>
+    // A measure, not the panel's width: on a desktop a score sits beside its side's name, not a screen away.
+    <div style={{ display: "grid", gap: s.gap(), maxWidth: "40rem" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap" }}>
         <StateWords state={m.state}/>
         {(right || aside) && (

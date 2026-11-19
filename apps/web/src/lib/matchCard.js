@@ -188,7 +188,10 @@ export function cardModel({ match, fold = null, innings = null, resultSaid = nul
   const text = state.kind === "provisional" && sentence.state === "result" && !/provisional/i.test(sentence.text)
     ? `${sentence.text} · provisional`
     : sentence.state === "upcoming" && match?.venue ? `${sentence.text} · ${match.venue}` : sentence.text;
-  return { state, soon: startsIn(match, now), sides, sentence: { state: sentence.state, text } };
+  // A match played or called off keeps its day, on the state line's right ("Result · Thu 12 Nov"): the left says
+  // where it stands, never the date in its place. A match to come has the day on the left already.
+  const day = state.kind !== "upcoming" && state.kind !== "live" && match?.date ? humanDate(match.date) : null;
+  return { state, soon: startsIn(match, now), day, sides, sentence: { state: sentence.state, text } };
 }
 
 /**

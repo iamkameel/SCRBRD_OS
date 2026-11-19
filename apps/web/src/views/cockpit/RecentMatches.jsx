@@ -4,12 +4,13 @@ import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
 import { profile } from "../../lib/session.js";
 import { requestResult } from "../../lib/cockpitNav.js";
-import { shortDate } from "../../lib/cockpit.js";
 import { clockWords, correctedAt, correctionsOf } from "../../lib/corrections.js";
 import { sidesOf } from "../../lib/matchCentre.js";
 import { battingWords, bowlingWords, insights, lastMatchWords, leaders, LEADERS, matchSummary, recentSides } from "../../lib/recentMatches.js";
 import { SeasonLine } from "../seasonline.jsx";
 import { BentoCard } from "../../ui/surfaces.jsx";
+import { MatchCard } from "../../ui/matchCard.jsx";
+import { openWords } from "../../lib/matchCard.js";
 
 /**
  * RECENT MATCHES (pilot item 5): on the coach's Dashboard, beside the
@@ -107,36 +108,23 @@ function SideCard({ side, named, onNav }) {
       <div style={{ padding: T.space.lg, display: "grid", gap: T.space.md }}>
         {loading ? <p style={quiet()} data-testid="recent-loading">Reading the scorecards…</p> : (
           <>
-            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: T.space.md }} aria-label="The last finished matches, newest first">
+            <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid" }} aria-label="The last finished matches, newest first">
               {side.picks.map(({ match, gate }, i) => {
                 const l = summaries[i].line;
-                const us = ourName(match, gate.end), them = theirName(match, gate.end);
+                const them = theirName(match, gate.end);
                 const opp = l.opponent || them.full;
+                const fold = rows[i]?.innings?.length ? { innings: rows[i].innings, result: null } : null;
                 return (
-                  <li key={match.id} data-testid={`recent-match-${match.id}`} data-result={l.result ?? ""} data-ours={l.ours ?? ""} data-theirs={l.theirs ?? ""}
-                      style={{ display: "grid", gap: "2px", paddingBottom: T.space.md, borderBottom: i < n - 1 ? `1px solid ${T.line.subtle}` : "none" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: T.space.sm, flexWrap: "wrap" }}>
-                      <span style={{ ...body(), fontWeight: 600, minWidth: 0, overflowWrap: "anywhere" }}>v {opp}</span>
-                      {l.date && <span style={quiet()}>{shortDate(l.date)}</span>}
-                    </div>
-                    {l.resultRead ? (
-                      <>
-                        <p data-testid="recent-result" style={body()}>{l.result ?? "No result recorded"}</p>
-                        <p data-testid="recent-totals" style={quiet()}>
-                          {l.ours == null && l.theirs == null ? "No innings on the log." : (
-                            <>
-                              {us.short} {l.ours != null ? <span style={fig()}>{l.ours}</span> : "no innings on the log"}
-                              {" · "}{them.short} {l.theirs != null ? <span style={fig()}>{l.theirs}</span> : "no innings on the log"}
-                            </>
-                          )}
-                        </p>
-                      </>
-                    ) : <p data-testid="recent-unread" style={quiet()}>The result could not be read just now. That is not the same as there being none.</p>}
-                    {l.correctedAt != null && <p data-testid="recent-corrected" style={quiet()}>Corrected {clockWords(l.correctedAt)}: the figures here are the corrected ones.</p>}
-                    <button type="button" className="os-state" data-testid={`recent-open-${match.id}`} onClick={() => open(match.id)}
-                            aria-label={`Open the match against ${opp}`} style={{ ...btn(), justifySelf: "start", marginTop: T.space.xs }}>
-                      Open the match
-                    </button>
+                  // The match card's row (slice 1): his side first, both totals from the fold, the result's words.
+                  <li key={match.id} data-testid={`recent-match-${match.id}`} data-result={l.result ?? ""} data-ours={l.ours ?? ""} data-theirs={l.theirs ?? ""}>
+                    <MatchCard size="row" last={i === n - 1} match={match} ownEnd={gate.end} fold={fold} resultSaid={l.resultRead ? l.result ?? null : null}
+                      statusTestid="recent-result"
+                      line={!l.resultRead ? "The result could not be read just now. That is not the same as there being none."
+                        : l.ours == null && l.theirs == null ? "No innings on the log." : null}
+                      lineTestid={!l.resultRead ? "recent-unread" : "recent-totals"}
+                      action={{ label: openWords(match, gate.end), aria: `Open the match against ${opp}`, testid: `recent-open-${match.id}`, onClick: () => open(match.id) }}>
+                      {l.correctedAt != null && <p data-testid="recent-corrected" style={quiet()}>Corrected {clockWords(l.correctedAt)}: the figures here are the corrected ones.</p>}
+                    </MatchCard>
                   </li>
                 );
               })}
@@ -205,22 +193,19 @@ function LastMatchRead({ side, role, onNav }) {
   const w = s ? lastMatchWords(s, side.figures) : null;
   return (
     <BentoCard level="c" title="Last match" data-testid="day-last" data-match={match.id}>
-      <div style={{ display: "grid", gap: T.space.xs }}>
-        <p style={{ ...body(), fontWeight: 600, overflowWrap: "anywhere" }}>v {them}{match.date ? ` · ${shortDate(match.date)}` : ""}</p>
-        {loading ? <p style={quiet()}>Reading the scorecard…</p> : (
-          <>
-            {w?.result != null
-              ? <p data-testid="day-last-result" style={body()}>{w.result}{w.totals ? <span style={quiet()}> · {w.totals}</span> : null}</p>
-              : <p data-testid="day-last-unread" style={quiet()}>The result could not be read just now. That is not the same as there being none.</p>}
-            {w?.top && <p data-testid="day-last-top" style={quiet()}>{w.top}</p>}
-            {w?.best && <p data-testid="day-last-best" style={quiet()}>{w.best}</p>}
-            {s?.line.correctedAt != null && <p data-testid="day-last-corrected" style={quiet()}>Corrected {clockWords(s.line.correctedAt)}: these are the corrected figures.</p>}
-          </>
-        )}
-        {side.teamCode && <SeasonLine role={role} school={side.school} team={side.teamCode}/>}
-        <button type="button" className="os-state" data-testid="day-last-open" onClick={() => { requestResult(match.id); onNav("matches"); }}
-                aria-label={`Open the match against ${them}`} style={{ ...btn(), justifySelf: "start", marginTop: T.space.xs }}>Open the match</button>
-      </div>
+      {loading ? <p style={quiet()}>Reading the scorecard…</p> : (
+        // The match card (slice 1): his side first, both totals, the result; then his side's best, and the season.
+        <MatchCard size="card" match={match} ownEnd={gate.end} statusTestid="day-last-result"
+          fold={rows[0]?.innings?.length ? { innings: rows[0].innings, result: null } : null}
+          resultSaid={w?.result ?? null}
+          line={w?.result == null ? "The result could not be read just now. That is not the same as there being none." : null} lineTestid="day-last-unread"
+          action={{ label: openWords(match, gate.end), aria: `Open the match against ${them}`, testid: "day-last-open", onClick: () => { requestResult(match.id); onNav("matches"); } }}>
+          {w?.top && <p data-testid="day-last-top" style={quiet()}>{w.top}</p>}
+          {w?.best && <p data-testid="day-last-best" style={quiet()}>{w.best}</p>}
+          {s?.line.correctedAt != null && <p data-testid="day-last-corrected" style={quiet()}>Corrected {clockWords(s.line.correctedAt)}: these are the corrected figures.</p>}
+          {side.teamCode && <SeasonLine role={role} school={side.school} team={side.teamCode}/>}
+        </MatchCard>
+      )}
     </BentoCard>
   );
 }

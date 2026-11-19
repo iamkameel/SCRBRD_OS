@@ -20,15 +20,6 @@ import { useFold } from "./useFold.js";
 import { SealMark } from "../../ui/sealMark.jsx";
 import { familyMilestoneLine, familyName, honourWords, isFirst, isSealed, isWithdrawn, provenanceOf } from "../../lib/recognitionWords.js";
 
-const DAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-/** "SATURDAY 3 OCT" as the eyebrow says it. */
-const dayLabel = (iso) => {
-  if (!iso) return "Next fixture";
-  const d = new Date(`${iso}T00:00:00Z`);
-  return Number.isNaN(d.getTime()) ? "Next fixture" : `${DAY[d.getUTCDay()]} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}`;
-};
-
 /**
  * The next fixture, where, how he gets there, his answer and the team sheet.
  * `onOpen` opens the fixture (P3/S3), where the answer is given.
@@ -55,7 +46,7 @@ export function NextFixtureCard({ child, matches, role, self = false, onOpen, on
     );
   }
   return (
-    <Card label={dayLabel(next.date)} testid="next-fixture">
+    <Card label="Next fixture" testid="next-fixture">
       {/* The match card (slice 1): his side first, both named in full, and where it stands. What the card does not
           say follows it: the bus, the weather, his answer and the side. */}
       <MatchCard size="card" match={next} ownEnd={endOf(next, child)} now={now} testid="next-fixture-title" statusTestid="next-fixture-status"/>
@@ -97,7 +88,8 @@ export function LiveCard({ child, matches, onFollow, now, self = false }) {
   if (!live) return null;
   const end = endOf(live, child);
   return (
-    <Card label="Live" testid="live-card">
+    // No "Live" over it: the card's own state line says so, with the dot (§2.2), once.
+    <Card testid="live-card">
       <MatchCard size="board" match={live} ownEnd={end} now={now} testid="family-board" statusTestid="live-card-status"
         fold={fold.innings.length ? { innings: fold.innings, result: fold.result } : null}
         loading={fold.loading && !fold.innings.length}
@@ -116,7 +108,7 @@ export function LastMatchCard({ child, matches, onOpen, now, self = false }) {
   const result = resultText(last, fold.result);
   const end = endOf(last, child);
   return (
-    <Card label={`Last match · ${humanDate(last.date)} · v ${opponentOf(last, child)}`} testid="last-match">
+    <Card label="Last match" testid="last-match">
       {fold.loading ? <Line quiet>Reading the scorecard…</Line> : (
         // The match card (slice 1): both sides with their scores, the result, and his line.
         <MatchCard size="card" match={last} ownEnd={end} now={now} statusTestid="last-match-result"
