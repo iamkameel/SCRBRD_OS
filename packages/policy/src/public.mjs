@@ -22,6 +22,10 @@
  *                            surname and known-as when the office recorded
  *                            them (db/47), a heuristic over the full name
  *                            when it did not.
+ *   initialAndDots(name, stored), NAME_DOTS
+ *                            the 18 Nov rule: "R ••••••" for a boy the rule
+ *                            does not name, where the caller passes
+ *                            `initials: true`.
  *   NAME_SURFACES            PUBLIC_BY_TERMS §1.1: card, live, board — the
  *                            surfaces publicName() judges one by one.
  *   TERMS_VERSIONS, termsAtLeast(v, floor)
@@ -527,6 +531,10 @@ export const POSITION_LABELS = Object.freeze({
  *   the caller's literal: whether this read may name a child by terms at all.
  *   `false` at the stream overlay (STREAM_CAPTION, §1.3), an access pack and
  *   a shared card (§9.6); only an exact `true` opens line 6.
+ * @property {boolean} [initials]
+ *   the caller's literal: the 18 Nov rule (initialAndDots() below). Only an
+ *   exact `true` shows a boy the rule does not name as "R ••••••"; anything
+ *   else, his position, as before.
  */
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -606,7 +614,63 @@ export function publicName(facts) {
     : surfaceStands(facts, on, by);                 // PUBLIC_BY_TERMS §5.1
 
   // A consenting boy whose record has no usable name is still a position.
-  return (named && initialAndSurname(facts.fullName, { surname: facts.surname, knownAs: facts.knownAs })) || label;
+  if (named) return initialAndSurname(facts.fullName, { surname: facts.surname, knownAs: facts.knownAs }) || label;
+  // The 18 Nov rule (PUBLIC_DATA, after D4): a boy not named shows his initial
+  // and the dots, never-public boys alike, wherever a surface exists for him.
+  if (facts.initials === true && initialsStand(facts)) {
+    return initialAndDots(facts.fullName, { surname: facts.surname, knownAs: facts.knownAs }) || label;
+  }
+  return label;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  The 18 Nov rule: an initial and fixed-length dots ("R ••••••")
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Kameel, 18 Nov 2026 (PUBLIC_DATA, the dated notes after D4): "a boy without
+ * public consent will be shown as his initial and fixed-length dots
+ * ('R ••••••') on every public surface, never-public boys alike. Decided, not
+ * built; production after counsel."
+ *
+ * The dots are always six, whatever the surname's length, so they say nothing
+ * about it. The initial is the one "R Pillay" would show (the known-as's, or
+ * the first given name's): one letter, never two, never the surname's.
+ *
+ * WHO GETS IT. Every boy the rule does not name, for whatever reason — no
+ * consent, a no, a never-public mark, names off for his age group — so a
+ * stranger still cannot tell those apart ("R ••••••" is one string for all of
+ * them, as "Batter" was). Only where a surface exists for him at all: a player
+ * record (a name the scorer typed is never said, L6), his school on the
+ * platform (L5) and his side published (§1.1). Outside those he stays a
+ * position, as before.
+ *
+ * SWITCHED BY THE CALLER, as `byTermsAllowed` is: only an exact
+ * `initials: true` opens it. Every read passes false until its deployment says
+ * otherwise (services/api/server.mjs PUBLIC_NAME_INITIALS: on in the demo,
+ * off in production until Kameel says counsel has read it).
+ */
+export const NAME_DOTS = "••••••";
+
+/** Where the dots may stand in for a name: the surface exists for him (L6, L5, §1.1). @param {NameFacts} facts */
+const initialsStand = (facts) =>
+  facts.typed === false && facts.schoolOnPlatform === true && facts.schoolPublished === true;
+
+/**
+ * "R ••••••": the initial initialAndSurname() would show, and the six dots.
+ * "" when the name gives no given-name initial (an empty record, or one that
+ * is all surname: "van der Merwe"), and the caller shows the position.
+ * @param {string|null|undefined} fullName
+ * @param {{surname?: string|null, knownAs?: string|null}} [names]
+ * @returns {string}
+ */
+export function initialAndDots(fullName, names = {}) {
+  const shown = initialAndSurname(fullName, names);
+  // The formatter's answer is "D Erasmus", a lone "S" (a one-word name), or a
+  // surname alone; only the first two carry a given-name initial.
+  const first = shown.split(" ")[0] ?? "";
+  const initial = /^\p{L}$/u.test(first) ? first : "";
+  return initial ? `${initial} ${NAME_DOTS}` : "";
 }
 
 // ═══════════════════════════════════════════════════════════════════

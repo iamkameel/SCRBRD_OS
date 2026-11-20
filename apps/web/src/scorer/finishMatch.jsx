@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { D, T } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
-import { couldFinalise, reachesEverySchool, schoolsWhere } from "../lib/session.js";
+import { couldConfirmResult, profile } from "../lib/session.js";
+import { roleGrants } from "@scrbrd/policy/roles";
 import { Btn } from "./ui.jsx";
 
 /**
- * "Finish the match", on the pad's result screen (db/130; Kameel, 4 Nov 2026,
+ * "Confirm the result" (once "Finish the match"), on the pad's result screen (db/130; Kameel, 4 Nov 2026,
  * option A: whoever holds scoring.finalise at the home side finishes the
  * match). The match decided on the pad is not, to the server, a finished
  * match until somebody says so: the status moves to complete, and with it the
@@ -25,65 +26,89 @@ import { Btn } from "./ui.jsx";
  * decides, and every answer it gives is said here in words.
  */
 
-/** Each answer of POST /api/matches/:id/finalise, as the scorer reads it. */
+/**
+ * Who confirms (redesign slice 4; DESIGN_DIRECTION Q2, Kameel, 20 Nov 2026,
+ * option (a)): "the coach confirms the result. The scorer sees 'Your part is
+ * done. The coach confirms the result', and the coach gets a notice. The
+ * score reads 'provisional' to everyone until the coach confirms." The act is
+ * db/130's finish, under the same capability (scoring.finalise at the home
+ * side); a person who holds it only as the `scorer` is not offered it
+ * (session.js couldConfirmResult()), so the separation of duties is as it
+ * was: the hand that scored is not the hand that confirms.
+ */
+
+/** Each answer of POST /api/matches/:id/finalise, as the person confirming reads it. */
 export const FINISH_WORDS = Object.freeze({
-  finished: "Finished. The result now waits for confirmation.",
-  already_complete: "This match is already finished.",
-  not_permitted: "You may not finish this match. A scorer, coach or director of sport of the home side can.",
-  not_decided: "The match is not decided yet: score it to its end before you finish it.",
+  finished: "Confirmed. The match is finished.",
+  already_complete: "This result is already confirmed.",
+  not_permitted: "You may not confirm this result. The home side's coach or director of sport can.",
+  not_decided: "The match is not decided yet: score it to its end first.",
   super_over_pending: "The match is tied and its conditions provide a super over: play it, or record the organiser's decision, first.",
-  match_abandoned: "This match was called off, so there is no result to finish.",
-  held_elsewhere: "Another phone is scoring this match. Finish it from that phone, or once it has sent its last ball and put the pen down.",
+  match_abandoned: "This match was called off, so there is no result to confirm.",
+  held_elsewhere: "The scorer's phone still holds the match. It lets go about a minute and a half after the scorer leaves the pad; then confirm again.",
 });
 
-/** What the result screen says when it cannot offer Finish (18 Nov 2026: never hidden in silence). */
+/** The scorer's end (Flow D, step 3), and the sign-in for a coach on this phone. */
 export const FINISH_GATE_WORDS = Object.freeze({
-  sign_in: "Sign in to finish this match.",
-  sign_in_why: "This pad is scoring under its own key, which sends balls but cannot finish a match. Sign in, and you come back to this screen.",
-  no_signal: "There is no signal: sign in once there is, and finish the match from here.",
+  done: "Your part is done.",
+  coach: "The coach confirms the result.",
+  sign_in: "Coaching this side? Sign in to confirm the result here.",
 });
 
 /**
- * Which of the three the result screen offers (18 Nov 2026, the match-day
- * bug): Finish itself; a sign-in, when this pad is not signed in (a reload
- * keeps the pad scoring under its resume key, which match_finalise() never
- * admits, db/130); or the refusal in words, naming who may. A courtesy, as
- * before: match_finalise() decides. With no home school on the pad (a pad
- * opened before the school was carried), any assignment that holds
- * scoring.finalise is offered Finish, and the server answers.
- * @param {string|null|undefined} schoolId @param {string|null|undefined} teamCode
- * @returns {"finish"|"sign_in"|"not_permitted"}
+ * "All 126 balls are sent", "No signal · 2 to send. They're safe on this
+ * phone.", "2 to send. They're safe on this phone, and go when it has signal."
+ * The sync words, said as Today says them (scorerHome.js syncWords()).
+ * @param {{balls: number, pending: number, online: boolean}} s
  */
-export function finishOffer(schoolId, teamCode) {
-  if (!signedIn()) return "sign_in";
-  const may = schoolId ? couldFinalise(schoolId, teamCode)
-    : schoolsWhere("scoring.finalise").length > 0 || reachesEverySchool("scoring.finalise");
-  return may ? "finish" : "not_permitted";
+export function doneWords({ balls, pending, online }) {
+  if (pending > 0) {
+    return online
+      ? `${pending} to send. They're safe on this phone, and go when it has signal.`
+      : `No signal · ${pending} to send. They're safe on this phone.`;
+  }
+  if (balls === 1) return "The ball is sent.";
+  return balls > 0 ? `All ${balls} balls are sent.` : "Everything is sent.";
 }
 
 /**
- * The result screen's panel when Finish is not this person's to press: the
- * sign-in that returns to the pad, or who may finish it.
- * @param {{ offer: "sign_in"|"not_permitted", onSignIn?: (() => void)|null, online?: boolean }} props
+ * Which the result screen offers: "finish" (the coach's Confirm the result),
+ * "done" (the scorer's end), or "sign_in" (a pad scoring under its own key,
+ * which never confirms, db/130: the scorer's end, and a sign-in for a coach
+ * holding this phone). A courtesy, as before: match_finalise() decides. With
+ * no home school on the pad, any assignment that may confirm is offered it.
+ * @param {string|null|undefined} schoolId @param {string|null|undefined} teamCode
+ * @returns {"finish"|"done"|"sign_in"}
  */
-export function FinishGate({ offer, onSignIn = null, online = true }) {
-  const text = { fontFamily: D.body, fontSize: "14px", color: D.textSecondary, margin: 0, textAlign: /** @type {const} */ ("center"), maxWidth: "520px" };
-  if (offer === "not_permitted") {
-    return (
-      <div data-testid="pad-finish-panel" data-offer="not_permitted" style={{ display: "grid", gap: "10px", justifyItems: "center", marginBottom: "20px" }}>
-        <p role="status" data-testid="pad-finish-said" style={text}>{FINISH_WORDS.not_permitted}</p>
-      </div>
-    );
-  }
+export function finishOffer(schoolId, teamCode) {
+  if (!signedIn()) return "sign_in";
+  const may = schoolId ? couldConfirmResult(schoolId, teamCode)
+    : (profile()?.assignments ?? []).some((/** @type {any} */ a) => a.role !== "scorer" && roleGrants(a.role, "scoring.finalise"));
+  return may ? "finish" : "done";
+}
+
+/**
+ * The result screen's panel when confirming is not this person's: "Your part
+ * is done", what is sent or still on the phone, who confirms, and "Back to
+ * Today". A pad not signed in also offers a coach the sign-in that returns here.
+ * @param {{ offer: "done"|"sign_in", onSignIn?: (() => void)|null, online?: boolean, balls?: number, pending?: number, onBack?: (() => void)|null }} props
+ */
+export function FinishGate({ offer, onSignIn = null, online = true, balls = 0, pending = 0, onBack = null }) {
+  const text = { fontFamily: D.body, fontSize: "15px", lineHeight: 1.45, color: D.textSecondary, margin: 0, textAlign: /** @type {const} */ ("center"), maxWidth: "520px" };
   return (
-    <div data-testid="pad-finish-panel" data-offer="sign_in" style={{ display: "grid", gap: "10px", justifyItems: "center", marginBottom: "20px" }}>
-      <p data-testid="pad-finish-signin-lead" style={{ ...text, fontWeight: 600, color: D.textPrimary }}>{FINISH_GATE_WORDS.sign_in}</p>
-      {online && onSignIn
-        ? <Btn variant="primary" size="lg" onClick={onSignIn} data-testid="pad-finish-signin">Sign in to finish</Btn>
-        : null}
-      <p role="status" data-testid="pad-finish-said" style={text}>
-        {online && onSignIn ? FINISH_GATE_WORDS.sign_in_why : FINISH_GATE_WORDS.no_signal}
+    <div data-testid="pad-finish-panel" data-offer={offer} data-pending={pending}
+      style={{ display: "grid", gap: "12px", justifyItems: "center", marginBottom: "28px" }}>
+      <p data-testid="pad-done-lead" style={{ ...text, fontSize: "20px", fontWeight: 700, color: D.textPrimary }}>{FINISH_GATE_WORDS.done}</p>
+      <p role="status" aria-live="polite" data-testid="pad-done-said" style={text}>
+        {doneWords({ balls, pending, online })} {FINISH_GATE_WORDS.coach}
       </p>
+      {onBack && <Btn variant="primary" size="lg" onClick={onBack} data-testid="pad-done-back">Back to Today</Btn>}
+      {offer === "sign_in" && online && onSignIn && (
+        <>
+          <p data-testid="pad-finish-signin-lead" style={{ ...text, fontSize: "14px" }}>{FINISH_GATE_WORDS.sign_in}</p>
+          <Btn variant="tonal" size="lg" onClick={onSignIn} data-testid="pad-finish-signin">Sign in to confirm</Btn>
+        </>
+      )}
     </div>
   );
 }
@@ -104,15 +129,15 @@ export function FinishMatch({ matchId, engine, left = 0, sending = false, attach
   // The outbox is not empty: nothing to press until it is.
   const waiting = !done && (left > 0 || sending);
   const waitingWords = left > 0
-    ? `${ballsWords(left)}. Finish opens once ${left === 1 ? "it reaches" : "they reach"} the server.`
-    : "Sending to the server. Finish opens once it has arrived.";
+    ? `${ballsWords(left)}. Confirm opens once ${left === 1 ? "it reaches" : "they reach"} the server.`
+    : "Sending to the server. Confirm opens once it has arrived.";
 
   const finish = async () => {
     setBusy(true); setSaid(null);
     try {
       const outbox = engine();
       if (!outbox) {
-        setSaid({ ok: false, text: "This pad is not connected to the server, so the match cannot be finished from here." });
+        setSaid({ ok: false, text: "This pad is not connected to the server, so the result cannot be confirmed from here." });
         return;
       }
       const sent = await outbox.sync().catch(() => null);
@@ -125,14 +150,14 @@ export function FinishMatch({ matchId, engine, left = 0, sending = false, attach
       // holds the pen (held_elsewhere) or the log is not decided.
       const nothingHere = left === 0 && !(outbox.held?.length) && !outbox.toss;
       if (!sent || (sent.unattached && !nothingHere) || left > 0) {
-        setSaid({ ok: false, text: `Not finished: ${ballsWords(Math.max(left, 0))}, and they must reach the server first. Check the signal and try again.` });
+        setSaid({ ok: false, text: `Not confirmed: ${ballsWords(Math.max(left, 0))}, and they must reach the server first. Check the signal and try again.` });
         return;
       }
       const r = await api(`/api/matches/${matchId}/finalise`, { method: "POST" });
       setSaid({ ok: true, text: FINISH_WORDS[/** @type {keyof typeof FINISH_WORDS} */ (r?.state)] ?? FINISH_WORDS.finished });
     } catch (/** @type {any} */ e) {
       setSaid({ ok: false, text: FINISH_WORDS[/** @type {keyof typeof FINISH_WORDS} */ (e?.code)] ?? e?.detail
-        ?? "Could not reach the server; the match is not finished. Try again." });
+        ?? "Could not reach the server; the result is not confirmed. Try again." });
     } finally { setBusy(false); }
   };
 
@@ -142,7 +167,7 @@ export function FinishMatch({ matchId, engine, left = 0, sending = false, attach
       {!done && (
         <Btn variant="primary" size="lg" disabled={busy || waiting} onClick={finish} data-testid="pad-finish"
           aria-describedby="pad-finish-said">
-          {busy ? "Finishing…" : "Finish the match"}
+          {busy ? "Confirming…" : "Confirm the result"}
         </Btn>
       )}
       <p id="pad-finish-said" role="status" aria-live="polite" data-testid="pad-finish-said"

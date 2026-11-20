@@ -29,10 +29,21 @@
  *      of them a wide or no-ball?" — no clause numbers.
  *   F  The haptic tick: one 10 ms buzz per recorded ball, none under reduced
  *      motion, none with the pad menu's switch off.
+ *   G  Runs first (redesign slice 3; Kameel, question 1): a fixture that
+ *      declares nothing opens on one tap a ball, nothing switched, its one
+ *      innings_start declaring the quick profile; the heat map and the spider
+ *      say "not captured, by design" rather than "No exact placements". A whole over is six taps,
+ *      each one row the server stores as the event Basic Scoring always sent
+ *      (no shot, no placement, profile quick), folding to the over's total on
+ *      the board, the server and the API. The board stays pinned and whole
+ *      under the title bar when the page scrolls. Pro mode and the menu's
+ *      switch still offer the shot and the field, and record nothing by
+ *      being opened.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-padfeel.mjs
  *   BROWSER_PADFEEL_DEBUG=1 node tools/smoke-browser-padfeel.mjs
+ *   BROWSER_PADFEEL_SHOTS=/some/dir node tools/smoke-browser-padfeel.mjs   keep pictures of the pad, light and dark
  */
 import { chromium } from "playwright-core";
 import { launchOptions } from "./chromium.mjs";
@@ -42,7 +53,7 @@ import { deliveryEvents, didNotTravel, noBallEvent } from "../apps/web/src/score
 import { EVENT_COLUMNS } from "../services/api/write/events-api.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
@@ -53,6 +64,7 @@ const API_PORT = port(8863);
 const API = `http://127.0.0.1:${API_PORT}`;
 const DB = ownerUrl();
 const DEBUG = !!process.env.BROWSER_PADFEEL_DEBUG;
+const SHOTS = process.env.BROWSER_PADFEEL_SHOTS || null;
 const MATCH = "77777777-0000-0000-0000-000000000002";   // 1XI v Michaelhouse: nothing scored in the seed
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
@@ -254,10 +266,30 @@ try {
   await page.waitForTimeout(2500);
   await page.setViewportSize({ width: 390, height: 844 });
   const isReady = await ready();
-  if (!(await has("basic-pad"))) { await tap("pad-menu"); await tap("pad-basic-scoring"); await page.waitForTimeout(300); }
-  ok("the pad is ready: openers in, A Nel to bowl, Basic Scoring", isReady && (await has("basic-pad")) && !(await has("scoring-blocked")),
+  // G, first half: runs first. The seed's fixture declares nothing, and the
+  // pad opens on one tap a ball without the scorer switching anything.
+  ok("the pad is ready: openers in, A Nel to bowl, on one tap a ball without switching anything",
+     isReady && (await has("basic-pad")) && !(await has("three-phase-pad")) && !(await has("scoring-blocked")),
      (await text()).slice(0, 400));
   if (!isReady) throw new Error("the pad never became ready");
+  {
+    // The fixture declares nothing, so its innings_start declares quick: one
+    // innings_start, the event and field it has always had, not a second one.
+    const s0 = await serverLog(0);
+    const starts = s0.rows.filter((r) => r.kind === "innings_start" && (r.innings ?? 0) === 0);
+    ok("...and the innings_start declares the quick profile, once, on the event it always was",
+       s0.inn.declaredProfile === "quick" && starts.length === 1 && starts[0].capture_profile === "quick",
+       JSON.stringify(starts.map((r) => ({ kind: r.kind, capture_profile: r.capture_profile }))));
+  }
+  if (SHOTS) {
+    await mkdir(SHOTS, { recursive: true });
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: join(SHOTS, `pad-390-${scheme}.png`) });
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
 
   // ── A ────────────────────────────────────────────────────────
   group("A. Dot and 1: the biggest run keys, next to the strip, fixed ball to ball");
@@ -445,6 +477,108 @@ try {
   await tap("pad-menu"); await tap("pad-haptic"); await page.keyboard.press("Escape");
   await tap("run-0");
   ok("back on: one buzz for the ball", (await vibes()) === v0 + 1);
+  // ── G ────────────────────────────────────────────────────────
+  group("G. Runs first: a whole over, one tap a ball");
+  {
+    // To the end of this over with dots, so the six taps are an over of their own.
+    let g = await serverLog(0);
+    for (let i = g.inn.balls % 6; i > 0 && i < 6; i++) { await tap("run-0"); await page.waitForTimeout(250); }
+    g = await agree("the over before, ended with dots");
+    ok("the over is done and the pad asks for the next bowler", g.inn.balls % 6 === 0 && (await has("bowler-choice")));
+    await page.locator('[data-testid="bowler-choice"]').first().click({ timeout: 3000 });
+    await page.waitForTimeout(600);
+    ok("...one tap on the likely bowler, and the pad is the one-tap pad", (await has("basic-pad")) && !(await has("scoring-blocked")));
+    const over = [1, 4, 0, 2, 6, 3];
+    const start = await serverLog(0);
+    let before = start.inn, bad = [];
+    for (const [k, v] of over.entries()) {
+      const rows0 = (await serverLog(0)).rows.length;
+      await tap(`run-${v}`);
+      const s = await agree(`ball ${k + 1} of the over, ${v}`);
+      const got = s.evs.at(-1);
+      const cmp = same(expected.commit(before, "run", v), got);
+      if (!(s.rows.length === rows0 + 1 && cmp.ok)) bad.push(`ball ${k + 1}: rows ${rows0}→${s.rows.length}; ${cmp.diff}`);
+      // The ball itself, said plainly: no shot and no field, not invented ones.
+      if (!(got?.kind === "ball" && got.shot == null && got.theta == null && got.radius == null && got.seg == null
+            && got.zone == null && got.placementSource == null && got.captureProfile === "quick"
+            && got.placementNull === "not_required")) bad.push(`ball ${k + 1}: ${JSON.stringify(got)}`);
+      before = s.inn;
+    }
+    ok("each of the six taps is one row, the event Basic Scoring always sent", bad.length === 0, bad.join(" | "));
+    const total = over.reduce((a, b) => a + b, 0);
+    ok(`the over folds to its total: ${total} runs off six balls, no wicket, no extra`,
+       before.runs === start.inn.runs + total && before.balls === start.inn.balls + 6 && before.wickets === start.inn.wickets
+       && JSON.stringify(before.extras) === JSON.stringify(start.inn.extras),
+       `runs ${start.inn.runs}→${before.runs}, balls ${start.inn.balls}→${before.balls}, wickets ${start.inn.wickets}→${before.wickets}, extras ${JSON.stringify(start.inn.extras)}→${JSON.stringify(before.extras)}`);
+    ok("...and the pad closes the over and asks for the next bowler", (await has("bowler-choice")));
+    await page.locator('[data-testid="bowler-choice"]').first().click({ timeout: 3000 });
+    await page.waitForTimeout(600);
+
+    // The board stays pinned and whole under the title bar, the page scrolled to its end.
+    await page.evaluate(() => scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }));
+    await page.waitForTimeout(300);
+    const pin = await page.evaluate(() => {
+      const r = (q) => document.querySelector(q)?.getBoundingClientRect();
+      const bar = r('[data-testid="pad-titlebar"]'), b = r('[data-testid="pad-board"]'), strip = r('[data-testid="pad-strip"]');
+      return { y: scrollY, bar: bar && Math.round(bar.bottom), top: b && Math.round(b.top), bottom: b && Math.round(b.bottom),
+               strip: strip && Math.round(strip.top), h: innerHeight, over: document.documentElement.scrollWidth > innerWidth };
+    });
+    ok(`the board is pinned under the title bar and whole, scrolled or not (${JSON.stringify(pin)})`,
+       pin.top != null && pin.top >= pin.bar && pin.top - pin.bar <= 8 && pin.bottom <= pin.h && pin.bottom <= pin.strip && !pin.over);
+    await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
+
+    // Pro mode, and the switch, still offer the shot and where it went.
+    const rowsPro = (await serverLog(0)).rows.length;
+    await tap("pad-menu");
+    ok("the menu's Basic Scoring is on, and says it is one tap a ball",
+       (await attr("pad-basic-scoring", "aria-checked")) === "true"
+         && /One tap a ball/.test(await tid("pad-basic-scoring").innerText().catch(() => "")),
+       `${await attr("pad-basic-scoring", "aria-checked")}: ${await tid("pad-basic-scoring").evaluate((e) => e.textContent).catch(() => "")}`);
+    await tap("pad-pro-mode");
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(500);
+    ok("Pro mode replaces the one-tap pad with the hub, asking the approach", !(await has("basic-pad")) && /Over the Wicket/i.test(await text()));
+    await click(/Over the Wicket/);
+    const cut = page.locator("button:not([disabled])", { hasText: /^Cut$/ });
+    ok("...then the shot", (await cut.count()) > 0);
+    await cut.first().click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    ok("...then the field", await has("wagon-wheel"));
+    await page.locator('[aria-label="Clear this ball\'s selection"]').first().click({ timeout: 3000 }).catch(() => {});
+    await click(/^Focus mode$/);
+    ok("...and Focus mode comes back to one tap a ball", await has("basic-pad"));
+    await tap("pad-menu"); await tap("pad-basic-scoring"); await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+    ok("the switch off: the pad asks the shot first", (await attr("three-phase-pad", "data-phase")) === "1" && (await has("shot-drive")));
+    await tap("shot-drive");
+    ok("...then where it went, on the field", (await attr("three-phase-pad", "data-phase")) === "2" && (await has("area-field")));
+    const field = await page.evaluate(() => {
+      const r = (q) => document.querySelector(q)?.getBoundingClientRect();
+      const b = r('[data-testid="pad-board"]'), f = r('[data-testid="area-field"]');
+      return { board: b && Math.round(b.bottom), field: f && Math.round(f.top), h: innerHeight };
+    });
+    ok(`...the field clear of the pinned board (${JSON.stringify(field)})`, field.field != null && field.field >= field.board);
+    if (SHOTS) await page.screenshot({ path: join(SHOTS, "pad-390-light-switch-off-field.png") });
+    await tap("key-undo");
+    ok("...undo starts the ball again", (await attr("three-phase-pad", "data-phase")) === "1");
+    ok("opening Pro mode and the switch recorded nothing", (await serverLog(0)).rows.length === rowsPro);
+    await tap("pad-menu"); await tap("pad-basic-scoring"); await page.keyboard.press("Escape"); await page.waitForTimeout(400);
+    ok("...and back to one tap a ball", await has("basic-pad"));
+
+    // The charts read the gaps as never asked for, not as missing.
+    await page.locator('[data-testid="pad-tabs"] button', { hasText: /Analysis/ }).first().click({ timeout: 3000 });
+    await page.waitForTimeout(800);
+    const said = await page.locator('[data-testid="placement-not-captured"]').allInnerTexts().catch(() => []);
+    ok(`the heat map and the spider: "not captured, by design", declared quick (${JSON.stringify(said)})`,
+       said.length === 2 && said.every((t) => /^Not captured, by design: this innings was declared quick \(runs only\)/.test(t.trim()))
+         && !/No exact placements on record/.test(await text()));
+    await page.locator('[data-testid="pad-tabs"] button', { hasText: /Score/ }).first().click({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    ok("...and the Score tab is the one-tap pad again", await has("basic-pad"));
+    const end = await serverLog(0);
+    ok("the innings is still declared quick, by its one innings_start, after the over and the switches",
+       end.inn.declaredProfile === "quick" && end.rows.filter((r) => r.kind === "innings_start" && (r.innings ?? 0) === 0).length === 1);
+  }
+
   await agree("the end of the walk");
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));

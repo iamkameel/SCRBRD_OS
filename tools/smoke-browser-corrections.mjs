@@ -190,8 +190,12 @@ try {
   const coBefore = await tid(co.page, "mc-scores").innerText();
   const pu = await open(`/live/${pub2}`);
   await pu.page.waitForSelector('[data-testid="public-match"]', { timeout: 8000 }).catch(() => {});
-  const puBefore = await tid(pu.page, "mc-scores").innerText().catch(() => "");
-  ok("the public page draws the finished match", /\d+\/\d+/.test(puBefore), puBefore);
+  // Redesign slice 2: the public page's match card draws both sides' scores or none (slice 1's rule), and this
+  // fixture is one innings against a side that did not bat: its total is the result view's row.
+  const PU_TOTAL = '[data-testid="mc-result-row"]';
+  await pu.page.waitForSelector(PU_TOTAL, { timeout: 8000 }).catch(() => {});
+  const puBefore = await pu.page.locator(PU_TOTAL).first().innerText().catch(() => "");
+  ok("the public page draws the finished match", /\d+\/\d+/.test(puBefore) && await tid(pu.page, "mc-scores").count() === 1, puBefore);
   ok("...with no chip and nothing about a request", await tid(pu.page, "mc-corrected").count() === 0 && !/awaiting|pending|review/i.test(await text(pu.page)));
   const runsOf = (s) => Number((/(\d+)\/\d+/.exec(s) ?? [])[1]);
 
@@ -240,18 +244,18 @@ try {
   ok("no console errors (director)", ds.errors.length === 0, ds.errors.join(" | "));
 
   group("4. Both watchers: 'Updated · refresh' within a poll, the figures still until the tap");
-  for (const [who, b, before] of [["coach", co, coBefore], ["public page", pu, puBefore]]) {
+  for (const [who, b, before, sel] of [["coach", co, coBefore, '[data-testid="mc-scores"]'], ["public page", pu, puBefore, '[data-testid="mc-result-row"]']]) {
     ok(`${who}: "Updated · refresh"`, await until(b.page, () => /Updated · refresh/.test(document.querySelector('[data-testid="mc-stale"]')?.textContent ?? ""), 6000));
     ok(`${who}: ...said in a live region`, await tid(b.page, "mc-stale-region").getAttribute("role") === "status");
     const m = await measure(b.page, "mc-stale");
     ok(`${who}: ...a 44px target on the 12px floor`, m.h >= 44 && m.fs >= 12, JSON.stringify(m));
     await afterReads(b.page, 2500);
-    ok(`${who}: the figures have not moved under the reader`, (await tid(b.page, "mc-scores").innerText()) === before);
+    ok(`${who}: the figures have not moved under the reader`, (await b.page.locator(sel).first().innerText()) === before);
     await tid(b.page, "mc-stale").click();
-    ok(`${who}: on the tap the total falls by the four`, await until(b.page, (r) => {
-      const t = document.querySelector('[data-testid="mc-scores"]')?.textContent ?? "";
+    ok(`${who}: on the tap the total falls by the four`, await until(b.page, ([r, q]) => {
+      const t = document.querySelector(q)?.textContent ?? "";
       return Number((/(\d+)\/\d+/.exec(t) ?? [])[1]) === r - 4;
-    }, 6000, runsOf(before)), await tid(b.page, "mc-scores").innerText());
+    }, 6000, [runsOf(before), sel]), await b.page.locator(sel).first().innerText());
     ok(`${who}: the stale line is gone`, await until(b.page, () => !document.querySelector('[data-testid="mc-stale"]'), 4000));
     const chip = await tid(b.page, "mc-corrected").innerText().catch(() => "");
     ok(`${who}: "Corrected HH:MM"`, /^Corrected \d\d:\d\d$/.test(chip.trim()), chip);

@@ -4,7 +4,8 @@
 // look for names, never shows a pseudonym as a name, and folds the same
 // figures as the log it was given.
 import { deriveMatch, deriveCommentary } from "@scrbrd/scoring";
-import { foldable, unnamedToPositions, asPublicMatch } from "../src/public/publicLog.js";
+import { foldable, unnamedToPositions, asPublicMatch, NAME_DOTS, dottedNames } from "../src/public/publicLog.js";
+import { NAME_DOTS as POLICY_DOTS, initialAndDots } from "@scrbrd/policy/public";
 import { LOW_DATA_KEY, connectionAsks, lowDataState, storedChoice } from "../src/public/lowData.js";
 
 let pass = 0, fail = 0;
@@ -68,6 +69,18 @@ ok("status, ground and start carried, the start on the SA clock (08:00Z is 10:00
 const late = asPublicMatch({ id: "m", status: "live", startsAt: "2026-11-06T22:30:00.000Z" });
 ok("...and a start after 22:00 UTC is the next SA day", late.date === "2026-11-07" && late.time === "00:30");
 ok("a scheduled fixture is 'upcoming'", asPublicMatch({ id: "m", status: "scheduled" }).status === "upcoming");
+
+// The 18 Nov names: the page only notices the server's dots; the rule's own dots are the policy's.
+ok("the page's dots are the policy's, character for character", NAME_DOTS === POLICY_DOTS);
+ok("a log the server sent with \"R ••••••\" in it reads as dotted", dottedNames({ a: "D Erasmus", b: initialAndDots("Rohan Pillay") }) === true);
+ok("...one with names and positions only does not", dottedNames({ a: "D Erasmus" }) === false && dottedNames({}) === false && dottedNames(null) === false);
+{
+  // A dotted label is a name to the fold and the commentary: drawn as sent, never turned back into "Batter".
+  const P = "p0000000000a";
+  const ev = foldable([{ kind: "innings_start", innings: 0, seq: 1, id: "e1", battingTeam: "1XI", bowlingTeam: "X", squad: [{ id: P, label: `R ${NAME_DOTS}` }], bowlingSquad: [] },
+    { kind: "batters", innings: 0, seq: 2, id: "e2", striker: P }], { [P]: `R ${NAME_DOTS}` });
+  ok("...and the fold is handed the label as his name", ev[0].squad?.[0]?.name === `R ${NAME_DOTS}`, ev[0].squad);
+}
 
 // CRI-2.4: Low data — the browser's word, the device's choice, and which wins.
 ok("Save-Data asks for Low data", connectionAsks({ saveData: true, effectiveType: "4g" }) === "save-data");

@@ -47,7 +47,7 @@ import { RetireSheet } from "./retireSheet.jsx";
 import { retireHurtEvent, resumeChoices, consentChoices } from "./retire.js";
 import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords, suspensionsInMatch } from "./suspension.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
-import { ExitKey, Pad, PadBoard } from "./pad.jsx";
+import { ExitKey, Pad, PadBoard, asksOneTap, usePinnedBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
 import { SecondAccountSheet, PenStandsLine, PenStandsSheet } from "./secondAccount.jsx";
 import { TossSheet } from "./toss.jsx";
@@ -404,6 +404,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // a person's choice — does it: never the first render, and never a refresh
   // of the score or the sync state, which do not touch activeTab.
   const padMainRef=useRef(null);
+  const pinLayoutRef=usePinnedBoard();
   const tabWas=useRef(activeTab);
   useEffect(()=>{
     if(tabWas.current===activeTab)return;
@@ -864,9 +865,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               homeSquad: homeSquadRef.current, awaySquad: awaySquadRef.current }),
             overs: resume.cfg.overs ?? 20,
             // A fixture that carries a declaration passes it on; none does yet,
-            // so this innings opens undeclared — exactly as before — and the
-            // scorer declares it on the opener sheet before the first ball.
-            captureProfile: resume.cfg.captureProfile ?? undefined,
+            // so this innings opens declared quick: runs first, one tap a ball
+            // (redesign slice 3, question 1). The declaration is what the pad
+            // asks, so the charts read its missing points as never asked for,
+            // not as missing. The scorer may declare Full or Standard on the
+            // opener sheet before the first ball; the latest one stands.
+            captureProfile: resume.cfg.captureProfile ?? CAPTURE_PROFILE.QUICK,
             id: openId,
           })] : [], []];
           if (toss) mintedRef.current.add(openId);
@@ -1250,12 +1254,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   };
 
   // ── Basic Scoring (DESIGN_DIRECTION §4, decision 3) ─────
-  // The three-phase pad is the default; Basic Scoring is the one-tap pad,
-  // outcome only, and an option. It IS the `quick` capture profile: the
-  // innings setup declares it (the setup screen, the openers sheet and the
-  // innings break, whose picker names quick "Basic Scoring"), through the
-  // innings_start they have always written, and an innings declared quick
-  // opens on it; full and standard open on the three phases.
+  // Basic Scoring is the one-tap pad, outcome only, and since redesign
+  // slice 3 the default (asksOneTap, pad.jsx). It IS the `quick` capture
+  // profile: the innings setup declares it (the setup screen, the openers
+  // sheet and the innings break, whose picker names quick "Basic Scoring"),
+  // through the innings_start they have always written. An innings declared
+  // quick, or not declared at all, opens on it; full and standard open on
+  // the three phases.
   //
   // The menu's switch does NOT declare. The QUICK MODE toggle it replaces
   // never touched the declaration, and a switch that did would write an
@@ -1265,7 +1270,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // the switch changes how the pad asks, for this innings on this device,
   // and says what the innings is declared; each ball records its own profile
   // either way, exactly as it always has (commitBall).
-  const basic=basicChoice?.innings===curIn?basicChoice.basic:inn?.declaredProfile===CAPTURE_PROFILE.QUICK;
+  //
+  // Runs first (§3.4 Flow B, question 1): an innings that declared nothing
+  // opens on one tap too, not only one declared quick. Full and standard,
+  // which asked for the shot and where it went, open on the three phases.
+  const basic=asksOneTap(inn?.declaredProfile,basicChoice?.innings===curIn?basicChoice.basic:null);
   const toggleBasic=()=>{
     setBasicChoice({innings:curIn,basic:!basic});
     setUiMode("focus");
@@ -1273,8 +1282,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   const PROFILE_WORD={full:"Full",standard:"Standard",quick:"Basic Scoring"};
   const declaredWords=inn?.declaredProfile?`This innings is declared ${PROFILE_WORD[inn.declaredProfile]}`:"This innings has no declaration";
   const basicHint=canDeclare
-    ?`Runs, extras and wickets only. ${declaredWords}; to declare it Basic Scoring, choose that on the openers sheet.`
-    :`Runs, extras and wickets only. ${declaredWords}; switching changes only how the pad asks.`;
+    ?`One tap a ball: runs, extras and wickets. Off, the pad asks the shot and where it went first. ${declaredWords}; the openers sheet declares it.`
+    :`One tap a ball: runs, extras and wickets. Off, the pad asks the shot and where it went first. ${declaredWords}; switching changes only how the pad asks.`;
 
   // ── The first innings of a live fixture (SCRBRD-067) ─────
   // The side the toss put in bats; each end's squad (the side its coach
@@ -1289,7 +1298,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const open={...inningsStart({
       ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current,awaySquad:awaySquadRef.current}),
       overs:match.overs??20,
-      captureProfile:match.captureProfile??undefined,
+      // Runs first: undeclared by the fixture, the innings declares quick, as
+      // the opening on hydration does (above). Never a second innings_start.
+      captureProfile:match.captureProfile??CAPTURE_PROFILE.QUICK,
     }),innings:0,id:newEventId(deviceIdRef.current,matchIdRef.current??"local")};
     setEvents(prev=>{
       if((prev[0]??[]).some(e=>e.kind===KIND.INNINGS_START))return prev;
@@ -2676,6 +2687,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     // second innings nobody batted.
     const said=res?.text??(pilotMode&&callOffNow?"No result: the match was called off":null);
     const pairs=superOversOf(innings);
+    // Redesign slice 4 (Flow D): on a fixture, the scorer's end or the coach's
+    // Confirm the result. Worked out once, so the one primary is the panel's.
+    const fixtureEnd=live&&matchId&&!practiceMode&&offer.state!=="available";
+    const finishAs=fixtureEnd?finishOffer(match?.schoolId,match?.teamCode):null;
+    const gateBack=finishAs&&finishAs!=="finish"&&onExit?onExit:null;
+    // The balls that stand on this pad's log (a ball taken back by undo is voided, not counted).
+    const voided=new Set(events.flat().filter(e=>e?.kind==="void").map(e=>e.target));
+    const ballsHere=events.flat().filter(e=>e?.kind==="ball"&&!voided.has(e.id)).length;
     return (
       <div style={{minHeight:"100vh",background:D.base,padding:"24px",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <GS/>
@@ -2688,17 +2707,25 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               {offer.state==="available"?"Not yet decided":"Match Complete"}
             </div>
             {said
-              ?<div data-testid="pad-result" style={{fontFamily:D.mono,fontSize:"clamp(22px,4vw,34px)",fontWeight:500,lineHeight:1.25,color:D.textPrimary,marginBottom:"6px"}}>{said}</div>
+              ?<div data-testid="pad-result" style={{fontFamily:D.body,fontSize:"clamp(22px,4vw,34px)",fontWeight:700,lineHeight:1.25,color:D.textPrimary,marginBottom:"6px",overflowWrap:"anywhere"}}>{said}</div>
               :<>
                 <div style={{fontFamily:D.mono,fontSize:"clamp(28px,5vw,48px)",fontWeight:500,background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",marginBottom:"6px"}}>{winner}</div>
                 {!tie&&<div style={{color:D.emerald,fontSize:"16px",fontFamily:D.body,fontWeight:500}}>{margin}</div>}
               </>}
           </Glass>
+          {/* Slice 4: the scorer's end, or the coach's Confirm, under the result on the first screen, not past both scorecards. */}
+          {fixtureEnd&&(finishAs==="finish"
+            ?<FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
+               left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
+               attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
+            :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}
+               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}/>)}
           {/* A tied match: the button where a super over may start, the
               engine's words where it may not (the tie stands). */}
           {offer.state!=="none"&&<div style={{marginBottom:"28px"}}><SuperOverOffer offer={offer} onStart={()=>setModal("superOver")}/></div>}
           {suspensions.length>0&&<ReportOffer count={suspensions.length} onOpen={()=>setModal("suspendReport")}/>}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px",marginBottom:"28px"}}>
+          {/* One column at a phone's width (the scorer review: the result screen scrolled sideways at 390). */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,340px),1fr))",gap:"20px",marginBottom:"28px",minWidth:0}}>
             {[0,1].map(ii=>innings[ii]&&<ErrorBoundary key={ii} name="scorecard"><ScorecardPanel innings={innings} idx={ii}/></ErrorBoundary>)}
           </div>
           {/* Each super over under the match's innings, never mixed into them. */}
@@ -2730,18 +2757,6 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               done={practice?.pilot?.finished===true}
               onDone={async()=>{const r=await recordWrite(matchId,"that it was finished",()=>updatePilotState(matchId,{finished:true,finishedAt:Date.now()}));if(r)setPractice(r);}}/>
           )}
-          {/* Always a panel on a fixture's result screen (18 Nov 2026): Finish,
-              or the sign-in that returns here, or who may finish it. It was
-              hidden in silence after any reload, which drops the token and,
-              before this, the home school. */}
-          {live&&matchId&&!practiceMode&&offer.state!=="available"&&(()=>{
-            const finishAs=finishOffer(match?.schoolId,match?.teamCode);
-            return finishAs==="finish"
-              ?<FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
-                 left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
-                 attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
-              :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}/>;
-          })()}
           {/* §2.5 step 6: at the result of a Practice or Pilot Match, an
               account with no school is asked once; never during play. */}
           {practiceMode&&onJoinSchool&&offer.state!=="available"&&(
@@ -2756,9 +2771,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
                 Save the scorecard
               </Btn>
             )}
-            <Btn variant="primary" size="lg" onClick={()=>{if(homeOnly){onExit?.();return;}setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setPractice(null);setSelSeg(null);}}>
+            {/* One primary: where the scorer's end has "Back to Today", this is not drawn. */}
+            {!gateBack&&<Btn variant="primary" size="lg" onClick={()=>{if(homeOnly){onExit?.();return;}setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setPractice(null);setSelSeg(null);}}>
               {homeOnly?"Back home":practiceMode?"Back to the start":"New Match"}
-            </Btn>
+            </Btn>}
           </div>
         </div>
       </div>
@@ -2924,10 +2940,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
           )}
         </header>
 
-        <div className={`pad-layout${split?" pad-split":""}`}>
+        <div ref={pinLayoutRef} className={`pad-layout${split?" pad-split":""}`}>
           <div className="pad-head">
-            {/* The board, once (§1, §4). Always black, in both themes. */}
-            {inn&&<PadBoard inn={inn} match={match} target={target2} flash={eventOverlay} onFlashDone={onOverlayDone}/>}
+            {/* The board, once (§1, §4). Always black, in both themes, and
+                pinned under the title bar: the score never leaves the screen
+                (§3.4 Flow B 1; usePinnedBoard). */}
+            {inn&&<div className="pad-pin" data-testid="pad-pin"><PadBoard inn={inn} match={match} target={target2} flash={eventOverlay} onFlashDone={onOverlayDone}/></div>}
             {/* The moment's words, heard and not seen: the flash is on the
                 board, the celebration on the spectators' screens. */}
             <div className="sr-only" role="status" aria-live="polite" data-testid="pad-moment">{moment}</div>

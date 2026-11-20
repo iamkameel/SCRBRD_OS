@@ -267,8 +267,23 @@ if (PUBLIC_ON && !DEV && (String(PUBLIC_SECRET).length < 32 || PUBLIC_SECRET ===
   console.error("PUBLIC_PSEUDONYM_SECRET must be 32+ characters and not SESSION_SECRET. Refusing to start.");
   process.exit(1);
 }
+// THE 18 NOV NAMES (Kameel, 18 Nov 2026; docs/policy/PUBLIC_DATA.md, the notes
+// after D4): a boy without public consent is shown on every public surface as
+// his initial and six dots, "R ••••••", never-public boys alike — "decided,
+// not built; production after counsel". So it is an environment setting, no
+// migration: PUBLIC_NAME_INITIALS=on switches it on for a DEVELOPMENT
+// deployment (the demo service, NODE_ENV=development; docs/pilot/DEMO_COPY.md).
+// In production it is refused and every public page keeps its positions
+// ("Batter") whatever is set, until Kameel says counsel has read the rule;
+// then this line drops `DEV &&` (DEPLOYING.md, the environment table).
+// The rule itself is packages/policy/src/public.mjs initialAndDots(), applied
+// on the server: the browser is sent the label and decides nothing.
+const PUBLIC_INITIALS = DEV && process.env.PUBLIC_NAME_INITIALS === "on";
+if (!DEV && process.env.PUBLIC_NAME_INITIALS === "on") {
+  console.warn("PUBLIC_NAME_INITIALS=on is ignored in production until counsel has read the 18 Nov rule; public pages show positions.");
+}
 const publicSite = publicPages({
-  pool, enabled: PUBLIC_ON, secret: PUBLIC_SECRET,
+  pool, enabled: PUBLIC_ON, secret: PUBLIC_SECRET, initials: PUBLIC_INITIALS,
   trustProxyHops: Number(process.env.PUBLIC_TRUST_PROXY_HOPS || 0),
   listenUrl: PUBLIC_ON ? DATABASE_URL : null,
 });
@@ -516,7 +531,7 @@ const training = trainingRoutes({ pool, secret: SECRET });
 // not when db/59's notification arrives (publication-api.mjs).
 const publication = publicationRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });
 const sheet = sheetRoutes({ pool, secret: SECRET });
-const groundNames = groundNamesRoutes({ pool, secret: SECRET });
+const groundNames = groundNamesRoutes({ pool, secret: SECRET, initials: PUBLIC_INITIALS });
 /** Pattern routes answered with Cache-Control: no-store. */
 const NO_STORE_ROUTES = new Set([groundNames.read]);
 const listing = listingRoutes({ pool, secret: SECRET, onChange: (note) => afterCommit(() => publicSite.changed(note)) });

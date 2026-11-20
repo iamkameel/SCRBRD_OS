@@ -372,7 +372,8 @@ try {
   await pub.goto(`${API}/live/${MATCH}`, { waitUntil: "networkidle" });
   await pub.waitForSelector('[data-testid="mc-scores"]', { timeout: 15000 }).catch(() => {});
   const scores = await pub.locator('[data-testid="mc-scores"]').innerText().catch(() => "");
-  ok(`the public page: 4/2 (0.2), as the pad and the server (${scores.replace(/\s+/g, " ").trim()})`, /4\/2\s*\(0\.2\)/.test(scores));
+  // Redesign slice 2: the public match card says the overs with their unit, "4/2 · 0.2 overs" (§2.2).
+  ok(`the public page: 4/2 in 0.2 overs, as the pad and the server (${scores.replace(/\s+/g, " ").trim()})`, /4\/2\s*· 0\.2 overs/.test(scores));
   await pub.locator('[data-testid="mc-tab-scorecard"]').click({ timeout: 4000 }).catch(() => {});
   await pub.waitForTimeout(500);
   const fow = await pub.locator('[data-testid="mc-fow-line"]').allInnerTexts();

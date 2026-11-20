@@ -177,6 +177,22 @@ export function stateOf(match, sentence, official = null) {
 }
 
 /**
+ * Is this a live fixture whose log already decides it: a result on the pad,
+ * not yet confirmed (redesign slice 4; DESIGN_DIRECTION Q2)? The card's own
+ * rule (stateOf()'s "Provisional"), asked by a screen that must also stop
+ * offering the pad or a take-over for it. False without a fold: a screen that
+ * did not read the log claims nothing.
+ * @param {any} match  @param {{innings?: any[], result?: any, conditions?: any} | null | undefined} fold
+ */
+export function decidedOn(match, fold) {
+  if (match?.status !== "live" || !fold?.innings?.length) return false;
+  // A tie whose conditions provide a super over is not decided until it is played (MatchView's `settled`).
+  const r = fold.result;
+  if (r?.outcome === "tie" && r.decidedBy == null && fold.conditions?.["result.tie_break"] === "super_over") return false;
+  return statusSentence(match, fold).state === "result";
+}
+
+/**
  * Everything the card says, in order.
  *
  * @param {{
@@ -192,7 +208,11 @@ export function stateOf(match, sentence, official = null) {
  */
 export function cardModel({ match, fold = null, innings = null, resultSaid = null, scores = null, ownEnd = null, official = null, now = Date.now() }) {
   const sentence = statusSentence(match, fold && fold.innings?.length ? fold : null, { result: resultSaid });
-  const state = stateOf(match, sentence, official);
+  const said = stateOf(match, sentence, official);
+  // One "Provisional" (slice 4): for a live match, exactly decidedOn()'s. A tie whose super over is still to be
+  // played is in play, not a result waiting for the coach.
+  const state = said.kind === "provisional" && match?.status === "live" && fold?.innings?.length && !decidedOn(match, fold)
+    ? { kind: /** @type {const} */ ("live"), words: "Live" } : said;
   const raw = scores ?? scoresOf(match, fold?.innings?.length ? fold.innings : innings);
   // Both sides' scores or none (the lead, 19 Nov): a match not in play with one side's total alone is a log that does
   // not hold the match, and half a score reads as the whole of it. In play, the side yet to bat has none yet.
@@ -227,4 +247,19 @@ export function openWords(match, ownEnd = null) {
   const names = sidesOf(match);
   const mine = ownEnd ?? (match?.mySide === "away" ? "away" : "home");
   return `Open v ${mine === "away" ? names.home.full : names.away.full}`;
+}
+
+/**
+ * How often a page asks for the score, as its reader is told it (Kameel's
+ * answer to Q14, 19 Nov 2026: "Updates every 15 seconds"): from the pace the
+ * page actually reads at, never a promise it does not keep.
+ * @param {number} ms
+ * @returns {string | null}
+ */
+export function paceWords(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `Updates every ${s} ${s === 1 ? "second" : "seconds"}`;
+  const m = Math.round(s / 60);
+  return m === 1 ? "Updates every minute" : `Updates every ${m} minutes`;
 }

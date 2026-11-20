@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { Figure, INSIGHT_MS } from "../ui/board.jsx";
 import { aboutWhom, boardInsights } from "../scorer/signals.js";
-import { teamOf, sidesOf } from "../lib/matchCentre.js";
+import { teamOf, sidesOf, sideOfTeam } from "../lib/matchCentre.js";
+import { cardModel } from "../lib/matchCard.js";
 import { MomentMark, OverSummary } from "../views/matchcentre/spectator.jsx";
 import { boardTags } from "../lib/moments.js";
 import { useArrivals, useMoments, useTicker } from "../views/matchcentre/live.js";
@@ -55,6 +56,11 @@ const sheet = () => `
 .dv-top{display:flex;align-items:flex-end;justify-content:space-between;gap:max(8px,2vmin);min-width:0}
 .dv-left{display:grid;gap:max(2px,0.6vmin);min-width:0}
 .dv-team{font-family:${T.type.body};font-weight:700;font-size:max(14px,3.2vmin);line-height:1.15;letter-spacing:.04em;text-transform:uppercase;color:var(--dv-figure);overflow-wrap:anywhere}
+.dv-sides{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 max(8px,1.6vmin);margin:0;font-size:inherit;font-weight:inherit}
+.dv-sides .dv-team[data-batting="false"]{color:var(--dv-dim)}
+.dv-sides .dv-v{font-family:${T.type.body};font-size:max(12px,2.4vmin);color:var(--dv-dim)}
+.dv-sides .dv-tag{margin-left:max(4px,0.8vmin);vertical-align:middle}
+.dv-board[data-pre="true"] .dv-sides .dv-team{font-size:max(20px,6vmin)}
 .dv-overs{font-size:max(32px,10vmin);line-height:1}
 .dv-overs small{font-family:${T.type.body};font-size:max(12px,2.4vmin);color:var(--dv-dim);margin-left:max(4px,1vmin)}
 .dv-sub{font-family:${T.type.body};font-size:max(20px,6vmin);line-height:1.12;color:var(--dv-lime);overflow-wrap:anywhere}
@@ -136,15 +142,38 @@ function DisplayInsight({ lines, paused }) {
   return <p key={at} className={`dv-insight${n > 1 ? " os-insight-in" : ""}`} data-testid="display-insight">{lines[at]}</p>;
 }
 
-/** The Board band (§2.2 B): team, total, overs, the second line, the pair, the stand, the bowler, this over. */
+/**
+ * The display's title (redesign slice 2; DESIGN_DIRECTION §2.2, §3.5 Flow C):
+ * both sides, in full, on every panel, the home side first as the match card
+ * has it with no reader of its own; the side batting in the figure's white
+ * with the word "Batting", the other dim. Q13 (Kameel, 19 Nov: "the ground
+ * display may always name the other school; it's a team fact"): the other
+ * side is named whether or not its school is on SCRBRD.
+ * @param {{match: any, batting?: "home" | "away" | null, tp: string}} p
+ */
+function SidesTitle({ match, batting = null, tp }) {
+  const sides = sidesOf(match);
+  const side = (/** @type {"home" | "away"} */ end) => (
+    <span className="dv-team" data-end={end} data-batting={batting == null || batting === end ? "true" : "false"} data-testid={`${tp}-side-${end}`}>
+      {sides[end].full}
+      {batting === end && <span className="dv-tag" data-testid={`${tp}-batting`}>Batting</span>}
+    </span>
+  );
+  return <h1 className="dv-sides" data-testid={`${tp}-title`}>{side("home")}<span className="dv-v">v</span>{side("away")}</h1>;
+}
+
+/** The Board band (§2.2 B): both sides, then total, overs, the second line, the pair, the stand, the bowler, this over. */
 function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, announce, tp, par, tags = [] }) {
   const props = boardOf(state, par);
   if (!props) {
-    const sides = sidesOf(match);
+    // Before the first ball: both sides large, and where the match stands in the card's own words — "Starts 19:06 ·
+    // Hilton Oval", "in 12 min" in its last hour, or the toss — never a source line, never a projection.
+    const m = cardModel({ match });
+    const said = [m.sentence.text, m.soon].filter(Boolean).join(" · ");
     return (
-      <div className="dv-board" data-testid="display-board">
-        <div className="dv-team">{sides.home.full} v {sides.away.full}</div>
-        <p className="dv-sub" style={{ margin: 0 }}>The board opens with the first ball.</p>
+      <div className="dv-board" data-testid="display-board" data-pre="true">
+        <SidesTitle match={match} tp={tp}/>
+        <p className="dv-sub" data-testid={`${tp}-sentence`} style={{ margin: 0 }}>{said || "The board opens with the first ball."}</p>
       </div>
     );
   }
@@ -156,9 +185,9 @@ function DisplayBoard({ match, state, shownRuns, moment, overSummary, paused, an
   return (
     <div className="dv-board" data-testid="display-board" aria-label={`Scoreboard: ${side.full}, ${props.total} for ${props.wickets}, ${props.overs} overs`}>
       <MomentMark moment={moment} big announce={announce}/>
+      <SidesTitle match={match} batting={sideOfTeam(match, state.inn.battingTeam)} tp={tp}/>
       <div className="dv-top">
         <div className="dv-left">
-          <div className="dv-team" data-testid="display-team">{side.full}</div>
           <div className="dv-overs"><Figure value={props.overs} testid="display-overs"/><small>overs</small></div>
           {props.sub && <div className="dv-sub" data-testid={`${tp}-sub`}>{props.sub}</div>}
           <RateTrack track={trackOf(state, par, side.short)} textClass="dv-small" testid={`${tp}-rate-track`}
