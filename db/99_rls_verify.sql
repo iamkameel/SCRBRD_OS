@@ -15584,12 +15584,11 @@ END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/168 (section 141) ─────────────────────────────────────────────
 -- ┌── db/170 (section 145): Pro mode per fixture ──────────────────────
 -- Each case stages its own Hilton 1XI fixtures, invented, on no ground and
--- far from any date the seed books; every opponent is 'V170 …'. The people
--- are the seed's: C Hendricks (1XI coach), the 2XI coach, the Hilton school
--- admin (fixture.update, not team.select), A Wessels (scorer), D Pillay (a
--- 1XI parent), the Westville 1XI coach and school admin, the competition
--- admin, a pupil, an umpire, a spectator and platformadmin; the 1XI team
--- manager is staged in his own case.
+-- far from any date the seed books; every opponent is 'V170 …'. And its own
+-- people (_v170_people), one assignment each, so the case does not depend on
+-- what the sections before it did to the seed's (the main block revokes the
+-- seed 1XI coach, section 8, and disables the seed parent, §64). The seed's
+-- parent, pupil, umpire and platformadmin are used only where they are refused.
 CREATE OR REPLACE FUNCTION _v170_fixture(p_tag text, p_days integer, p_away boolean DEFAULT false) RETURNS uuid AS $$
   INSERT INTO match (school_id, team_code, opponent, away_school_id, away_team_code, starts_at, sport, format, overs, status)
   VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'V170 ' || p_tag,
@@ -15618,6 +15617,35 @@ CREATE OR REPLACE FUNCTION _v170_setup(p_match uuid) RETURNS void AS $$
     FROM match m WHERE m.id = p_match
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- §145's own people, staged per case (p_tag keeps each case's addresses apart), so no section
+-- before it can have moved them: the main block revokes the seed 1XI coach's assignments (section
+-- 8) and disables the seed parent (§64) long before §145 runs. School NULL for the competition
+-- admin, as the seed's is.
+CREATE OR REPLACE FUNCTION _v170_people(p_tag text) RETURNS jsonb AS $$
+DECLARE r text[]; v_u uuid; ids jsonb := '{}';
+BEGIN
+  FOREACH r SLICE 1 IN ARRAY ARRAY[
+    ARRAY['coach',   'coach',            '11111111-1111-1111-1111-111111111111', '1XI'],
+    ARRAY['coach2',  'coach',            '11111111-1111-1111-1111-111111111111', '2XI'],
+    ARRAY['manager', 'teammanager',      '11111111-1111-1111-1111-111111111111', '1XI'],
+    ARRAY['admin',   'schooladmin',      '11111111-1111-1111-1111-111111111111', ''],
+    ARRAY['dos',     'directorofsport',  '11111111-1111-1111-1111-111111111111', ''],
+    ARRAY['scorer',  'scorer',           '11111111-1111-1111-1111-111111111111', ''],
+    ARRAY['spect',   'spectator',        '11111111-1111-1111-1111-111111111111', ''],
+    ARRAY['wcoach',  'coach',            '22222222-2222-2222-2222-222222222222', '1XI'],
+    ARRAY['wadmin',  'schooladmin',      '22222222-2222-2222-2222-222222222222', ''],
+    ARRAY['compadm', 'competitionadmin', '',                                     '']] LOOP
+    INSERT INTO app_user (school_id, email, name, role, teams)
+    VALUES (nullif(r[3], '')::uuid, 'v170.' || p_tag || '.' || r[1] || '@example.invalid', 'V170 ' || initcap(r[1]), r[2],
+            CASE WHEN r[4] = '' THEN '{}'::text[] ELSE ARRAY[r[4]] END)
+    RETURNING id INTO v_u;
+    INSERT INTO role_assignment (person_id, role, school_id, team_code)
+    VALUES (v_u, r[2], nullif(r[3], '')::uuid, nullif(r[4], ''));
+    ids := ids || jsonb_build_object(r[1], v_u);
+  END LOOP;
+  RETURN ids;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
 -- The toss, recorded as the owner.
 CREATE OR REPLACE FUNCTION _v170_toss(p_match uuid) RETURNS void AS $$
   INSERT INTO match_toss (match_id, school_id, won_by, decision)
@@ -15634,22 +15662,30 @@ $$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
 -- stages its own fixtures and raises on its first failure.
 CREATE OR REPLACE FUNCTION _v170_case(p_case text) RETURNS void AS $$
 DECLARE
-  COACH   uuid := '88888888-0000-0000-0000-000000000004';   -- C Hendricks, the 1XI coach
-  COACH2  uuid := '88888888-0000-0000-0000-00000000000a';   -- the 2XI coach
-  ADMIN   uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's school admin: fixture.update, not team.select
-  SCORER  uuid := '88888888-0000-0000-0000-000000000006';   -- A Wessels
+  -- Staged for this case (_v170_people): each holds exactly its one assignment.
+  P       jsonb := _v170_people(p_case);
+  COACH   uuid := (P->>'coach')::uuid;     -- the 1XI coach
+  COACH2  uuid := (P->>'coach2')::uuid;    -- a 2XI coach
+  MANAGER uuid := (P->>'manager')::uuid;   -- the 1XI team manager
+  ADMIN   uuid := (P->>'admin')::uuid;     -- Hilton's school admin: fixture.update, not team.select
+  DOS     uuid := (P->>'dos')::uuid;       -- Hilton's director of sport
+  SCORER  uuid := (P->>'scorer')::uuid;    -- a Hilton scorer
+  SPECT   uuid := (P->>'spect')::uuid;     -- a Hilton spectator
+  WCOACH  uuid := (P->>'wcoach')::uuid;    -- the Westville 1XI coach
+  WADMIN  uuid := (P->>'wadmin')::uuid;    -- Westville's school admin: fixture.update at the away school
+  COMPADM uuid := (P->>'compadm')::uuid;   -- a competition admin: fixture.update at no school
+  -- The seed's, in refusal cases only, where nothing done to them before can make a refusal pass.
   PARENT  uuid := '88888888-0000-0000-0000-000000000005';   -- D Pillay, a 1XI parent
-  WCOACH  uuid := '88888888-0000-0000-0000-00000000001a';   -- the Westville 1XI coach
-  WADMIN  uuid := '88888888-0000-0000-0000-00000000000d';   -- Westville's school admin: fixture.update at the away school
-  COMPADM uuid := '88888888-0000-0000-0000-000000000021';   -- the competition admin: fixture.update at no school
   PUPIL   uuid := '88888888-0000-0000-0000-000000000009';   -- a 1XI pupil (player, selfaccess)
   OFFICIAL uuid := '88888888-0000-0000-0000-000000000023';  -- E Ndlovu, an umpire
-  SPECT   uuid := '88888888-0000-0000-0000-000000000008';   -- a spectator
   PLAT    uuid := '88888888-0000-0000-0000-000000000014';   -- platformadmin, no school
-  DOS     uuid := '88888888-0000-0000-0000-000000000007';   -- Sarah, Hilton's director of sport
   F uuid; v text; n int; who uuid;
 BEGIN
+  -- Whatever an earlier section left in the session, gone.
   PERFORM set_config('app.user_id', '', true);
+  PERFORM set_config('app.scope', '', true);
+  PERFORM set_config('app.match_id', '', true);
+  PERFORM set_config('app.device_id', '', true);
   IF p_case = 'coach' THEN
     -- (coach) The fixture's coach asks for Pro mode: set, and the fixture holds full. Asked again:
     -- unchanged. Cleared: set, and the fixture asks nothing.
@@ -15707,8 +15743,7 @@ BEGIN
     -- (manager) The 1XI team manager, staged here (the seed has none): he holds team.select and may
     -- ask, as the coach does (Kameel, 20 Nov: the team manager too).
     F := _v170_fixture('manager', 177);
-    who := (_v71_people('v170', ARRAY[ARRAY['manager', 'teammanager', '11111111-1111-1111-1111-111111111111', '1XI', '']])->>'manager')::uuid;
-    PERFORM _as(who);
+    PERFORM _as(MANAGER);
     v := _v170_ask(F, 'full');
     PERFORM _assert(v = 'true set' AND _v170_profile(F) = 'full', format('§145 (manager): the team manager asking full reads %s; it holds %s', v, _v170_profile(F)));
 
@@ -15756,11 +15791,11 @@ BEGIN
     PERFORM _assert(v = 'ok', format('§145 (othercol): the office writing the same request back reads %s', v));
 
   ELSIF p_case = 'read' THEN
-    -- (read) Whoever reads the fixture reads what it asks, through match's own row security: the
-    -- 1XI parent and the scorer at home, the Westville coach on the shared fixture.
+    -- (read) Whoever reads the fixture reads what it asks, through match's own row security: a
+    -- spectator and the scorer at home, the Westville coach on the shared fixture.
     F := _v170_fixture('read', 174, true);
     PERFORM _v170_set(F, 'full');
-    FOREACH who IN ARRAY ARRAY[PARENT, SCORER, WCOACH] LOOP
+    FOREACH who IN ARRAY ARRAY[SPECT, SCORER, WCOACH] LOOP
       PERFORM _as(who);
       SELECT m.capture_profile INTO v FROM match m WHERE m.id = F;
       PERFORM _assert(v = 'full', format('§145 (read): %s reads the fixture asking %s', who, coalesce(v, '(nothing)')));
