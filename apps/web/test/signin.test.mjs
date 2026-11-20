@@ -292,7 +292,9 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
          && !/has .*form on file/.test(carried), carried);
     ok("...not hers until she has agreed the terms (N11)", /Agree to the school's terms first/.test(ownSigninWords({ ...base, agreed: false }, "Sipho")));
     ok("S5: a yes that could not open him says why", /no side for him/.test(heldWords("team_required", "Sipho")) && /not been opened yet/.test(heldWords("weird", "Sipho")) && heldWords(null, "Sipho") === null);
-    ok("D: the form needs who signed it and a day", formReady({ signedBy: "N Mother", signedOn: "2026-11-02" }) && !formReady({ signedBy: "N", signedOn: "2026-11-02" }) && !formReady({ signedBy: "N Mother", signedOn: "" }));
+    ok("D: who signed the form and its day are optional, and checked when given", formReady({ signedBy: "N Mother", signedOn: "2026-11-02" }) && formReady({}) && formReady({ signedBy: "", signedOn: "" })
+       && !formReady({ signedBy: "N", signedOn: "" }) && !formReady({ signedBy: "", signedOn: "2 Nov" }));
+    ok("...and the office is told when neither was recorded", /were not recorded/.test(officeSigninWords({ ...base, inForce: true, yesHow: "office", yesBy: "N Office" }, "Sipho")));
     ok("E: the office is told its withdrawal does not hold against a later yes", /does not hold against a yes given afterwards/.test(OFFICE_WITHDRAW.says) && /end his roles or disable his account/.test(OFFICE_WITHDRAW.says));
     ok("the office reads who signed the form, and when", officeSigninWords({ ...base, inForce: true, yesHow: "office", yesBy: "N Office", formSignedBy: "N Mother", formSignedOn: "2026-11-02" }, "Sipho")
        === "A consent form signed by N Mother on 2 November 2026 is on file, recorded by N Office.");

@@ -61,8 +61,7 @@ export const ENROL_MESSAGE = {
   // db/169 (Q12): the office's tick, "The signed consent form is on file".
   form_no_date_of_birth: FORM_ON_FILE.form_no_date_of_birth,
   form_not_permitted: FORM_ON_FILE.form_not_permitted,
-  form_form_signer_required: FORM_ON_FILE.form_form_signer_required,
-  form_form_date_required: FORM_ON_FILE.form_form_date_required,
+  form_form_signer_invalid: FORM_ON_FILE.form_form_signer_invalid,
   form_form_date_invalid: FORM_ON_FILE.form_form_date_invalid,
 };
 const UNSAID = "This was not saved. The server refused it for a reason that has no words yet, and nothing was changed.";
@@ -248,7 +247,7 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
   const codeWithheld = byAccount && !f.email;
   const ready = !!schoolId && f.name.trim().length >= 2 && (byAccount || EMAIL.test(f.email.trim())) && !!f.role
     && (!teamScoped || !!f.team) && (!subjectScoped || !!f.player) && !pupilByOffice
-    // D (Kameel, 20 Nov): the form ticked names who signed it and the day.
+    // D (Kameel, 20 Nov): who signed the form and the day, optional until counsel; checked when given.
     && (!(PUPIL_ROLES.includes(f.role) && f.formOnFile) || formReady({ signedBy: f.formSignedBy, signedOn: f.formSignedOn }));
 
   const submit = async () => {
@@ -268,7 +267,7 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
         // db/169 (Q12): ticked by a person, never assumed. Unticked, his account is
         // opened and his own page waits for a parent's or guardian's yes.
         ...(PUPIL_ROLES.includes(f.role) && f.formOnFile === true
-          ? { formOnFile: true, formSignedBy: f.formSignedBy.trim(), formSignedOn: f.formSignedOn } : {}),
+          ? { formOnFile: true, formSignedBy: f.formSignedBy.trim() || undefined, formSignedOn: f.formSignedOn || undefined } : {}),
       } });
       await onEnrolled?.({ out, name: f.name.trim(), role: f.role, team: teamScoped ? f.team : null });
     } catch (e) {

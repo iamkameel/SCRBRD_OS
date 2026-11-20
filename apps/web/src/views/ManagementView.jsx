@@ -376,7 +376,7 @@ function RequestsPanel({ role, players }) {
     setSaid((m) => { const { [r.id]: _dropped, ...rest } = m; return rest; });
     try {
       await api(`/api/requests/${r.id}/decide`, { method: "POST", body: { grant, playerId: pick[r.id] || r.playerId || null, teamCode: team,
-        ...(grant && form[r.id]?.on === true ? { formOnFile: true, formSignedBy: (form[r.id].by ?? "").trim(), formSignedOn: form[r.id].date ?? "" } : {}) } });
+        ...(grant && form[r.id]?.on === true ? { formOnFile: true, formSignedBy: (form[r.id].by ?? "").trim() || undefined, formSignedOn: form[r.id].date || undefined } : {}) } });
       setSaid((m) => ({ ...m, [r.id]: { ok: true, text: decidedWords(grant, label, team) } }));
     } catch (e) {
       setSaid((m) => ({ ...m, [r.id]: { ok: false, text: decideWords(e) } }));

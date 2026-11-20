@@ -78,18 +78,23 @@ export const OWN_SIGNIN_REFUSALS = Object.freeze({
 export const FORM_ON_FILE = Object.freeze({
   label: "The signed consent form is on file",
   hint: "For a pupil under 18. Without it his account is opened but his own page waits for a parent's or guardian's yes.",
-  signedBy: "Signed by (the parent or guardian, as on the form)",
-  signedOn: "Date the form was signed",
+  signedBy: "Signed by (the parent or guardian, as on the form; optional)",
+  signedOn: "Date the form was signed (optional)",
   form_no_date_of_birth: "This pupil has no date of birth on the school's list. Record it first, then tick the form.",
   form_not_permitted: "Only the school office and the principal can record the signed form.",
-  form_form_signer_required: "Say who signed the form, as written on it.",
-  form_form_date_required: "Give the date the form was signed.",
+  form_form_signer_invalid: "Who signed the form needs two letters or more, as written on it, or leave it blank.",
   form_form_date_invalid: "The date the form was signed cannot be after today, or before he was born.",
 });
 
-/** What the form needs before it is sent: who signed it, and a day. @param {{ signedBy?: string, signedOn?: string }} f */
+/**
+ * What the form's two fields need before it is sent (D: both optional until
+ * counsel has read them; TODO(counsel): required then): who signed it, when
+ * given, two letters or more; the day, when given, a date.
+ * @param {{ signedBy?: string, signedOn?: string }} f
+ */
 export function formReady(f) {
-  return String(f?.signedBy ?? "").trim().length >= 2 && /^\d{4}-\d{2}-\d{2}$/.test(String(f?.signedOn ?? ""));
+  const by = String(f?.signedBy ?? "").trim(), on = String(f?.signedOn ?? "");
+  return (by === "" || by.length >= 2) && (on === "" || /^\d{4}-\d{2}-\d{2}$/.test(on));
 }
 
 /**
@@ -109,7 +114,8 @@ export function officeSigninWords(s, name) {
   if (s.yesHow === "enrolled") return `${name}'s own sign-in was opened when he was enrolled${when}, before forms were recorded. No form is recorded for it.`;
   const by = s.formSignedBy ? ` signed by ${s.formSignedBy}` : "";
   const on = s.formSignedOn ? ` on ${dayOf(s.formSignedOn)}` : "";
-  return `A consent form${by}${on} is on file, recorded by ${s.yesBy ?? "the school office"}${when}.`;
+  const unsaid = !s.formSignedBy && !s.formSignedOn ? " Who signed it, and when, were not recorded." : "";
+  return `A consent form${by}${on} is on file, recorded by ${s.yesBy ?? "the school office"}${when}.${unsaid}`;
 }
 
 /** E (Kameel, 20 Nov): what a withdrawal does, and what it does not, said before the tap. */

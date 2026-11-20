@@ -158,11 +158,11 @@ try {
   ok("a malformed email never reaches the database",
      (await enrol(registrar, body("not-an-email", "N E", SITHOLE, "U13A"))).body?.error === "email_invalid");
 
-  group("The signed form on file names who signed it, and when (db/169, D)");
-  // The tick with nobody named is refused, and the whole enrolment with it.
+  group("The signed form on file: who signed it, and when, if the office has them (db/169, D: optional until counsel)");
+  // A signer given is checked; one refused rolls the whole enrolment back.
   const unsigned = await enrol(registrar, { ...body("j.sithole@example.invalid", "J Sithole", SITHOLE, "U13A"),
-                                            withCode: true, formOnFile: true });
-  ok("a tick naming nobody is refused", unsigned.status === 422 && unsigned.body?.error === "form_form_signer_required");
+                                            withCode: true, formOnFile: true, formSignedBy: "M" });
+  ok("a one-letter signer is refused", unsigned.status === 422 && unsigned.body?.error === "form_form_signer_invalid");
   ok("...and rolls the enrolment back: no account", (await accounts("j.sithole@example.invalid")) === 0);
   const futureForm = await enrol(registrar, { ...body("j.sithole@example.invalid", "J Sithole", SITHOLE, "U13A"),
                                               formOnFile: true, formSignedBy: "M Sithole", formSignedOn: "2999-01-01" });
@@ -205,10 +205,13 @@ try {
     const wd = await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: registrar, body: { withdrawn: true } });
     ok("the office records a withdrawal: closed", wd.status === 200 && wd.body?.inForce === false, JSON.stringify(wd.body));
     const noSigner = await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: registrar, body: { formOnFile: true } });
-    ok("a new form naming nobody is refused", noSigner.status === 422 && noSigner.body?.error === "form_signer_required");
+    ok("a new form, naming nobody and no day, is recorded (D is optional until counsel), and opens him again",
+       noSigner.status === 200 && noSigner.body?.inForce === true && noSigner.body?.held === null, JSON.stringify(noSigner.body));
+    const st2 = await api(`/api/players/${SITHOLE}/own-signin`, { token: registrar });
+    ok("...and the office reads it as recorded without them", st2.body?.ownSignIn?.yesHow === "office" && st2.body.ownSignIn.formSignedBy === null && st2.body.ownSignIn.formSignedOn === null, JSON.stringify(st2.body));
     const again = await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: registrar,
       body: { formOnFile: true, formSignedBy: "M Sithole", formSignedOn: signedOn } });
-    ok("a new form, named and dated, opens him again", again.status === 200 && again.body?.inForce === true && again.body?.held === null, JSON.stringify(again.body));
+    ok("a form named and dated is recorded beside it", again.status === 200 && again.body?.inForce === true && again.body?.held === null, JSON.stringify(again.body));
     const retry = await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: registrar, body: { retry: true } });
     ok("trying again with nothing waiting is answered, not refused", retry.status === 200 && retry.body?.inForce === true);
     ok("'This account is not him' is the office's: a coach is refused",

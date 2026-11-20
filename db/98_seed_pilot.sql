@@ -941,8 +941,8 @@ DO $seed164$
 BEGIN
   IF to_regprocedure('pupil_signin_carry_over()') IS NOT NULL THEN
     PERFORM pupil_signin_carry_over();
-    INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, form_on_file, form_signed_by, form_signed_on)
-    SELECT 'aaaaaaaa-0000-0000-0000-000000000099', 'yes', 'office', u.id, u.name, true, 'N Okafor', current_date - 30
+    INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, school_id, form_on_file, form_signed_by, form_signed_on)
+    SELECT 'aaaaaaaa-0000-0000-0000-000000000099', 'yes', 'office', u.id, u.name, '11111111-1111-1111-1111-111111111111', true, 'N Okafor', current_date - 30
       FROM app_user u WHERE u.id = '88888888-0000-0000-0000-00000000000c'
        AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000099');
   END IF;

@@ -40,21 +40,21 @@ export const OWN_SIGNIN_STATUS = Object.freeze({
   no_date_of_birth: 409,
   not_yours_to_stop: 409,
   not_in_force: 409,
-  form_signer_required: 422,
-  form_date_required: 422,
+  form_signer_invalid: 422,
   form_date_invalid: 422,
 });
 
 /**
  * "The signed consent form is on file" (Q12), with who signed it and the
- * day it was signed (Kameel, 20 Nov, D): from a request body's formSignedBy
- * and formSignedOn. Shape only; the database decides the rest.
- * @param {any} b @returns {{ signedBy: string, signedOn: string | null }}
+ * day it was signed (Kameel, 20 Nov, D: optional now, required once counsel
+ * has read it): from a request body's formSignedBy and formSignedOn, each
+ * null when not given. Shape only; the database decides the rest.
+ * @param {any} b @returns {{ signedBy: string | null, signedOn: string | null }}
  */
 export function formOf(b) {
   const signedBy = typeof b?.formSignedBy === "string" ? b.formSignedBy.trim().slice(0, 200) : "";
   const on = typeof b?.formSignedOn === "string" ? b.formSignedOn.trim() : "";
-  return { signedBy, signedOn: /^\d{4}-\d{2}-\d{2}$/.test(on) ? on : null };
+  return { signedBy: signedBy || null, signedOn: /^\d{4}-\d{2}-\d{2}$/.test(on) ? on : null };
 }
 
 /**
@@ -91,13 +91,13 @@ export const ownSigninState = (r) => (r ? {
 
 /**
  * The office's tick in the same transaction as a grant (Q12): the signed
- * form on file for this boy, with who signed it and the day (D), recorded
+ * form on file for this boy, with who signed it and the day where given (D), recorded
  * under the office person's name AFTER the grant has written his roles (his
  * own link 'pending'), so the yes stamps it and opens him. A refusal is an
  * error, and rolls the grant back: the office ticked the box believing it
  * would open him. An adult needs no form, and the tick is quietly not
  * recorded.
- * @param {any} client @param {string} player @param {{ signedBy: string, signedOn: string | null }} form
+ * @param {any} client @param {string} player @param {{ signedBy: string | null, signedOn: string | null }} form
  */
 export async function recordFormOnFile(client, player, form) {
   const { rows: [r] } = await client.query(`select * from pupil_signin_office_set($1, true, $2, $3::date)`,

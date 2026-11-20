@@ -27,10 +27,12 @@
 --   B  a guardian may close the yes the school carried over for her son
 --      (how 'enrolled') herself; the office's real tick stays the office's.
 --   C  the school's yes (office, enrolled) lapses when his enrolment at the
---      school ends or his own account ends. How long the record is kept is
---      for counsel: see TODO(counsel) at §1.
+--      school ends (he leaves it, or moves to another school: a transfer is
+--      a departure, db/116) or his own account ends. How long the record is
+--      kept is for counsel: see TODO(counsel) at §1.
 --   D  "the signed consent form is on file" records who signed the form and
---      the date it was signed, not just a tick.
+--      the date it was signed, not just a tick: optional now, required once
+--      counsel has read it (TODO(counsel) at §1 and in the office's door).
 --   E  the office's no does NOT hold against a guardian's later yes; the
 --      office's screen says so.
 --   F  a yes carries across a new terms version: only a withdrawal of the
@@ -52,7 +54,8 @@
 --       the school's (the form on file, or the stamp carried over below):
 --         not followed by the office's no, nor by his account ending (C),
 --         nor (the carried-over stamp only) by a guardian's stop (B), and
---         only while he has not left the school since it was given (C).
+--         only while he has stayed at the school whose yes it is since it
+--         was given: not left it, not moved to another (C).
 --   Another yes standing keeps him open (Q6).
 --
 -- THE GATE. pupil_signin_open(account): false for an account that answers
@@ -89,9 +92,10 @@
 --   + pupil_signin_consent  the record: one row per yes or no, append-only,
 --       ordered by seq. Who (the guardian or the office person, by id and by
 --       name as it was), how (guardian · office · enrolled · terms_withdrawn
---       · link_ended · lapsed), her link and her terms version, the form on
---       file with who signed it and when (D), the time. RLS on, no policy,
---       no privilege: functions only (db/81's shape).
+--       · link_ended · lapsed · not_him), her link and her terms version,
+--       the school whose yes it is, the form on file with who signed it and
+--       when where the office has them (D), the time. RLS on, no policy, no
+--       privilege: functions only (db/81's shape).
 --   + pupil_signin_consent_set(player, yes)  the guardian's own tap.
 --   + pupil_signin_office_set(player, yes, signed_by, signed_on)  the
 --       office: the signed form on file (the Q12 tick, also used by the
@@ -103,8 +107,9 @@
 --   + my_own_signin()  what the boy's own screen needs: is this a pupil's
 --       account, and is it open.
 --   + pupil_claim_not_him(claim)  the office: "This account is not him"
---       (S10): ends a wrongly recognised account's pupil roles and links,
---       closes every yes before it, declines the claim, tells the DSOs.
+--       (S10): ends a wrongly recognised account's pupil roles and links at
+--       the claim's school, closes the yeses given since it was recognised,
+--       declines the claim, tells the DSOs.
 --   + notification_pupil_signin (restrictive, on notification): a closed
 --       account reads only the system's own notices addressed to it, and
 --       so a notice to his side is neither read nor pushed to his phone
@@ -118,10 +123,6 @@
 --   + pupil_signin_account_ended (trigger on app_user): his own account
 --       ending (shut, removed, or its roster link moved) is recorded as the
 --       school's yes lapsing (C).
---   + pupil_signin_born_kept (trigger on player): the application cannot
---       change a date of birth already on the roster (the gate opens him at
---       18 by it); writing one where there is none is the office's
---       dob-capture, as before.
 --   ~ app_can(), app_holds(), app_enrolled()  db/50's and db/81's bodies as
 --       db/128 left them (sa_today()), with one line each:
 --       AND pupil_signin_open(a.person_id). md5-guarded.
@@ -171,16 +172,17 @@
 -- held to their md5 by §0 and §8, and by db/99 §142, so the comment is left
 -- as written rather than move every hash.
 --
--- HOW TO PASTE (S1). One transaction, stop on the first error: the paste
--- wrapper's single DO block, or psql -1 -v ON_ERROR_STOP=1. Run any other
--- way it is still safe at every statement: each function is revoked from
--- PUBLIC the statement after it is made; the carry-over (§6) runs before
--- the gate (§5), which goes on in one statement for all its bodies; §0
--- refuses a database where only some of the gate's bodies are in place;
--- and a second paste finishes what a stopped one left.
+-- HOW TO PASTE (S1). One transaction, stop on the first error: the
+-- Supabase SQL Editor runs bundle-sql --apply's script as one implicit
+-- transaction, and psql -1 -v ON_ERROR_STOP=1 does the same here. Run any
+-- other way it is still safe at every statement: each function is revoked
+-- from PUBLIC the statement after it is made; the carry-over (§6) runs
+-- before the notice policy (§5b) and the gate (§5), which goes on in one
+-- statement for all its bodies; §0 refuses a database where only some of
+-- the gate's bodies are in place; and a second paste finishes what a
+-- stopped one left.
 --
--- Every function: SECURITY DEFINER (but the owner-only carry-over, and the
--- date-of-birth trigger, which must see the statement's own role),
+-- Every function: SECURITY DEFINER (but the owner-only carry-over),
 -- search_path pinned, REVOKE ALL FROM PUBLIC; the doors GRANT EXECUTE to
 -- scrbrd_app by name; nothing to anon, authenticated or service_role
 -- (db/157). No BEGIN or COMMIT. Safe to run twice. Its proof is db/99 §142.
@@ -275,6 +277,10 @@ END $bodies$;
 -- giver's name as it was, even after the giver's account is erased
 -- (given_by SET NULL, given_by_name kept). Counsel sets the period (C);
 -- nothing here removes a row on a clock until then. Do not invent one.
+-- TODO(counsel): who signed the form and the day it was signed (D) are
+-- optional now and become required once counsel has read them: then the
+-- office's door refuses a tick without them, and a migration makes the
+-- shape below require them on an office yes.
 CREATE TABLE IF NOT EXISTS pupil_signin_consent (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   -- The order things were said in: a no closes only the yeses before it.
@@ -288,7 +294,9 @@ CREATE TABLE IF NOT EXISTS pupil_signin_consent (
   -- terms_withdrawn  (no) her withdrawal of the terms, recorded as it happened
   -- link_ended       (no) her link revoked, rejected or run out
   -- lapsed           (no) his own account ended: the school's yes lapses (C)
-  how            text NOT NULL CHECK (how IN ('guardian', 'office', 'enrolled', 'terms_withdrawn', 'link_ended', 'lapsed')),
+  -- not_him          (no) the office took a wrongly recognised account off
+  --                  his record (S10): closes the yeses given since `since`
+  how            text NOT NULL CHECK (how IN ('guardian', 'office', 'enrolled', 'terms_withdrawn', 'link_ended', 'lapsed', 'not_him')),
   given_by       uuid REFERENCES app_user(id) ON DELETE SET NULL,
   -- The name as it was when it was said: the record names a person.
   given_by_name  text CHECK (given_by_name IS NULL OR char_length(given_by_name) <= 200),
@@ -296,19 +304,26 @@ CREATE TABLE IF NOT EXISTS pupil_signin_consent (
   link_id        uuid,
   -- A guardian's yes: the terms she had agreed to (her link's consent_version).
   terms_version  text CHECK (terms_version IS NULL OR char_length(terms_version) <= 40),
+  -- The school's yes (office, enrolled): the school it is of. It stands
+  -- only while he stays at that school (C).
+  school_id      uuid REFERENCES school(id) ON DELETE CASCADE,
+  -- not_him: the yeses it closes are those given since this (the claim's
+  -- recognition).
+  since          timestamptz,
   -- The office's yes is the signed form, on file (Q12's tick), and (D) who
-  -- signed it, as written on the form, and the day it was signed.
+  -- signed it, as written on the form, and the day it was signed, where
+  -- the office has them (optional until counsel: TODO(counsel) above).
   form_on_file   boolean NOT NULL DEFAULT false,
   form_signed_by text CHECK (form_signed_by IS NULL OR char_length(btrim(form_signed_by)) BETWEEN 2 AND 200),
   form_signed_on date,
   given_at       timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT pupil_signin_consent_shape CHECK (
         (how = 'guardian'        AND link_id IS NOT NULL AND (answer = 'no' OR terms_version IS NOT NULL))
-     OR (how = 'office'          AND link_id IS NULL
-                                 AND (answer = 'no' OR (form_on_file AND form_signed_by IS NOT NULL AND form_signed_on IS NOT NULL)))
-     OR (how = 'enrolled'        AND answer = 'yes' AND link_id IS NULL)
+     OR (how = 'office'          AND link_id IS NULL AND (answer = 'no' OR (form_on_file AND school_id IS NOT NULL)))
+     OR (how = 'enrolled'        AND answer = 'yes' AND link_id IS NULL AND school_id IS NOT NULL)
      OR (how IN ('terms_withdrawn', 'link_ended') AND answer = 'no' AND link_id IS NOT NULL)
-     OR (how = 'lapsed'          AND answer = 'no' AND link_id IS NULL))
+     OR (how = 'lapsed'          AND answer = 'no' AND link_id IS NULL)
+     OR (how = 'not_him'         AND answer = 'no' AND link_id IS NULL AND since IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS pupil_signin_consent_player_idx ON pupil_signin_consent (player_id, seq);
 
@@ -327,6 +342,9 @@ REVOKE ALL ON SEQUENCE pupil_signin_consent_seq_seq FROM scrbrd_app;
 -- shipped; dropped here so a development database takes this cut.
 DROP TRIGGER IF EXISTS pupil_signin_terms_withdrawn ON assignment_subject;
 DROP FUNCTION IF EXISTS pupil_signin_terms_withdrawn();
+DROP TRIGGER IF EXISTS pupil_signin_born_kept ON player;
+DROP FUNCTION IF EXISTS pupil_signin_born_kept();
+DROP FUNCTION IF EXISTS pupil_signin_stayed(uuid, timestamptz);
 DROP FUNCTION IF EXISTS pupil_signin_office_set(uuid, boolean);
 DO $older$
 BEGIN
@@ -350,38 +368,46 @@ END $older$;
 -- coach's from 4 to 5 ms. The answers are the same. (S8: measured on the
 -- seed, not the build database; time it there before the paste.)
 
--- C: is he still at the school, and has he been there throughout since p_since?
--- By his school's membership record: a day he left it (a membership ended
--- that no other membership at the school covered) on or after p_since, or
--- no membership open today while he has had one, means no. A boy with no
--- membership record at the school at all reads as at school (a roster row
--- from before db/93's record).
-CREATE OR REPLACE FUNCTION pupil_signin_stayed(p_player uuid, p_since timestamptz) RETURNS boolean AS $$
+-- C: has he stayed at p_school (the school whose yes it is) since p_since?
+-- No when he is on another school's roster now (a transfer is a departure
+-- from the old school, db/116); when a membership of his at that school
+-- ended on or after p_since and no other membership there covered the day
+-- (he left it, back or not); or when he has had a membership there and
+-- none is open today. A boy with no membership record at the school reads
+-- as at it (a roster row from before db/93's record).
+CREATE OR REPLACE FUNCTION pupil_signin_stayed(p_player uuid, p_since timestamptz, p_school uuid) RETURNS boolean AS $$
+DECLARE v_now uuid;
 BEGIN
-  -- Most boys: no membership at his school has ended yet.
-  IF NOT EXISTS (SELECT 1 FROM player p JOIN team_membership m ON m.player_id = p.id AND m.school_id = p.school_id
-                  WHERE p.id = p_player AND m.left_on IS NOT NULL AND m.left_on <= sa_today()) THEN
+  SELECT p.school_id INTO v_now FROM player p WHERE p.id = p_player;
+  IF v_now IS DISTINCT FROM p_school THEN RETURN false; END IF;
+  -- Most boys: no membership at the school has ended yet.
+  IF NOT EXISTS (SELECT 1 FROM team_membership m
+                  WHERE m.player_id = p_player AND m.school_id = p_school
+                    AND m.left_on IS NOT NULL AND m.left_on <= sa_today()) THEN
     RETURN true;
   END IF;
   RETURN NOT EXISTS (
-    SELECT 1 FROM player p JOIN team_membership m ON m.player_id = p.id AND m.school_id = p.school_id
-     WHERE p.id = p_player AND m.left_on IS NOT NULL AND m.left_on <= sa_today()
-       AND NOT EXISTS (SELECT 1 FROM team_membership o
-                        WHERE o.player_id = p.id AND o.school_id = p.school_id AND o.id <> m.id
-                          AND o.joined_on <= m.left_on AND (o.left_on IS NULL OR o.left_on > m.left_on))
-       AND (m.left_on >= sa_date(p_since)
-            OR NOT EXISTS (SELECT 1 FROM team_membership o
-                            WHERE o.player_id = p.id AND o.school_id = p.school_id
-                              AND o.joined_on <= sa_today() AND (o.left_on IS NULL OR o.left_on > sa_today()))));
+           SELECT 1 FROM team_membership m
+            WHERE m.player_id = p_player AND m.school_id = p_school
+              AND m.left_on IS NOT NULL AND m.left_on <= sa_today() AND m.left_on >= sa_date(p_since)
+              AND NOT EXISTS (SELECT 1 FROM team_membership o
+                               WHERE o.player_id = m.player_id AND o.school_id = m.school_id AND o.id <> m.id
+                                 AND o.joined_on <= m.left_on AND (o.left_on IS NULL OR o.left_on > m.left_on)))
+     AND EXISTS (SELECT 1 FROM team_membership o
+                  WHERE o.player_id = p_player AND o.school_id = p_school
+                    AND o.joined_on <= sa_today() AND (o.left_on IS NULL OR o.left_on > sa_today()));
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-REVOKE ALL ON FUNCTION pupil_signin_stayed(uuid, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION pupil_signin_stayed(uuid, timestamptz, uuid) FROM PUBLIC;
 
 -- Does this yes still stand? Not followed by a no that closes it:
 --   the office's no closes every yes before it (E: not one after it);
 --   his account ending ('lapsed') closes the school's (C);
 --   a guardian's stop closes the carried-over stamp (B), and her own;
---   her terms withdrawal or her link ending closes her own.
--- The school's only while he has stayed at the school since (C). A
+--   her terms withdrawal or her link ending closes her own;
+--   "this account is not him" closes those given since the claim's
+--   recognition (S10).
+-- The school's only while he has stayed at the school since, the school
+-- whose yes it is (C). A
 -- guardian's only while the link she gave it on is live, verified and
 -- agreed to the terms today (any version: F), was there when she said it,
 -- and has not been reopened since he came back to school (db/124's rule):
@@ -395,11 +421,12 @@ BEGIN
               WHERE n.player_id = y.player_id AND n.answer = 'no' AND n.seq > y.seq
                 AND (n.how = 'office'
                      OR (n.how = 'lapsed' AND y.how IN ('office', 'enrolled'))
+                     OR (n.how = 'not_him' AND y.given_at >= n.since)
                      OR (n.how = 'guardian' AND y.how = 'enrolled')
                      OR (y.how = 'guardian' AND n.given_by IS NOT NULL AND n.given_by = y.given_by))) THEN
     RETURN false;
   END IF;
-  IF y.how <> 'guardian' THEN RETURN pupil_signin_stayed(y.player_id, y.given_at); END IF;
+  IF y.how <> 'guardian' THEN RETURN pupil_signin_stayed(y.player_id, y.given_at, y.school_id); END IF;
   RETURN EXISTS (
     SELECT 1 FROM assignment_subject s
       JOIN role_assignment a ON a.id = s.assignment_id
@@ -665,8 +692,9 @@ GRANT EXECUTE ON FUNCTION pupil_signin_consent_set(uuid, boolean) TO scrbrd_app;
 
 /**
  * THE OFFICE (Q12, §3.4, D, E): p_yes true records "The signed consent
- * form is on file", under the office person's name, with who signed the
- * form (as written on it) and the day it was signed; it is the tick the
+ * form is on file", under the office person's name and for his school,
+ * with who signed the form (as written on it) and the day it was signed
+ * where the office gives them (optional until counsel); it is the tick the
  * grant asks for. false records a withdrawal (a parent who telephones, a
  * court order): it closes every yes before it, the family's and the
  * school's, and not one given after it (E: to keep him out whatever is
@@ -675,13 +703,13 @@ GRANT EXECUTE ON FUNCTION pupil_signin_consent_set(uuid, boolean) TO scrbrd_app;
  * platform-wide key or a pad (db/168's pupil_claim_office()). Answers (ok,
  * reason, in_force, held): not_signed_in · not_permitted · answer_required
  * · player_is_an_adult · no_date_of_birth (a yes only; the office records
- * his date of birth first) · form_signer_required (who signed it, two
- * letters or more) · form_date_required · form_date_invalid (after today,
- * or before he was born).
+ * his date of birth first) · form_signer_invalid (who signed it, given, is
+ * under two letters) · form_date_invalid (given, and after today, or
+ * before he was born).
  */
 CREATE OR REPLACE FUNCTION pupil_signin_office_set(p_player uuid, p_yes boolean, p_signed_by text DEFAULT NULL, p_signed_on date DEFAULT NULL)
 RETURNS TABLE (ok boolean, reason text, in_force boolean, held text) AS $$
-DECLARE v_me uuid := app_user_id(); v_school uuid; v_born date; v_id uuid; v_held text; v_by text := btrim(coalesce(p_signed_by, ''));
+DECLARE v_me uuid := app_user_id(); v_school uuid; v_born date; v_id uuid; v_held text; v_by text := nullif(btrim(coalesce(p_signed_by, '')), '');
 BEGIN
   IF v_me IS NULL OR app_pad_scoped() THEN RETURN QUERY SELECT false, 'not_signed_in'::text, NULL::boolean, NULL::text; RETURN; END IF;
   SELECT p.school_id INTO v_school FROM player p WHERE p.id = p_player;
@@ -696,19 +724,19 @@ BEGIN
       RETURN QUERY SELECT false, 'player_is_an_adult'::text, true, NULL::text; RETURN;
     END IF;
     IF v_born IS NULL THEN RETURN QUERY SELECT false, 'no_date_of_birth'::text, false, NULL::text; RETURN; END IF;
-    IF char_length(v_by) < 2 OR char_length(v_by) > 200 THEN
-      RETURN QUERY SELECT false, 'form_signer_required'::text, NULL::boolean, NULL::text; RETURN;
+    -- D: optional until counsel (TODO(counsel), §1); checked when given.
+    IF v_by IS NOT NULL AND (char_length(v_by) < 2 OR char_length(v_by) > 200) THEN
+      RETURN QUERY SELECT false, 'form_signer_invalid'::text, NULL::boolean, NULL::text; RETURN;
     END IF;
-    IF p_signed_on IS NULL THEN RETURN QUERY SELECT false, 'form_date_required'::text, NULL::boolean, NULL::text; RETURN; END IF;
-    IF p_signed_on > sa_today() OR p_signed_on < v_born THEN
+    IF p_signed_on IS NOT NULL AND (p_signed_on > sa_today() OR p_signed_on < v_born) THEN
       RETURN QUERY SELECT false, 'form_date_invalid'::text, NULL::boolean, NULL::text; RETURN;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pupil_signin_consent y
                     WHERE y.player_id = p_player AND y.answer = 'yes' AND y.how = 'office'
-                      AND y.form_signed_by = v_by AND y.form_signed_on = p_signed_on
+                      AND y.form_signed_by IS NOT DISTINCT FROM v_by AND y.form_signed_on IS NOT DISTINCT FROM p_signed_on
                       AND pupil_signin_yes_stands(y.id)) THEN
-      INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, form_on_file, form_signed_by, form_signed_on)
-      VALUES (p_player, 'yes', 'office', v_me, (SELECT left(u.name, 200) FROM app_user u WHERE u.id = v_me), true, v_by, p_signed_on)
+      INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, school_id, form_on_file, form_signed_by, form_signed_on)
+      VALUES (p_player, 'yes', 'office', v_me, (SELECT left(u.name, 200) FROM app_user u WHERE u.id = v_me), v_school, true, v_by, p_signed_on)
       RETURNING id INTO v_id;
       PERFORM pupil_claim_log('pupil_signin.form_on_file', v_school, ARRAY[v_id]);
     END IF;
@@ -854,40 +882,48 @@ GRANT EXECUTE ON FUNCTION my_own_signin() TO scrbrd_app;
 /**
  * "THIS ACCOUNT IS NOT HIM" (S10, the red-team's open item 4): the office
  * recognised the wrong account as a boy, and it may already be open. The
- * office of the claim's school (pupil_claim_office()). In one transaction:
- * the account's pupil roles end, its own links are revoked and its roster
- * link cleared (so it answers as nobody, and the boy can be recognised
- * again against the right account); every yes for the boy given before now
- * is closed by the office's no (a yes given while the wrong account stood
- * for him is asked for again); the claim is declined; and the school's DSOs
+ * office of the claim's school (pupil_claim_office()). In one transaction,
+ * at the claim's school only: the account's pupil roles end, its own links
+ * to the boy are revoked and its roster link cleared (so it answers as
+ * nobody there, and the boy can be recognised again against the right
+ * account); the yeses given since the claim was recognised are closed (a
+ * yes given while the wrong account stood for him is asked for again; his
+ * family's earlier yes, about the boy, stands); the claim is declined; and
+ * the school's DSOs
  * are told, as Q11 tells them of a decline, naming nobody. Answers (ok,
  * reason): not_signed_in · not_permitted (also for an id that is no claim)
  * · not_recognised (the claim names no boy: decline it instead).
  */
 CREATE OR REPLACE FUNCTION pupil_claim_not_him(p_claim uuid)
 RETURNS TABLE (ok boolean, reason text) AS $$
-DECLARE c pupil_claim%ROWTYPE; v_user uuid; v_me uuid := app_user_id(); v_id uuid;
+DECLARE c pupil_claim%ROWTYPE; v_user uuid; v_boy uuid; v_me uuid := app_user_id(); v_id uuid;
 BEGIN
   IF v_me IS NULL OR app_pad_scoped() THEN RETURN QUERY SELECT false, 'not_signed_in'::text; RETURN; END IF;
-  SELECT x.user_id INTO v_user FROM pupil_claim x WHERE x.id = p_claim;
+  -- N-3: the boy's lock, then the claim's, as a yes takes them (after_yes()).
+  SELECT x.user_id, x.player_id INTO v_user, v_boy FROM pupil_claim x WHERE x.id = p_claim;
+  IF v_boy IS NOT NULL THEN PERFORM pg_advisory_xact_lock(hashtextextended('pupil_signin:' || v_boy::text, 164)); END IF;
   IF v_user IS NOT NULL THEN PERFORM pg_advisory_xact_lock(hashtextextended('pupil_claim:' || v_user::text, 163)); END IF;
   SELECT * INTO c FROM pupil_claim x WHERE x.id = p_claim FOR UPDATE;
   IF NOT FOUND OR NOT pupil_claim_office(c.school_id) THEN RETURN QUERY SELECT false, 'not_permitted'::text; RETURN; END IF;
-  IF c.player_id IS NULL OR c.state NOT IN ('recognised', 'open') THEN
+  IF c.player_id IS NULL OR c.player_id IS DISTINCT FROM v_boy OR c.state NOT IN ('recognised', 'open') THEN
     RETURN QUERY SELECT false, 'not_recognised'::text; RETURN;
   END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended('pupil_signin:' || c.player_id::text, 164));
-  -- His own links on the account, first (the 'self' rows the grant door wrote).
+  -- At the claim's school only: his own links to this boy on the account
+  -- (the 'self' rows the grant door wrote), then its pupil roles there.
   UPDATE assignment_subject g SET verification_state = 'revoked', valid_until = greatest(sa_today(), g.valid_from)
     FROM role_assignment a
-   WHERE a.id = g.assignment_id AND a.person_id = c.user_id AND g.relationship = 'self'
+   WHERE a.id = g.assignment_id AND a.person_id = c.user_id AND a.school_id = c.school_id
+     AND g.relationship = 'self' AND g.player_id = c.player_id
      AND g.verification_state IN ('pending', 'verified');
   -- Ended, not re-pointed (db/01's rule); its trigger stamps the who and when.
   UPDATE role_assignment a SET active = false
-   WHERE a.person_id = c.user_id AND a.active AND a.role IN ('player', 'selfaccess');
+   WHERE a.person_id = c.user_id AND a.school_id = c.school_id AND a.active AND a.role IN ('player', 'selfaccess');
   UPDATE app_user SET player_id = NULL WHERE id = c.user_id AND player_id = c.player_id;
-  INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name)
-  VALUES (c.player_id, 'no', 'office', v_me, (SELECT left(u.name, 200) FROM app_user u WHERE u.id = v_me))
+  -- The yeses the wrong account may have stood on: those given since he was
+  -- recognised. One given before (his family's, for the boy) stands.
+  INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, since)
+  VALUES (c.player_id, 'no', 'not_him', v_me, (SELECT left(u.name, 200) FROM app_user u WHERE u.id = v_me),
+          coalesce(c.known_at, c.decided_at, now()))
   RETURNING id INTO v_id;
   UPDATE pupil_claim SET state = 'declined', decided_at = now(), decided_by = v_me WHERE id = c.id;
   PERFORM declined_claim_notice(c.school_id, 'A pupil account was taken back',
@@ -901,9 +937,82 @@ REVOKE ALL ON FUNCTION pupil_claim_not_him(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION pupil_claim_not_him(uuid) TO scrbrd_app;
 
 
+-- ── 6 · Nobody enrolled today is closed: the stamp carried over ─────
+-- BEFORE the notice policy (§5b) and the gate (§5), so a paste stopped
+-- between them closes nobody (S1). Every boy under 18 whose own link is live, verified and stamped
+-- 'granted' (the office's grant, db/92, or the paths before it) has that
+-- stamp carried over as the school's yes, given by the person who verified
+-- the link, at the stamp's time. Only for a boy with nothing on record
+-- yet, so a second paste, or the seed after the migrations, never adds a
+-- yes behind a no; never for a boy of 18 by the roster (N10), who needs
+-- none. Owner-only; answers how many boys it carried over.
+CREATE OR REPLACE FUNCTION pupil_signin_carry_over() RETURNS integer AS $$
+DECLARE n integer;
+BEGIN
+  INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, terms_version, given_at, school_id)
+  SELECT DISTINCT ON (g.player_id) g.player_id, 'yes', 'enrolled', g.verified_by, left(u.name, 200), g.consent_version,
+         coalesce(g.consent_at, g.verified_at, g.created_at),
+         -- The school that stamped it: his own record's assignment's.
+         coalesce(a.school_id, p.school_id)
+    FROM assignment_subject g
+    JOIN role_assignment a ON a.id = g.assignment_id
+    JOIN player p ON p.id = g.player_id
+    LEFT JOIN app_user u ON u.id = g.verified_by
+   WHERE g.relationship = 'self' AND g.verification_state = 'verified' AND g.consent_state = 'granted'
+     AND a.active AND (g.valid_until IS NULL OR g.valid_until > sa_today())
+     AND (p.born IS NULL OR majority_on(p.born) > sa_today())
+     AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = g.player_id)
+   ORDER BY g.player_id, g.consent_at NULLS LAST, g.id;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END $$ LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION pupil_signin_carry_over() FROM PUBLIC;
+
+DO $carry$
+DECLARE n integer;
+BEGIN
+  n := pupil_signin_carry_over();
+  RAISE NOTICE 'db/169: % boy(s) enrolled before this file keep their own sign-in, as the school''s yes', n;
+END $carry$;
+
+
+-- ── 5b · His notices, and their delivery to his phone ─────────────
+-- Every route by which a notice is read (notification_read and the side's,
+-- the sheet's and the team-wide policies) asks app_can() or my_own_boy(),
+-- which the gate above already closes. This restrictive policy says the
+-- rule once more, on the notice itself, so that no notice route added later
+-- can miss it: an account whose own sign-in is not in force reads only the
+-- system's own notices addressed to it (§3.3's left column: "A parent has
+-- said yes", "The school has answered", a role that ended). Delivery to a
+-- phone follows: services/api/notify/push-api.mjs fanOut() asks, as each
+-- recipient, `select 1 from notification where id = $1` before it sends,
+-- and records the delivery as the recipient under the same policy
+-- (notification_delivery_insert), so a closed boy's phone is sent nothing
+-- and no delivery can be written to him. The question is asked once per
+-- statement (an initplan), not once per row. Before §4b's triggers (N-4):
+-- the policy's lock on notification is taken first, so writes to the
+-- tables the triggers lock do not queue behind it.
+CREATE OR REPLACE FUNCTION pupil_signin_mine_open() RETURNS boolean AS $$
+  SELECT pupil_signin_open(app_user_id())
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION pupil_signin_mine_open() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION pupil_signin_mine_open() TO scrbrd_app;
+
+DO $notice$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'notification'::regclass AND polname = 'notification_pupil_signin') THEN
+    CREATE POLICY notification_pupil_signin ON notification AS RESTRICTIVE
+      FOR SELECT USING (
+        (SELECT pupil_signin_mine_open())
+        OR (kind = 'system' AND recipient_id = app_user_id())
+      );
+  END IF;
+END $notice$;
+
+
 -- ── 4b · What ends a yes without a tap ─────────────────────────────
 -- Her link (S6(b), F). AFTER UPDATE on a guardian's link that was live
--- (verified, agreed, not run out): withdrawn terms (guardian_consent_withdraw(),
+-- (verified, not run out): withdrawn terms, from agreed (guardian_consent_withdraw(),
 -- db/08) is recorded as her no ('terms_withdrawn'); the link revoked,
 -- rejected or dated to an end already reached (guardian_link_revoke(),
 -- db/109) as her no ('link_ended'). Only where she has a yes on record for
@@ -913,12 +1022,13 @@ GRANT EXECUTE ON FUNCTION pupil_claim_not_him(uuid) TO scrbrd_app;
 CREATE OR REPLACE FUNCTION pupil_signin_link_no() RETURNS trigger AS $$
 DECLARE v_how text;
 BEGIN
+  -- Her link was live and verified (agreed or not: N-9, a link waiting in
+  -- 'pending' that is revoked is still her link ending).
   IF NEW.relationship IS NOT DISTINCT FROM 'self'
-     OR NOT (OLD.verification_state = 'verified' AND OLD.consent_state = 'granted'
-             AND (OLD.valid_until IS NULL OR OLD.valid_until > sa_today())) THEN
+     OR NOT (OLD.verification_state = 'verified' AND (OLD.valid_until IS NULL OR OLD.valid_until > sa_today())) THEN
     RETURN NULL;
   END IF;
-  v_how := CASE WHEN NEW.consent_state = 'withdrawn' THEN 'terms_withdrawn'
+  v_how := CASE WHEN OLD.consent_state = 'granted' AND NEW.consent_state = 'withdrawn' THEN 'terms_withdrawn'
                 WHEN NEW.verification_state <> 'verified'
                   OR (NEW.valid_until IS NOT NULL AND NEW.valid_until <= sa_today()) THEN 'link_ended' END;
   IF v_how IS NULL THEN RETURN NULL; END IF;
@@ -947,6 +1057,9 @@ DECLARE v_boys uuid[];
 BEGIN
   IF TG_OP = 'DELETE' THEN
     v_boys := ARRAY[OLD.player_id];
+  -- S-2 (for Kameel): an account shut (db/85's disable) counts as ended.
+  -- If he decides it does not (ACCOUNT_LIFECYCLE D1), remove this branch
+  -- and `active, ` from the trigger's column list below; nothing else.
   ELSIF OLD.active AND NOT NEW.active THEN
     -- Shut: the boy of its roster link, and of its own links.
     v_boys := ARRAY[OLD.player_id] || ARRAY(
@@ -973,65 +1086,6 @@ REVOKE ALL ON FUNCTION pupil_signin_account_ended() FROM PUBLIC;
 CREATE OR REPLACE TRIGGER pupil_signin_account_ended
   AFTER UPDATE OF active, player_id OR DELETE ON app_user
   FOR EACH ROW EXECUTE FUNCTION pupil_signin_account_ended();
-
--- His date of birth (the red-team's not-read list). The gate opens him at
--- 18 by the roster's date, and asks nobody; so the application may write a
--- date only where there is none (the office's dob-capture, db/96), never
--- change one on record (the roster import's update used to). A correction
--- is the schema owner's, by hand, as today. BEFORE UPDATE OF born, for the
--- application role only: the owner's own functions are untouched. An
--- invoker, so current_user is the statement's own role (inside a definer it
--- would always read as the owner); it reads nothing and writes nothing.
-CREATE OR REPLACE FUNCTION pupil_signin_born_kept() RETURNS trigger AS $$
-BEGIN
-  IF OLD.born IS NOT NULL AND NEW.born IS DISTINCT FROM OLD.born AND current_user = 'scrbrd_app' THEN
-    RAISE EXCEPTION 'born_on_record: % already has a date of birth on the roster; it is corrected by hand, not by the application', OLD.id
-      USING ERRCODE = 'check_violation', CONSTRAINT = 'player_born_on_record';
-  END IF;
-  RETURN NEW;
-END $$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp;
-REVOKE ALL ON FUNCTION pupil_signin_born_kept() FROM PUBLIC;
-
-CREATE OR REPLACE TRIGGER pupil_signin_born_kept
-  BEFORE UPDATE OF born ON player
-  FOR EACH ROW EXECUTE FUNCTION pupil_signin_born_kept();
-
-
--- ── 6 · Nobody enrolled today is closed: the stamp carried over ─────
--- BEFORE the gate (§5), so a paste stopped between the two closes nobody
--- (S1). Every boy under 18 whose own link is live, verified and stamped
--- 'granted' (the office's grant, db/92, or the paths before it) has that
--- stamp carried over as the school's yes, given by the person who verified
--- the link, at the stamp's time. Only for a boy with nothing on record
--- yet, so a second paste, or the seed after the migrations, never adds a
--- yes behind a no; never for a boy of 18 by the roster (N10), who needs
--- none. Owner-only; answers how many boys it carried over.
-CREATE OR REPLACE FUNCTION pupil_signin_carry_over() RETURNS integer AS $$
-DECLARE n integer;
-BEGIN
-  INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, terms_version, given_at)
-  SELECT DISTINCT ON (g.player_id) g.player_id, 'yes', 'enrolled', g.verified_by, left(u.name, 200), g.consent_version,
-         coalesce(g.consent_at, g.verified_at, g.created_at)
-    FROM assignment_subject g
-    JOIN role_assignment a ON a.id = g.assignment_id
-    JOIN player p ON p.id = g.player_id
-    LEFT JOIN app_user u ON u.id = g.verified_by
-   WHERE g.relationship = 'self' AND g.verification_state = 'verified' AND g.consent_state = 'granted'
-     AND a.active AND (g.valid_until IS NULL OR g.valid_until > sa_today())
-     AND (p.born IS NULL OR majority_on(p.born) > sa_today())
-     AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = g.player_id)
-   ORDER BY g.player_id, g.consent_at NULLS LAST, g.id;
-  GET DIAGNOSTICS n = ROW_COUNT;
-  RETURN n;
-END $$ LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp;
-REVOKE ALL ON FUNCTION pupil_signin_carry_over() FROM PUBLIC;
-
-DO $carry$
-DECLARE n integer;
-BEGIN
-  n := pupil_signin_carry_over();
-  RAISE NOTICE 'db/169: % boy(s) enrolled before this file keep their own sign-in, as the school''s yes', n;
-END $carry$;
 
 
 -- ── 5 · The gate, and the doors that already read his own ──────────
@@ -1153,38 +1207,6 @@ BEGIN
 END $gate$;
 
 
--- ── 5b · His notices, and their delivery to his phone ─────────────
--- Every route by which a notice is read (notification_read and the side's,
--- the sheet's and the team-wide policies) asks app_can() or my_own_boy(),
--- which the gate above already closes. This restrictive policy says the
--- rule once more, on the notice itself, so that no notice route added later
--- can miss it: an account whose own sign-in is not in force reads only the
--- system's own notices addressed to it (§3.3's left column: "A parent has
--- said yes", "The school has answered", a role that ended). Delivery to a
--- phone follows: services/api/notify/push-api.mjs fanOut() asks, as each
--- recipient, `select 1 from notification where id = $1` before it sends,
--- and records the delivery as the recipient under the same policy
--- (notification_delivery_insert), so a closed boy's phone is sent nothing
--- and no delivery can be written to him. The question is asked once per
--- statement (an initplan), not once per row.
-CREATE OR REPLACE FUNCTION pupil_signin_mine_open() RETURNS boolean AS $$
-  SELECT pupil_signin_open(app_user_id())
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-REVOKE ALL ON FUNCTION pupil_signin_mine_open() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION pupil_signin_mine_open() TO scrbrd_app;
-
-DO $notice$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'notification'::regclass AND polname = 'notification_pupil_signin') THEN
-    CREATE POLICY notification_pupil_signin ON notification AS RESTRICTIVE
-      FOR SELECT USING (
-        (SELECT pupil_signin_mine_open())
-        OR (kind = 'system' AND recipient_id = app_user_id())
-      );
-  END IF;
-END $notice$;
-
-
 -- ── 7 · Who may call what ──────────────────────────────────────────
 -- Said again as one list (each was revoked the statement after it was made).
 DO $grants$
@@ -1193,11 +1215,11 @@ DECLARE
   v_doors text[] := ARRAY['pupil_signin_consent_set(uuid,boolean)', 'pupil_signin_office_set(uuid,boolean,text,date)',
                           'pupil_signin_retry(uuid)', 'pupil_signin_state(uuid)', 'my_own_signin()', 'pupil_signin_mine_open()',
                           'pupil_claim_not_him(uuid)'];
-  v_internal text[] := ARRAY['pupil_signin_stayed(uuid,timestamptz)', 'pupil_signin_yes_stands(uuid)', 'pupil_signin_in_force(uuid)',
+  v_internal text[] := ARRAY['pupil_signin_stayed(uuid,timestamptz,uuid)', 'pupil_signin_yes_stands(uuid)', 'pupil_signin_in_force(uuid)',
                              'pupil_signin_open(uuid)', 'pupil_signin_is_pupils(uuid)', 'pupil_signin_child_account(uuid)',
                              'pupil_signin_terms_version()', 'pupil_signin_stamp(uuid)', 'pupil_signin_after_yes(uuid,text)',
                              'pupil_signin_my_link(uuid)', 'pupil_signin_enrolled_yes(uuid)', 'pupil_signin_link_no()',
-                             'pupil_signin_account_ended()', 'pupil_signin_born_kept()', 'pupil_signin_carry_over()'];
+                             'pupil_signin_account_ended()', 'pupil_signin_carry_over()'];
 BEGIN
   FOREACH f IN ARRAY v_doors LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure);
@@ -1238,7 +1260,7 @@ BEGIN
               WHERE c.oid IN ('pupil_signin_consent'::regclass, 'pupil_signin_consent_seq_seq'::regclass) AND x.grantee <> c.relowner) THEN
     RAISE EXCEPTION 'db/169: pupil_signin_consent or its sequence is granted to somebody other than its owner';
   END IF;
-  FOR t IN SELECT unnest(ARRAY['assignment_subject:pupil_signin_link_no', 'app_user:pupil_signin_account_ended', 'player:pupil_signin_born_kept']) LOOP
+  FOR t IN SELECT unnest(ARRAY['assignment_subject:pupil_signin_link_no', 'app_user:pupil_signin_account_ended']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = split_part(t, ':', 1)::regclass
                       AND tgname = split_part(t, ':', 2) AND tgenabled = 'O') THEN
       RAISE EXCEPTION 'db/169: the trigger % is missing or disabled', t;
@@ -1270,16 +1292,16 @@ BEGIN
   FOR f IN SELECT unnest(ARRAY['pupil_signin_consent_set(uuid,boolean)', 'pupil_signin_office_set(uuid,boolean,text,date)',
                                'pupil_signin_retry(uuid)', 'pupil_signin_state(uuid)', 'my_own_signin()', 'pupil_signin_mine_open()',
                                'pupil_claim_not_him(uuid)',
-                               'pupil_signin_stayed(uuid,timestamptz)', 'pupil_signin_yes_stands(uuid)', 'pupil_signin_in_force(uuid)',
+                               'pupil_signin_stayed(uuid,timestamptz,uuid)', 'pupil_signin_yes_stands(uuid)', 'pupil_signin_in_force(uuid)',
                                'pupil_signin_open(uuid)', 'pupil_signin_is_pupils(uuid)', 'pupil_signin_child_account(uuid)',
                                'pupil_signin_terms_version()', 'pupil_signin_stamp(uuid)', 'pupil_signin_after_yes(uuid,text)',
                                'pupil_signin_my_link(uuid)', 'pupil_signin_enrolled_yes(uuid)', 'pupil_signin_link_no()',
-                               'pupil_signin_account_ended()', 'pupil_signin_born_kept()', 'pupil_signin_carry_over()']) LOOP
+                               'pupil_signin_account_ended()', 'pupil_signin_carry_over()']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/169: % does not pin its search_path', f;
     END IF;
-    IF f NOT IN ('pupil_signin_carry_over()', 'pupil_signin_born_kept()') AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
+    IF f <> 'pupil_signin_carry_over()' AND NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
       RAISE EXCEPTION 'db/169: % is not a definer', f;
     END IF;
     -- Read back from the ACL: the owner, and scrbrd_app for a door; nobody else.

@@ -77,7 +77,7 @@ export function OfficeOwnSignIn({ player }) {
                 onChange={(e) => setForm((f) => ({ ...f, signedOn: e.target.value }))}/>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <DBtn disabled={busy || !formReady(form)} testid="office-own-signin-form-save"
-                  onClick={() => send({ formOnFile: true, formSignedBy: form.signedBy.trim(), formSignedOn: form.signedOn }, "The form is recorded as on file.")}>Record it</DBtn>
+                  onClick={() => send({ formOnFile: true, formSignedBy: form.signedBy.trim() || undefined, formSignedOn: form.signedOn || undefined }, "The form is recorded as on file.")}>Record it</DBtn>
                 <DBtn quiet disabled={busy} onClick={() => setForm({ open: false, signedBy: "", signedOn: "" })}>Cancel</DBtn>
               </div>
             </div>
