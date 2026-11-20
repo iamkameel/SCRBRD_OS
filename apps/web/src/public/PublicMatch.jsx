@@ -12,7 +12,7 @@ import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx"
 import { SuperOverScores, markedInnings } from "../views/matchcentre/scores.jsx";
 import { matchInningsOf } from "../lib/superOver.js";
 import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
-import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
+import { RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, soonRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { publicStory, read, readPar, samePeople } from "./reads.js";
@@ -422,7 +422,7 @@ export function PublicMatch({ matchId, view }) {
         </ErrorBoundary>
         <ErrorBoundary name="match notices">
         <div style={{ display: "grid", gap: T.space.md, margin: `${T.space.md} 0` }}>
-          {match.status === "upcoming" && played.length === 0 && <PreTossCard match={match} weather={null}/>}
+          {/* No "Before the toss" card: the match card says the day, the start and the ground already (§2.2). */}
           {notice && <RevisionBanner notice={notice}/>}
         </div>
         </ErrorBoundary>
