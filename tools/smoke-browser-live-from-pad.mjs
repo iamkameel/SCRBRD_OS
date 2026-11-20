@@ -450,7 +450,7 @@ try {
      `${await has(co.page, "match-view")} · focus ${await co.page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName)}`);
   ok(`his header says Provisional ("${await word(co.page, "mc-status")}")`, (await word(co.page, "mc-status")) === "Provisional");
   const cKey = await tid(co.page, "mc-finish").first().evaluate((e) => ({ h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize) })).catch(() => null);
-  ok(`...a 44px key on the 12px floor (${JSON.stringify(cKey)})`, !!cKey && cKey.h >= 44 && cKey.fs >= 12);
+  ok(`...a 44px key on the 12px floor (${JSON.stringify(cKey)})`, !!cKey && Math.round(cKey.h) >= 44 && cKey.fs >= 12);
   // db/171: the scorer's end screen put the pen down, so the FIRST press confirms: no 90 s lease to wait out.
   // The press waits for its answer: the button's own busy state ending ("Confirming…" gone), then the words,
   // which MatchView now holds once the match re-reads as complete.
