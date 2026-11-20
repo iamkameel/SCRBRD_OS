@@ -1,19 +1,22 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { T, GLOBAL_CSS } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
-import { boardInnings, boundaryCount, matchLine, revisionNotice, sidesOf, statusSentence, teamOf, tossWords } from "../lib/matchCentre.js";
+import { boardInnings, boundaryCount, matchLine, revisionNotice, sideOfTeam, sidesOf, teamOf, tossWords } from "../lib/matchCentre.js";
+import { cardModel, paceWords } from "../lib/matchCard.js";
+import { MatchCardCore, UpdatedAgo } from "../ui/matchCardCore.jsx";
 import { FollowOffer } from "./followOffer.jsx";
 import { humanDateTime } from "../lib/format.js";
-import { SummaryTab, CommentaryTab, PartnershipsTab, summaryIsResult } from "../views/matchcentre/tabs-core.jsx";
+import { SummaryTab, CommentaryTab, PartnershipsTab } from "../views/matchcentre/tabs-core.jsx";
 import { SourcedLazy, ballsLine, shotsCaptured } from "../ui/sourcedLazy.jsx";
 import { InningsToggle, ScorecardTab } from "../views/matchcentre/scorecard.jsx";
-import { HeaderScores, StatusLine } from "../views/matchcentre/scores.jsx";
+import { SuperOverScores, markedInnings } from "../views/matchcentre/scores.jsx";
 import { matchInningsOf } from "../lib/superOver.js";
 import { Panel, Quiet } from "../views/matchcentre/bits.jsx";
-import { PreTossCard, RevisionBanner } from "../views/matchcentre/banners.jsx";
+import { RevisionBanner } from "../views/matchcentre/banners.jsx";
 import { liveRefreshMs, soonRefreshMs, useAnnouncement, useMoments, useTicker } from "../views/matchcentre/live.js";
 import { ErrorBoundary } from "../ui/ErrorBoundary.jsx";
 import { publicStory, read, readPar, samePeople } from "./reads.js";
+import { dottedNames } from "./publicLog.js";
 import { LOW_LIVE_FACTOR, LOW_SOON_FACTOR, useLowData } from "./lowData.js";
 import { publicOfficial } from "../lib/official.js";
 import { StateLabel } from "../ui/stateLabel.jsx";
@@ -292,7 +295,6 @@ export function PublicMatch({ matchId, view }) {
   // ...of the match's own innings: a super over has its block (SCRBRD-114 phase 3b).
   const inningsSel = picked ?? Math.max(0, matchInningsOf(played).length - 1);
   const commentary = story?.commentary ?? [];
-  const liveSO = story?.liveSO ?? null;
   const result = story?.result ?? null;
   // The result, as one moment (SCRBRD-133 §5.2 row 13, public with reasons: false), once play has decided it: the
   // same synthetic line MatchView and the display add, keyed per match, so it arrives once and a reload replays it never.
@@ -338,21 +340,34 @@ export function PublicMatch({ matchId, view }) {
 
   const sides = sidesOf(match);
   const isLive = match.status === "live";
-  // Slice 4 (DESIGN_DIRECTION Q2): decided on the pad and not yet confirmed by the coach, the result reads
-  // "Provisional" here as on every signed-in card: never Live, never a bare Result.
-  const provisional = isLive && !!folded?.result && !liveSO;
-  // CRI-1.2: the status sentence says where the match stands; the line under it does not say it again.
-  const line = matchLine({ match, competition: null, weather: null });
-  const st = statusSentence(match, folded ? { innings: played, result: folded.result, conditions: data.fold?.conditions } : null, { result });
+  // Redesign slice 2 (DESIGN_DIRECTION §2.2, §3.5): the match card at its board size heads the page, the one way
+  // every signed-in screen draws a match — the state ("Live", the day, "Result"), both sides with their scores, the
+  // status sentence — made once here so Share says the very sentence the card does.
+  const card = cardModel({ match, fold: folded ? { innings: played, result: folded.result, conditions: data.fold?.conditions } : null,
+    resultSaid: result });
+  const st = card.sentence;
+  const decided = st.state === "result" || st.state === "super_over";
+  // A ground, a time and an age group the card has not said already: while play is on, or after it. Before the
+  // first ball the card's own sentence says where and when ("Starts 17:25 · Hilton Oval"), and it is said once.
+  // Once played, the card's state line keeps the day ("Result · Tue 17 Nov"), so the line does not say it again.
+  const line = card.state.kind === "upcoming" ? null
+    : matchLine({ match: card.day ? { ...match, date: null } : match, competition: null, weather: null }) || null;
   const notice = revisionNotice(boardInn);
-  // §3.3: a live Summary says the status sentence under its board, so the header does not; if that panel fails,
-  // its boundary keeps the sentence above the card.
-  const summarySays = tab === "summary" && !summaryIsResult({ match, innings: played, result, settled: story?.settled ?? false });
+  // Q14 (Kameel, 19 Nov: "Updates every 15 seconds"): the pace this page reads at, said while it is live. In Low
+  // data the switch's own line says it ("about once a minute"), so it is not said twice.
+  const playing = isLive && !(story?.settled ?? false);
+  const pace = playing && !low.on ? paceWords(Math.max(5000, liveRefreshMs())) : null;
+  // GA-I36 §5: the "Corrected" chip, beside the side whose innings moved (or the latest), never a second figure.
+  const chip = fx && fixes ? <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/> : null;
+  const markInn = chip ? markedInnings(played, fixes.corrected) : null;
+  const mark = markInn && !markInn.superOver ? { end: sideOfTeam(match, markInn.battingTeam) ?? "home", node: chip } : null;
+  // The 18 Nov names (PUBLIC_DATA, after D4), where the server sends them: a boy without consent as "R ••••••".
+  const dotted = dottedNames(data.people);
   const ctx = { match, innings: played, result, commentary: fixes?.commentary ?? commentary, events, fold: data.fold, par: data.par, settled: story?.settled ?? false,
     demo: false, overs: match.overs || 20,
     inningsSel, setInningsSel: setPicked, phone, setTab, moment, overSummary, shownRuns,
-    status: st,             // EXPERIENCE_PASS §3.3: the Summary says it under the board; the header, on every other tab
-    okAt: data.okAt,        // CRI-1.1: the board's "Updated 4 s ago · Live"
+    status: null,           // §2.2: the card says the sentence, on every tab, once
+    okAt: null,             // ...and how fresh it is; the Board under it does not say it again
     quietMoments: true,     // the region below says it; the moment is drawn, not said twice
     lowData: low.on };      // CRI-2.4: no chart, no chunk fetched for one
 
@@ -374,23 +389,22 @@ export function PublicMatch({ matchId, view }) {
             wrapped. */}
         <ErrorBoundary name="scoreboard">
         <header style={{ display: "grid", gap: T.space.sm }}>
-          <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !(folded?.result && !liveSO) ? T.brand.accentText : T.content.secondary,
-            display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
-            {isLive && !(folded?.result && !liveSO) && <span className="live-dot" aria-hidden="true"/>}
-            {provisional ? "Provisional" : (folded?.result && !liveSO) || (match.result && match.result.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
-          </span>
-          <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
-            {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
+          {/* The page's title for a reader that moves by headings; the card below says the sides to the eye. */}
+          <h1 data-testid="mc-title" className="sr-only" style={{ ...T.role.title.md, margin: 0 }}>
+            {sides.home.full} v {sides.away.full}
           </h1>
-          {/* GA-I36 §5 (Kameel, 14 Nov: "one mark, beside the innings line that moved"): when, team-level, never who or why. */}
-          {played.length > 0 && <HeaderScores match={match} played={played} movedInnings={fixes?.corrected}
-            mark={fx && fixes ? <fx.CorrectedChip at={fixes.at} lines={() => [fixes.line]}/> : null}/>}
-          {!summarySays && <StatusLine st={st} except={["upcoming"]}/>}
+          <MatchCardCore size="board" match={match} model={card} testid="mc-card" stateTestid="mc-status" scoresTestid="mc-scores"
+            statusTestid={decided ? "mc-result" : "mc-status-line"} sideTestid="mc-side" mark={mark}
+            updated={playing && data.okAt != null ? <UpdatedAgo at={data.okAt} testid="mc-updated"/> : null}>
+            {/* Each super over apart and labelled (SCRBRD-114 3b), under the match's own two sides. */}
+            <SuperOverScores match={match} played={played} mark={chip} markAt={markInn?.superOver ? markInn : null}/>
+            {pace && <p data-testid="mc-pace" style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary, margin: 0 }}>{pace}</p>}
+          </MatchCardCore>
           {/* OFFICIAL_RESULT D11, Q3: "Provisional" or "Official result · confirmed 20:15, 11 Oct" — the
               time only, never who, never a reason, and never "Under review" (the server says a disputed
               result is not official). Announced when a poll changes it. */}
           <div role="status" aria-live="polite" data-testid="public-official">
-            {(() => { const w = provisional ? { kind: "provisional", why: null } : publicOfficial(match.result, match.status); return w ? <StateLabel kind={w.kind} why={w.why} compact/> : null; })()}
+            {(() => { const w = publicOfficial(match.result, match.status); return w ? <StateLabel kind={w.kind} why={w.why} compact/> : null; })()}
           </div>
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
           {/* Q18: the page's own link, the sides and the sentence, never a boy. Q19: the ground display, which the
@@ -410,7 +424,7 @@ export function PublicMatch({ matchId, view }) {
         </ErrorBoundary>
         <ErrorBoundary name="match notices">
         <div style={{ display: "grid", gap: T.space.md, margin: `${T.space.md} 0` }}>
-          {match.status === "upcoming" && played.length === 0 && <PreTossCard match={match} weather={null}/>}
+          {/* No "Before the toss" card: the match card says the day, the start and the ground already (§2.2). */}
           {notice && <RevisionBanner notice={notice}/>}
         </div>
         </ErrorBoundary>
@@ -421,7 +435,7 @@ export function PublicMatch({ matchId, view }) {
 
         <TabStrip tabs={TABS} tab={tab} setTab={setTab} narrow={phone} label="Match"/>
         <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={panelLabel(TABS, tab, phone)} data-testid={`mc-panel-${tab}`} tabIndex={0} style={{ outline: "none" }}>
-          <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab} before={summarySays ? <StatusLine st={st} except={["upcoming"]}/> : null}>
+          <ErrorBoundary key={tab} name={tab === "details" ? "match details" : tab}>
             {tab === "summary" ? <SummaryTab {...ctx}/>
               : tab === "scorecard" ? <ScorecardTab {...ctx}/>
               : tab === "commentary" ? <CommentaryTab {...ctx}/>
@@ -430,8 +444,10 @@ export function PublicMatch({ matchId, view }) {
               : <PublicDetailsTab {...ctx}/>}
           </ErrorBoundary>
         </div>
-        <p data-testid="public-note" style={{ ...T.role.body, fontSize: "13px", color: T.content.tertiary, margin: `${T.space.xl} 0 0` }}>
-          Players are named here only where their school and family have agreed to it; everyone else is shown by position.
+        <p data-testid="public-note" data-names={dotted ? "initials" : "positions"} style={{ ...T.role.body, fontSize: "13px", color: T.content.tertiary, margin: `${T.space.xl} 0 0` }}>
+          {dotted
+            ? "Players are named here only where their school and family have agreed to it; everyone else is shown by an initial, or by position."
+            : "Players are named here only where their school and family have agreed to it; everyone else is shown by position."}
         </p>
       </div>
     </Frame>

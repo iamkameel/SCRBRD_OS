@@ -108,6 +108,7 @@ Environment:
 | `PUBLIC_PAGES` | `on` — only for the ground display and public-page steps |
 | `PUBLIC_PSEUDONYM_SECRET` | another new random 32+ characters, different from `SESSION_SECRET` |
 | `PUBLIC_TRUST_PROXY_HOPS` | `1` |
+| `PUBLIC_NAME_INITIALS` | `on` — the 18 Nov names: a boy without public consent is "R ••••••" on the public page and the ground display (`DEPLOYING.md`). Development only; production ignores it |
 
 Leave these unset: `GOOGLE_WEATHER_API_KEY`, `SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`, any AI key, and `WEB_ORIGIN`. Google sign-in

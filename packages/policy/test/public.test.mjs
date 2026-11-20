@@ -33,7 +33,7 @@ import { dirname, join } from "node:path";
 import {
   DECISIONS, SURFACES, surface, ROBOTS,
   NEVER_PUBLIC_RULES, NEVER_PUBLIC, PUBLIC_DESPITE_MASK, neverPublicRule, assertPublicSelect,
-  POSITION_LABELS, publicName, initialAndSurname, STREAM_CAPTION,
+  POSITION_LABELS, publicName, initialAndSurname, STREAM_CAPTION, initialAndDots, NAME_DOTS,
 } from "../src/public.mjs";
 import { READ_QUERIES } from "../../../services/api/read/read-api.mjs";
 import { TABLES, maskedColumns } from "../src/tables.mjs";
@@ -988,6 +988,40 @@ group("D2 — the stream caption's own rule: role words for every child (PUBLIC_
   // put back between the database and the screen.
   ok("the overlay's read is broadcast_state() itself, with nothing layered on it",
      READ_QUERIES.broadcast_state?.text === "select * from broadcast_state($1)", READ_QUERIES.broadcast_state?.text);
+}
+
+group("The 18 Nov rule: an initial and fixed-length dots, only where the caller switches it on");
+{
+  const D = "\u2022".repeat(6);
+  ok("the dots are six, fixed", NAME_DOTS === D && [...NAME_DOTS].length === 6);
+  ok("\"R ••••••\": the initial \"R Pillay\" would show, then the dots", initialAndDots("Rohan Pillay") === `R ${D}`);
+  ok("...whatever the surname's length", initialAndDots("Rohan van der Merwe-Smithsonian") === `R ${D}`
+     && initialAndDots("Rohan Ng") === `R ${D}`);
+  ok("...the known-as's initial, as the name would show", initialAndDots("Johannes Botha", { surname: "Botha", knownAs: "Hannes" }) === `H ${D}`);
+  ok("...a stored surname is never the initial", initialAndDots("Khumalo Sipho", { surname: "Khumalo" }) === `S ${D}`);
+  ok("...a one-word name, its one letter", initialAndDots("Sipho") === `S ${D}`);
+  ok("...nothing for no name, or a name that is all surname", initialAndDots("   ") === "" && initialAndDots(null) === ""
+     && initialAndDots("van der Merwe") === "");
+
+  const on = (/** @type {Partial<NameFacts>} */ f) => name({ ...f, initials: true });
+  ok("switched on: a boy with no consent is \"D ••••••\"", on({ consents: [] }) === `D ${D}`);
+  ok("...a never-public boy alike, and a boy of an age group with names off, and a withdrawn consent",
+     on({ neverPublic: true }) === `D ${D}` && on({ namesOff: true }) === `D ${D}`
+     && on({ consents: [guardian({ endedOn: "2026-06-01" })] }) === `D ${D}`);
+  ok("...so four reasons are still one string", new Set([{ neverPublic: true }, { namesOff: true }, { consents: [] },
+     { consents: [guardian({ competent: false })] }].map(on)).size === 1);
+  ok("...a consenting boy is still named in full: initial and surname", on({}) === "D Erasmus");
+  ok("...a name the scorer typed is never said: his position (L6)", on({ typed: true }) === "Batter");
+  ok("...nor a side whose school is not on the platform (L5), nor a side not published (§1.1)",
+     on({ schoolOnPlatform: false }) === "Batter" && on({ schoolPublished: false }) === "Batter");
+  ok("...a fact nobody established is no surface: his position",
+     publicName(/** @type {NameFacts} */ ({ ...NAMED, typed: undefined, consents: [], initials: true })) === "Batter");
+  ok("...a record with no usable initial: his position", on({ consents: [], fullName: "van der Merwe" }) === "Batter");
+  ok("...on the per-surface path too", publicName({ ...NAMED, consents: [], surface: "live", initials: true }) === `D ${D}`);
+  ok("switched off, or anything but an exact true: today's answer, the position",
+     name({ consents: [] }) === "Batter" && name({ consents: [], initials: false }) === "Batter"
+     && name({ consents: [], initials: /** @type {any} */ ("on") }) === "Batter" && name({ neverPublic: true, initials: /** @type {any} */ (1) }) === "Batter");
+  ok("the stream caption's rule does not read it: role words whatever is passed", STREAM_CAPTION.byTermsAllowed === false);
 }
 
 console.log("\n" + "─".repeat(52));

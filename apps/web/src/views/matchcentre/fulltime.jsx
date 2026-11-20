@@ -231,18 +231,22 @@ export const CONFIRM_RESULT_WORDS = Object.freeze({
  * every answer is said here in words. It is not the official result
  * (OFFICIAL_RESULT D11): that stays the director of sport's or the
  * organiser's, after it.
- * @param {{ match: any, result: string | null, onConfirmed?: (() => void) | null }} props
+ * The answer to a confirm that went through is the caller's to hold (`done`): the confirm re-reads the fixture,
+ * which comes back complete, and the caller keeps this panel and its words on screen through that.
+ * @param {{ match: any, result: string | null, done?: string | null, onConfirmed?: ((text: string) => void) | null }} props
  */
-export function ConfirmResultPanel({ match, result, onConfirmed = null }) {
+export function ConfirmResultPanel({ match, result, done: doneSaid = null, onConfirmed = null }) {
   const [busy, setBusy] = useState(false);
-  const [said, setSaid] = useState(/** @type {{ok: boolean, text: string} | null} */ (null));
+  const [mine, setSaid] = useState(/** @type {{ok: boolean, text: string} | null} */ (null));
+  const said = doneSaid ? { ok: true, text: doneSaid } : mine;
   const done = said?.ok === true;
   const confirm = async () => {
     setBusy(true); setSaid(null);
     try {
       const r = await api(`/api/matches/${match.id}/finalise`, { method: "POST" });
-      setSaid({ ok: true, text: CONFIRM_RESULT_WORDS[/** @type {keyof typeof CONFIRM_RESULT_WORDS} */ (r?.state)] ?? CONFIRM_RESULT_WORDS.finished });
-      onConfirmed?.();
+      const text = CONFIRM_RESULT_WORDS[/** @type {keyof typeof CONFIRM_RESULT_WORDS} */ (r?.state)] ?? CONFIRM_RESULT_WORDS.finished;
+      setSaid({ ok: true, text });
+      onConfirmed?.(text);
     } catch (/** @type {any} */ e) {
       setSaid({ ok: false, text: CONFIRM_RESULT_WORDS[/** @type {keyof typeof CONFIRM_RESULT_WORDS} */ (e?.code)] ?? "Couldn't reach SCRBRD; the result is not confirmed. Try again." });
     } finally { setBusy(false); }
