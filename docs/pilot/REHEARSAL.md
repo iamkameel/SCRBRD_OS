@@ -20,7 +20,7 @@ Steps marked S need a fixture on a server. Production has no seed, and its roste
 
 ☐ Phone A: tap **Continue with Google**. Phone B: type your email and a fresh office code in **Sign-in code**, tap **Sign In**. Phone C: either. You should reach the app, not **Waiting for your school office**. A code works once: note who issued it.
 
-☐ Tap **Matches** (in the menu, or on the bottom bar of a phone). The Saturday 31 October 2026 fixture is listed with **Start scoring →** (or **Open live scorer →** once live). Do not open it.
+☐ Tap **Matches** (in the menu, or on the bottom bar of a phone). The Saturday 31 October 2026 fixture is listed with **Start scoring** (or **Resume scoring** once live). Do not open it.
 
 ## 3. Pick the side (look only)
 
@@ -74,7 +74,7 @@ The coach steps are not rehearsed with a real save. **Pick the side** lists the 
 
 ☐ (P) Back on the start screen, tap **Practice Matches**, then **Delete all practice matches**. Confirm. See "Deleted. No practice match, name or weather record is left on this phone." Do this on every phone.
 
-☐ (S) Wait for **Sent**. In **Open match**, check the scorecard.
+☐ (S) Wait for **Sent**. In **Open v** and the other side, check the scorecard.
 
 ## What went wrong
 

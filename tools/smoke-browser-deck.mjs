@@ -362,7 +362,8 @@ try {
      && /Need \d+ off \d+/.test(await page.locator(`${day} [data-testid="day-board"]`).innerText()));
   const nextTxt = await page.locator(`${day} [data-testid="day-next"]`).innerText();
   ok("Next fixture: the sides, the ground, the bus and the weather",
-     /Riverside College 1st XI v Ashdown High 1st XI/.test(nextTxt) && /Ashdown High, Top Field/.test(nextTxt) && /Bus 10:45/.test(nextTxt) && /24° partly cloudy/.test(nextTxt), nextTxt);
+     // Slice 1: the match card, a side to a row.
+     /Riverside College 1st XI\s*\n\s*Ashdown High 1st XI/.test(nextTxt) && /Ashdown High, Top Field/.test(nextTxt) && /Bus 10:45/.test(nextTxt) && /24° partly cloudy/.test(nextTxt), nextTxt);
   ok("...ready or not, in words: three on record and the ground report not",
      /Team sheet · on record/.test(await page.locator(`${day} [data-testid="ready-squad"]`).innerText())
      && /Transport · on record/.test(await page.locator(`${day} [data-testid="ready-transport"]`).innerText())
@@ -378,9 +379,9 @@ try {
   const dayIds = await page.evaluate(() => { const all = [...document.querySelectorAll('[data-testid="deck"] [id]')].map((e) => e.id); return all.filter((x, i) => all.indexOf(x) !== i); });
   ok("no id is drawn twice on the slide", dayIds.length === 0, dayIds.join(", "));
   const beforeDay = requests.length;
-  await page.locator(`${day} button`, { hasText: /Open scorer/ }).first().dispatchEvent("click");
+  await page.locator(`${day} button`, { hasText: /Resume scoring/ }).first().dispatchEvent("click");
   await page.waitForTimeout(500);
-  ok("a click sent at \"Open scorer\" goes nowhere and sends nothing", requests.length === beforeDay && (await slideNow()) === "day", requests.slice(beforeDay).map((r) => `${r.method} ${r.url}`).join(", "));
+  ok("a click sent at \"Resume scoring\" goes nowhere and sends nothing", requests.length === beforeDay && (await slideNow()) === "day", requests.slice(beforeDay).map((r) => `${r.method} ${r.url}`).join(", "));
 
   group("A paper scorebook, into the record: a drawn page beside the real card reader");
   await goTo("scorebook");

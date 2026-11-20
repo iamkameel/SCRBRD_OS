@@ -95,7 +95,7 @@ const intoScorer = async () => {
   await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await page.waitForTimeout(700);
   await click(/^Live$/, 2500);
-  await click(/Open Live Scorer/i, 5000);
+  await click(/Open Live Scorer|Resume Scoring/i, 5000);
   await page.waitForTimeout(1500);
   await clearBlockers();
   if (!(await page.locator('[data-testid="basic-pad"]').count())) { await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 }).catch(() => {}); await page.locator('[data-testid="pad-basic-scoring"]').click({ timeout: 2500 }).catch(() => {}); }

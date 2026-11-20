@@ -175,8 +175,23 @@ async function nav(page, label) {
   return true;
 }
 
+/**
+ * The fixture's Match Details, where its Dossier button is (redesign slice 1:
+ * the list's row carries one action; the dossier sits in the details its tap
+ * opens). A tap on the row, unless its details are already open.
+ */
+async function showDetails(page, matchId) {
+  const row = page.locator(`[data-testid="match-card-${matchId}"]`);
+  await row.first().waitFor({ timeout: 10000 }).catch(() => {});
+  if (!(await row.count())) return;
+  if (await page.locator(`[data-testid="match-details"][data-match="${matchId}"]`).count()) return;
+  await row.locator(".os-card-action").first().click({ timeout: 4000 }).catch(() => {});
+  await page.locator(`[data-testid="match-details"][data-match="${matchId}"]`).waitFor({ timeout: 4000 }).catch(() => {});
+}
+
 /** Open the dossier for one fixture from Match Centre. */
 async function openDossier(page, matchId) {
+  await showDetails(page, matchId);
   const btn = page.locator(`[data-testid="dossier-open-${matchId}"]`);
   // The button is drawn on the fixture's card once Match Centre's reads have
   // answered; nav() gives it a fixed 1.5 s, and when the list came later the
@@ -294,6 +309,7 @@ try {
     ok("the Hilton 1XI coach signs in", await signIn(coach.page, "coach@example.invalid"));
     ok("Match Centre opens", await nav(coach.page, /Match Centre/));
     await coach.page.waitForTimeout(1500);
+    await showDetails(coach.page, soon);
     ok("the dossier is not offered on an upcoming fixture while the feature is off",
        (await coach.page.locator(`[data-testid="dossier-open-${soon}"]`).count()) === 0);
     ok("...and no dossier is drawn", (await coach.page.locator('[data-testid="dossier"]').count()) === 0);
@@ -491,6 +507,7 @@ try {
     } else {
       ok("the 1XI's dossier is not even offered to them", true);
     }
+    await showDetails(other.page, wrongSide);
     ok("their own side's dossier is offered",
        (await other.page.locator(`[data-testid="dossier-open-${wrongSide}"]`).count()) === 1);
     await other.ctx.close();

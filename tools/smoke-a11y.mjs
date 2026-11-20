@@ -2046,7 +2046,7 @@ async function walk(theme) {
     await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(800);
     await click(/^Live$/, 2500);
-    await click(/Open Live Scorer|Start Scoring/i, 5000);
+    await click(/Open Live Scorer|Start Scoring|Resume Scoring/i, 5000);
     await page.waitForTimeout(1600);
 
     // The new-over sheet is up the moment the scorer opens, which makes this
@@ -2204,7 +2204,7 @@ async function walk(theme) {
     await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
     await page.waitForTimeout(800);
     await click(/^Live$/, 2500);
-    await click(/Open Live Scorer|Start Scoring/i, 5000);
+    await click(/Open Live Scorer|Start Scoring|Resume Scoring/i, 5000);
     await page.waitForTimeout(1200);
 
     // ── The pad's menu: the override, live and remembered ──
@@ -2325,7 +2325,7 @@ async function padFit() {
       const click = async (re) => { const l = page.locator("button:not([disabled])", { hasText: re }).first(); if (await l.count()) { await l.click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(400); } };
       await click(/Get Started|Log In/); await click("Head Coach"); await click(/^Sign In$/); await page.waitForTimeout(1500);
       await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
-      await page.waitForTimeout(800); await click(/^Live$/); await click(/Open Live Scorer|Start Scoring/i); await page.waitForTimeout(1600);
+      await page.waitForTimeout(800); await click(/^Live$/); await click(/Open Live Scorer|Start Scoring|Resume Scoring/i); await page.waitForTimeout(1600);
       const basic = async (on) => {
         if (((await page.locator('[data-testid="basic-pad"]').count()) > 0) === on) return;
         await page.locator('[data-testid="pad-menu"]').click({ timeout: 2500 });

@@ -10,7 +10,7 @@ Open `scrbrd.onrender.com/app`. Tap **Continue with Google**, or type your email
 
 On **Today**, a **Match day** card shows your next fixture: the opponent, the time, how many boys are named, the bus, and a count of signals. Tap **Open the Coach tab**, or **See the signals**.
 
-The same screen is on the fixture: **Matches** (in the menu, or on the bottom bar of a phone), **Open match**, then **Coach**. No **Coach** tab means the office has not given you that side. Call [who to call].
+The same screen is on the fixture: **Matches** (in the menu, or on the bottom bar of a phone), **Open v** and the other side, then **Coach**. No **Coach** tab means the office has not given you that side. Call [who to call].
 
 Before the first ball it shows the day, **The side** and **Our bowlers this week**. While the match is on it shows the board and your bowlers with their overs left. Afterwards it shows each spell as the match log recorded it.
 
@@ -24,7 +24,7 @@ On a boy's card, **Set Availability** does the same for one boy. **The side** on
 
 ## Follow a match live
 
-Tap **Matches**, then **Open match** on the fixture. A live match refreshes by itself. Read **Summary**, **Scorecard** and **Commentary**.
+Tap **Matches**, then **Open v** and the other side on the fixture. A live match refreshes by itself. Read **Summary**, **Scorecard** and **Commentary**.
 
 ## Practice match
 
