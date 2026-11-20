@@ -474,14 +474,17 @@ export function NoSchool({ name, onSignOut, onSignInAgain = null, onJoined, onOp
   // Back from the pad's "Join it", or the record's: the join form, scrolled to and focused.
   const [askJoin, setAskJoin] = useState(joinFirst);
   useEffect(() => { if (joinFirst) setAskJoin(joinFirst); }, [joinFirst]);
+  // `pupil` too: until /api/pupil/state answers (db/168) the screen is "Reading
+  // your account…" and the form is not drawn, so a focus tried while the
+  // schools arrived first found no heading and was never tried again.
   useEffect(() => {
-    if (!askJoin || schools === null) return;
+    if (!askJoin || schools === null || pupil === undefined) return;
     const h = document.getElementById("join-school-title");
     if (!h) return;
     const still = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     h.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "start" });
     h.focus({ preventScroll: true });
-  }, [askJoin, schools]);
+  }, [askJoin, schools, pupil]);
 
   // A withdraw that did not happen is said in words, above the list, because a
   // request that was answered first leaves the pending row (and its words) behind.
