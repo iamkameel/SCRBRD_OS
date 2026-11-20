@@ -23,7 +23,10 @@
 --   20 Nov:
 --   A  an account holding a pupil's role (player, selfaccess) that names no
 --      boy is CLOSED by the gate, and the grant door refuses to make one
---      (player_required, as it already did for selfaccess).
+--      (player_required, as it already did for selfaccess). One account is
+--      not closed, by its id: the seeded test account spectator@ (db/98, and
+--      the same row in production and the demo), the test cast's, not a
+--      child's; tools/pupil-signin-count.sql lists it as exempt.
 --   B  a guardian may close the yes the school carried over for her son
 --      (how 'enrolled') herself; the office's real tick stays the office's.
 --   C  the school's yes (office, enrolled) lapses when his enrolment at the
@@ -480,6 +483,10 @@ BEGIN
     IF NOT pupil_signin_in_force(b) THEN RETURN false; END IF;
   END LOOP;
   IF v_any THEN RETURN true; END IF;
+  -- The seeded test account, spectator@example.invalid (db/98; the same row
+  -- in production and the demo, tools/sql/fix-player-without-team.sql): a
+  -- test cast's `player` on the 1st XI, not a child. A does not close it.
+  IF p_account = '88888888-0000-0000-0000-000000000001'::uuid THEN RETURN true; END IF;
   RETURN NOT EXISTS (SELECT 1 FROM role_assignment a
                       WHERE a.person_id = p_account AND a.active AND a.role IN ('player', 'selfaccess')
                         AND (a.valid_until IS NULL OR a.valid_until > sa_today()));

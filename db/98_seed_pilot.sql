@@ -921,29 +921,14 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
 -- database at the paste. The seed runs after the migrations, so it asks for
 -- the carry-over itself.
 --
--- The seeded spectator@ pupil held `player` on the 1st XI and named no boy.
--- db/169 closes such an account (Kameel, 20 Nov, A: a pupil's role names
--- the boy it is) and the grant door no longer makes one. So the seed gives
--- it the boy it is: a 1st XI roster row of its own (P Okafor, 16, no
--- figures, no family on the list yet), its roster link, and the office's
--- record that his signed consent form is on file, with who signed it and
--- when (D). It is still the pupil with `player` and no `selfaccess`, with
--- no figures of his own (REACH-D2), as every walk that signs in as it
--- expects.
--- On the 1st XI since the season began, as the rest of it (db/129 dates a pupil's reach by it).
-SELECT set_config('app.effective_on', '2026-01-15', false);
-INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
-  ('aaaaaaaa-0000-0000-0000-000000000099', '11111111-1111-1111-1111-111111111111', '1XI', 'P Okafor', 12, 'batter',
-   (current_date - interval '16 years 3 months')::date);
-SELECT set_config('app.effective_on', '', false);
-UPDATE app_user SET player_id = 'aaaaaaaa-0000-0000-0000-000000000099' WHERE id = '88888888-0000-0000-0000-000000000001';
+-- The seeded spectator@ account holds `player` on the 1st XI and names no
+-- boy: the seeded test account (production and the demo hold the same row,
+-- tools/sql/fix-player-without-team.sql). db/169 closes such an account
+-- (Kameel, 20 Nov, A) but not this one, by its id: it is the test cast's,
+-- not a child's, and the walks read the 1st XI as it.
 DO $seed164$
 BEGIN
   IF to_regprocedure('pupil_signin_carry_over()') IS NOT NULL THEN
     PERFORM pupil_signin_carry_over();
-    INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, school_id, form_on_file, form_signed_by, form_signed_on)
-    SELECT 'aaaaaaaa-0000-0000-0000-000000000099', 'yes', 'office', u.id, u.name, '11111111-1111-1111-1111-111111111111', true, 'N Okafor', current_date - 30
-      FROM app_user u WHERE u.id = '88888888-0000-0000-0000-00000000000c'
-       AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000099');
   END IF;
 END $seed164$;

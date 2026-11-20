@@ -16484,7 +16484,9 @@ BEGIN
     SELECT x.ok, x.reason INTO ok_, why FROM decide_role_request(q, true, 'v164', NULL, 'U16A') x;
     PERFORM _assert(NOT coalesce(ok_, false) AND why = 'player_required', format('§142 (noboy): the grant door made a `player` naming no boy (%s, %s)', ok_, why));
     PERFORM _assert(_v169_role(K2, 'player') IS NULL, '§142 (noboy): a refused grant left a `player` role');
-    PERFORM _assert(_v169_boy(PUPIL) IS NOT NULL AND _v169_open(PUPIL), '§142 (noboy): the seed''s spectator@ pupil names no boy, or is closed');
+    -- The seeded test account (spectator@, `player` on the 1st XI, no boy) is
+    -- the one account A does not close, by its id.
+    PERFORM _assert(_v169_boy(PUPIL) IS NULL AND _v169_open(PUPIL), '§142 (noboy): the seeded test account names a boy, or is closed');
 
   ELSIF p_case = 'form' THEN
     -- (form) D (optional now, required once counsel has read it): the
@@ -48789,7 +48791,8 @@ $m130$;
   --               principal do, and so does he
   --   (noboy)     A: a `player` naming no boy is closed, reads its own rows
   --               only; named, with a yes, it opens; the grant door refuses
-  --               to make one; the seed's spectator@ pupil names its boy
+  --               to make one; the seeded test account (spectator@) alone
+  --               is not closed, by its id
   --   (form)      D, optional until counsel: who signed the form and the
   --               day, when given, are checked and kept; a refusal records
   --               nothing; without them the tick is recorded; the office

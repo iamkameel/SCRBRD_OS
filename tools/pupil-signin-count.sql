@@ -34,6 +34,9 @@
 -- counts the closing accounts that also hold a role that is not a pupil's (a
 -- staff role): those would lose that role's reach too.
 --
+-- The seeded test account, spectator@ (88888888-0000-0000-0000-000000000001,
+-- `player` on the 1st XI, no boy), is not counted: db/169 leaves it open.
+--
 -- Three results: the counts; every no_boy_named account, by id (A: "see
 -- each account before choosing"); and every closing account that holds a
 -- staff role, by id, with its roles and why it closes. Ids and roles only:
@@ -90,6 +93,8 @@ acct AS (
 )
 SELECT x.id,
        NOT EXISTS (SELECT 1 FROM boys b WHERE b.account = x.id)
+         -- db/169 does not close the seeded test account (spectator@), by its id.
+         AND x.id <> '88888888-0000-0000-0000-000000000001'::uuid
          AND EXISTS (SELECT 1 FROM role_assignment a, today
                       WHERE a.person_id = x.id AND a.active AND a.role IN ('player', 'selfaccess')
                         AND (a.valid_until IS NULL OR a.valid_until > today.d)) AS no_boy_named,
