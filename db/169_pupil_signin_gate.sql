@@ -342,6 +342,13 @@ END $older$;
 
 
 -- ── 2 · The question ───────────────────────────────────────────────
+-- S8: the four functions the gate asks on every row are plpgsql, not SQL.
+-- A SQL function with its own search_path is planned afresh on every call,
+-- and row security calls these once per row per check: measured on the
+-- seed, a pupil's read of the ball log went from 5 ms (db/168) to 140 ms
+-- with SQL bodies, and to about 9 ms as plpgsql, whose plans are kept. A
+-- coach's from 4 ms to about 5 ms. The answers are the same.
+
 -- C: is he still at the school, and has he been there throughout since p_since?
 -- By his school's membership record: a day he left it (a membership ended
 -- that no other membership at the school covered) on or after p_since, or
@@ -349,7 +356,13 @@ END $older$;
 -- membership record at the school at all reads as at school (a roster row
 -- from before db/93's record).
 CREATE OR REPLACE FUNCTION pupil_signin_stayed(p_player uuid, p_since timestamptz) RETURNS boolean AS $$
-  SELECT NOT EXISTS (
+BEGIN
+  -- Most boys: no membership at his school has ended yet.
+  IF NOT EXISTS (SELECT 1 FROM player p JOIN team_membership m ON m.player_id = p.id AND m.school_id = p.school_id
+                  WHERE p.id = p_player AND m.left_on IS NOT NULL AND m.left_on <= sa_today()) THEN
+    RETURN true;
+  END IF;
+  RETURN NOT EXISTS (
     SELECT 1 FROM player p JOIN team_membership m ON m.player_id = p.id AND m.school_id = p.school_id
      WHERE p.id = p_player AND m.left_on IS NOT NULL AND m.left_on <= sa_today()
        AND NOT EXISTS (SELECT 1 FROM team_membership o
@@ -358,8 +371,8 @@ CREATE OR REPLACE FUNCTION pupil_signin_stayed(p_player uuid, p_since timestampt
        AND (m.left_on >= sa_date(p_since)
             OR NOT EXISTS (SELECT 1 FROM team_membership o
                             WHERE o.player_id = p.id AND o.school_id = p.school_id
-                              AND o.joined_on <= sa_today() AND (o.left_on IS NULL OR o.left_on > sa_today()))))
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+                              AND o.joined_on <= sa_today() AND (o.left_on IS NULL OR o.left_on > sa_today()))));
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION pupil_signin_stayed(uuid, timestamptz) FROM PUBLIC;
 
 -- Does this yes still stand? Not followed by a no that closes it:
@@ -373,45 +386,52 @@ REVOKE ALL ON FUNCTION pupil_signin_stayed(uuid, timestamptz) FROM PUBLIC;
 -- and has not been reopened since he came back to school (db/124's rule):
 -- the 29 Oct rule, on her own link.
 CREATE OR REPLACE FUNCTION pupil_signin_yes_stands(p_yes uuid) RETURNS boolean AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM pupil_signin_consent y
-     WHERE y.id = p_yes AND y.answer = 'yes'
-       AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent n
-                        WHERE n.player_id = y.player_id AND n.answer = 'no' AND n.seq > y.seq
-                          AND (n.how = 'office'
-                               OR (n.how = 'lapsed' AND y.how IN ('office', 'enrolled'))
-                               OR (n.how = 'guardian' AND y.how = 'enrolled')
-                               OR (y.how = 'guardian' AND n.given_by IS NOT NULL AND n.given_by = y.given_by)))
-       AND (y.how = 'guardian' OR pupil_signin_stayed(y.player_id, y.given_at))
-       AND (y.how <> 'guardian' OR EXISTS (
-             SELECT 1 FROM assignment_subject s
-               JOIN role_assignment a ON a.id = s.assignment_id
-              WHERE s.id = y.link_id AND s.player_id = y.player_id
-                AND a.person_id = y.given_by AND a.role = 'guardian'
-                AND s.relationship IS DISTINCT FROM 'self'
-                AND a.active
-                AND (a.valid_from  IS NULL OR a.valid_from  <= sa_today())
-                AND (a.valid_until IS NULL OR a.valid_until >  sa_today())
-                AND (a.expires_at  IS NULL OR a.expires_at  >  now())
-                AND NOT EXISTS (SELECT 1 FROM duty_suspension d WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
-                AND s.verification_state = 'verified'
-                AND s.consent_state = 'granted'
-                AND s.valid_from <= sa_today()
-                AND (s.valid_until IS NULL OR s.valid_until > sa_today())
-                AND a.created_at <= y.given_at AND s.created_at <= y.given_at
-                AND NOT guardian_link_reopened_since(y.player_id, y.given_at))))
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+DECLARE y pupil_signin_consent%ROWTYPE;
+BEGIN
+  SELECT * INTO y FROM pupil_signin_consent c WHERE c.id = p_yes AND c.answer = 'yes';
+  IF NOT FOUND THEN RETURN false; END IF;
+  IF EXISTS (SELECT 1 FROM pupil_signin_consent n
+              WHERE n.player_id = y.player_id AND n.answer = 'no' AND n.seq > y.seq
+                AND (n.how = 'office'
+                     OR (n.how = 'lapsed' AND y.how IN ('office', 'enrolled'))
+                     OR (n.how = 'guardian' AND y.how = 'enrolled')
+                     OR (y.how = 'guardian' AND n.given_by IS NOT NULL AND n.given_by = y.given_by))) THEN
+    RETURN false;
+  END IF;
+  IF y.how <> 'guardian' THEN RETURN pupil_signin_stayed(y.player_id, y.given_at); END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM assignment_subject s
+      JOIN role_assignment a ON a.id = s.assignment_id
+     WHERE s.id = y.link_id AND s.player_id = y.player_id
+       AND a.person_id = y.given_by AND a.role = 'guardian'
+       AND s.relationship IS DISTINCT FROM 'self'
+       AND a.active
+       AND (a.valid_from  IS NULL OR a.valid_from  <= sa_today())
+       AND (a.valid_until IS NULL OR a.valid_until >  sa_today())
+       AND (a.expires_at  IS NULL OR a.expires_at  >  now())
+       AND NOT EXISTS (SELECT 1 FROM duty_suspension d WHERE d.assignment_id = a.id AND d.lifted_at IS NULL)
+       AND s.verification_state = 'verified'
+       AND s.consent_state = 'granted'
+       AND s.valid_from <= sa_today()
+       AND (s.valid_until IS NULL OR s.valid_until > sa_today())
+       AND a.created_at <= y.given_at AND s.created_at <= y.given_at
+       AND NOT guardian_link_reopened_since(y.player_id, y.given_at));
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION pupil_signin_yes_stands(uuid) FROM PUBLIC;
 
 -- THE ONE QUESTION (Q7): is there a yes in force for this boy today?
 CREATE OR REPLACE FUNCTION pupil_signin_in_force(p_player uuid) RETURNS boolean AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM player p
-     WHERE p.id = p_player AND p.born IS NOT NULL
-       AND (majority_on(p.born) <= sa_today()
-            OR EXISTS (SELECT 1 FROM pupil_signin_consent y
-                        WHERE y.player_id = p.id AND y.answer = 'yes' AND pupil_signin_yes_stands(y.id))))
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+DECLARE v_born date; y uuid;
+BEGIN
+  SELECT p.born INTO v_born FROM player p WHERE p.id = p_player;
+  -- No such boy, or no date of birth: no.
+  IF v_born IS NULL THEN RETURN false; END IF;
+  IF majority_on(v_born) <= sa_today() THEN RETURN true; END IF;
+  FOR y IN SELECT c.id FROM pupil_signin_consent c WHERE c.player_id = p_player AND c.answer = 'yes' ORDER BY c.seq DESC LOOP
+    IF pupil_signin_yes_stands(y) THEN RETURN true; END IF;
+  END LOOP;
+  RETURN false;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION pupil_signin_in_force(uuid) FROM PUBLIC;
 
 -- THE GATE: may this account's assignments count? An account that answers
@@ -421,18 +441,21 @@ REVOKE ALL ON FUNCTION pupil_signin_in_force(uuid) FROM PUBLIC;
 -- Every other account: yes. NULL (no caller) is open: such a caller holds
 -- nothing anyway.
 CREATE OR REPLACE FUNCTION pupil_signin_open(p_account uuid) RETURNS boolean AS $$
-  WITH b AS (
-    SELECT u.player_id AS id FROM app_user u WHERE u.id = p_account AND u.player_id IS NOT NULL
-    UNION
-    SELECT g.player_id FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
-     WHERE a.person_id = p_account AND a.active AND g.relationship = 'self')
-  SELECT p_account IS NULL OR (
-           NOT EXISTS (SELECT 1 FROM b WHERE NOT pupil_signin_in_force(b.id))
-           AND (EXISTS (SELECT 1 FROM b)
-                OR NOT EXISTS (SELECT 1 FROM role_assignment a
-                                WHERE a.person_id = p_account AND a.active AND a.role IN ('player', 'selfaccess')
-                                  AND (a.valid_until IS NULL OR a.valid_until > sa_today()))))
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp
+DECLARE b uuid; v_any boolean := false;
+BEGIN
+  IF p_account IS NULL THEN RETURN true; END IF;
+  FOR b IN SELECT u.player_id FROM app_user u WHERE u.id = p_account AND u.player_id IS NOT NULL
+           UNION
+           SELECT g.player_id FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+            WHERE a.person_id = p_account AND a.active AND g.relationship = 'self' LOOP
+    v_any := true;
+    IF NOT pupil_signin_in_force(b) THEN RETURN false; END IF;
+  END LOOP;
+  IF v_any THEN RETURN true; END IF;
+  RETURN NOT EXISTS (SELECT 1 FROM role_assignment a
+                      WHERE a.person_id = p_account AND a.active AND a.role IN ('player', 'selfaccess')
+                        AND (a.valid_until IS NULL OR a.valid_until > sa_today()));
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp
    COST 500;
 REVOKE ALL ON FUNCTION pupil_signin_open(uuid) FROM PUBLIC;
 

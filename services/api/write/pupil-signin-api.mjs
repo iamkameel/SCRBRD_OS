@@ -57,6 +57,20 @@ export function formOf(b) {
   return { signedBy, signedOn: /^\d{4}-\d{2}-\d{2}$/.test(on) ? on : null };
 }
 
+/**
+ * A DATE as the database wrote it (YYYY-MM-DD). pg hands a DATE back as a
+ * Date at local midnight, so its local parts are the day. @param {unknown} v
+ */
+const dayOf = (v) => {
+  if (v == null) return null;
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return null;
+    const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
+    return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}`;
+  }
+  return String(v).slice(0, 10);
+};
+
 /** A pupil_signin_state() row, as Family and the office read it. @param {any} r */
 export const ownSigninState = (r) => (r ? {
   agreed: r.agreed === true,
@@ -67,7 +81,7 @@ export const ownSigninState = (r) => (r ? {
   yesBy: r.yes_by == null ? null : String(r.yes_by),
   yesAt: r.yes_at ? new Date(r.yes_at).toISOString() : null,
   formSignedBy: r.form_signed_by == null ? null : String(r.form_signed_by),
-  formSignedOn: r.form_signed_on == null ? null : String(r.form_signed_on),
+  formSignedOn: dayOf(r.form_signed_on),
   yours: r.yours === true,
   canAllow: r.can_allow === true,
   canStop: r.can_stop === true,
@@ -90,7 +104,8 @@ export async function recordFormOnFile(client, player, form) {
                                            [player, form.signedBy, form.signedOn]);
   if (r?.ok || r?.reason === "player_is_an_adult") return;
   const code = r?.reason || "refused";
-  throw Object.assign(new Error(code), { code: `form_${code}`, status: OWN_SIGNIN_STATUS[code] ?? 422 });
+  // The message is the code too: the requests routes answer { error: e.message }.
+  throw Object.assign(new Error(`form_${code}`), { code: `form_${code}`, status: OWN_SIGNIN_STATUS[code] ?? 422 });
 }
 
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
