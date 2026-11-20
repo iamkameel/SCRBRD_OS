@@ -15582,6 +15582,163 @@ BEGIN
   PERFORM set_config('app.user_id', '', true);
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/168 (section 141) ─────────────────────────────────────────────
+-- ┌── db/170 (section 145): Pro mode per fixture ──────────────────────
+-- Each case stages its own Hilton 1XI fixtures, invented, on no ground and
+-- far from any date the seed books; every opponent is 'V170 …'. The people
+-- are the seed's: C Hendricks (1XI coach), the 2XI coach, the Hilton school
+-- admin (fixture.update, not team.select), A Wessels (scorer), D Pillay (a
+-- 1XI parent) and the Westville 1XI coach.
+CREATE OR REPLACE FUNCTION _v170_fixture(p_tag text, p_days integer, p_away boolean DEFAULT false) RETURNS uuid AS $$
+  INSERT INTO match (school_id, team_code, opponent, away_school_id, away_team_code, starts_at, sport, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', '1XI', 'V170 ' || p_tag,
+          CASE WHEN p_away THEN '22222222-2222-2222-2222-222222222222'::uuid END, CASE WHEN p_away THEN '1XI' END,
+          ((sa_today() + p_days)::timestamp + time '10:00') AT TIME ZONE 'Africa/Johannesburg',
+          'cricket', 'T20', 20, 'scheduled')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The fixture's request as the owner reads it: the profile, '(null)', or '(none)' for no fixture.
+CREATE OR REPLACE FUNCTION _v170_profile(p_match uuid) RETURNS text AS $$
+  SELECT coalesce((SELECT coalesce(m.capture_profile, '(null)') FROM match m WHERE m.id = p_match), '(none)')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A request set as the owner, for staging only.
+CREATE OR REPLACE FUNCTION _v170_set(p_match uuid, p_profile text) RETURNS void AS $$
+  UPDATE match SET capture_profile = p_profile WHERE id = p_match
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The pad's setup at the toss, as the owner: the innings_start that declares.
+CREATE OR REPLACE FUNCTION _v170_setup(p_match uuid) RETURNS void AS $$
+  INSERT INTO ball_event (match_id, school_id, seq, epoch, innings, scorer_user_id, device_id,
+                          idempotency_key, client_seq, client_ts, kind, payload, capture_profile)
+  SELECT p_match, m.school_id, 1, 0, 0, '88888888-0000-0000-0000-000000000006', 'v170-owner',
+         'v170-' || p_match || '-start', 1, now(), 'innings_start', '{}'::jsonb, coalesce(m.capture_profile, 'quick')
+    FROM match m WHERE m.id = p_match
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The door's answer as one string, "ok reason", called as the current caller.
+CREATE OR REPLACE FUNCTION _v170_ask(p_match uuid, p_profile text) RETURNS text AS $$
+  SELECT coalesce((SELECT x.ok::text || ' ' || x.reason FROM match_capture_request(p_match, p_profile) x), '(no row)')
+$$ LANGUAGE sql SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of §145, run as the caller (scrbrd_app, under each person's
+-- session), so every write meets row security as the API's would. Each case
+-- stages its own fixtures and raises on its first failure.
+CREATE OR REPLACE FUNCTION _v170_case(p_case text) RETURNS void AS $$
+DECLARE
+  COACH   uuid := '88888888-0000-0000-0000-000000000004';   -- C Hendricks, the 1XI coach
+  COACH2  uuid := '88888888-0000-0000-0000-00000000000a';   -- the 2XI coach
+  ADMIN   uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's school admin: fixture.update, not team.select
+  SCORER  uuid := '88888888-0000-0000-0000-000000000006';   -- A Wessels
+  PARENT  uuid := '88888888-0000-0000-0000-000000000005';   -- D Pillay, a 1XI parent
+  WCOACH  uuid := '88888888-0000-0000-0000-00000000001a';   -- the Westville 1XI coach
+  F uuid; v text; n int; who uuid;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  IF p_case = 'coach' THEN
+    -- (coach) The fixture's coach asks for Pro mode: set, and the fixture holds full. Asked again:
+    -- unchanged. Cleared: set, and the fixture asks nothing.
+    F := _v170_fixture('coach', 171);
+    PERFORM _assert(_v170_profile(F) = '(null)', format('§145 (coach): a new fixture asks %s', _v170_profile(F)));
+    PERFORM _as(COACH);
+    v := _v170_ask(F, 'full');
+    PERFORM _assert(v = 'true set' AND _v170_profile(F) = 'full', format('§145 (coach): the coach asking full reads %s; it holds %s', v, _v170_profile(F)));
+    v := _v170_ask(F, 'full');
+    PERFORM _assert(v = 'true unchanged' AND _v170_profile(F) = 'full', format('§145 (coach): asked again reads %s; it holds %s', v, _v170_profile(F)));
+    v := _v170_ask(F, NULL);
+    PERFORM _assert(v = 'true set' AND _v170_profile(F) = '(null)', format('§145 (coach): cleared reads %s; it holds %s', v, _v170_profile(F)));
+
+  ELSIF p_case = 'office' THEN
+    -- (office) The school admin, who holds fixture.update and not team.select, asks for it: set.
+    F := _v170_fixture('office', 172);
+    PERFORM _as(ADMIN);
+    v := _v170_ask(F, 'full');
+    PERFORM _assert(v = 'true set' AND _v170_profile(F) = 'full', format('§145 (office): the school admin asking full reads %s; it holds %s', v, _v170_profile(F)));
+
+  ELSIF p_case = 'others' THEN
+    -- (others) Nobody else: the scorer, a parent, the 2XI coach, signed out, and on a fixture both
+    -- schools read, the away side's coach. Each is not_permitted and the fixture still asks nothing.
+    -- The coach's own plain UPDATE finds no row (match_update is fixture.update's, db/09).
+    F := _v170_fixture('others', 173, true);
+    FOREACH who IN ARRAY ARRAY[SCORER, PARENT, COACH2, WCOACH, NULL::uuid] LOOP
+      IF who IS NULL THEN PERFORM set_config('app.user_id', '', true); ELSE PERFORM _as(who); END IF;
+      v := _v170_ask(F, 'full');
+      PERFORM _assert(v = 'false not_permitted' AND _v170_profile(F) = '(null)',
+        format('§145 (others): %s asking full reads %s; it holds %s', coalesce(who::text, 'signed out'), v, _v170_profile(F)));
+    END LOOP;
+    PERFORM _as(COACH);
+    UPDATE match SET capture_profile = 'full' WHERE id = F;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    PERFORM _assert(n = 0 AND _v170_profile(F) = '(null)', format('§145 (others): the coach''s plain UPDATE changed %s rows; it holds %s', n, _v170_profile(F)));
+    v := _v170_ask(gen_random_uuid(), 'full');
+    PERFORM _assert(v = 'false not_permitted', format('§145 (others): an unknown fixture reads %s', v));
+
+  ELSIF p_case = 'read' THEN
+    -- (read) Whoever reads the fixture reads what it asks, through match's own row security: the
+    -- 1XI parent and the scorer at home, the Westville coach on the shared fixture.
+    F := _v170_fixture('read', 174, true);
+    PERFORM _v170_set(F, 'full');
+    FOREACH who IN ARRAY ARRAY[PARENT, SCORER, WCOACH] LOOP
+      PERFORM _as(who);
+      SELECT m.capture_profile INTO v FROM match m WHERE m.id = F;
+      PERFORM _assert(v = 'full', format('§145 (read): %s reads the fixture asking %s', who, coalesce(v, '(nothing)')));
+    END LOOP;
+
+  ELSIF p_case = 'vocab' THEN
+    -- (vocab) Only the log's own vocabulary: the door refuses another word, and the column's CHECK
+    -- refuses it for the office's plain UPDATE too.
+    F := _v170_fixture('vocab', 175);
+    PERFORM _as(COACH);
+    v := _v170_ask(F, 'extreme');
+    PERFORM _assert(v = 'false capture_profile_unknown' AND _v170_profile(F) = '(null)', format('§145 (vocab): the coach asking extreme reads %s; it holds %s', v, _v170_profile(F)));
+    PERFORM _as(ADMIN);
+    v := _v133_try(format('UPDATE match SET capture_profile = ''extreme'' WHERE id = %L', F));
+    PERFORM _assert(v LIKE '23514|match_capture_profile|%' AND _v170_profile(F) = '(null)', format('§145 (vocab): the office''s UPDATE to extreme reads %s; it holds %s', v, _v170_profile(F)));
+    v := _v170_ask(F, 'standard');
+    PERFORM _assert(v = 'true set' AND _v170_profile(F) = 'standard', format('§145 (vocab): standard reads %s; it holds %s', v, _v170_profile(F)));
+
+  ELSIF p_case = 'scored' THEN
+    -- (scored) Once the pad has declared (an innings_start in the log), the request is fixed: the
+    -- coach's door says scoring_started, and the office's UPDATE and the owner's are refused
+    -- (match_capture_profile_scored). What was asked before the toss stays as it was.
+    F := _v170_fixture('scored', 176);
+    PERFORM _as(COACH);
+    v := _v170_ask(F, 'full');
+    PERFORM _assert(v = 'true set', format('§145 (scored): the coach''s request before the toss reads %s', v));
+    PERFORM _v170_setup(F);
+    v := _v170_ask(F, NULL);
+    PERFORM _assert(v = 'false scoring_started' AND _v170_profile(F) = 'full', format('§145 (scored): the coach clearing it after the toss reads %s; it holds %s', v, _v170_profile(F)));
+    PERFORM _as(ADMIN);
+    v := _v133_try(format('UPDATE match SET capture_profile = NULL WHERE id = %L', F));
+    PERFORM _assert(v LIKE '23514|match_capture_profile_scored|%' AND _v170_profile(F) = 'full', format('§145 (scored): the office''s UPDATE reads %s; it holds %s', v, _v170_profile(F)));
+    PERFORM set_config('app.user_id', '', true);
+    v := _v133_owner_probe(format('UPDATE match SET capture_profile = ''quick'' WHERE id = %L', F));
+    PERFORM _assert(v LIKE '23514|match_capture_profile_scored|%', format('§145 (scored): the owner''s UPDATE reads %s', v));
+    -- The same value is no change, and passes (the trigger asks only on a change).
+    v := _v133_owner_probe(format('UPDATE match SET capture_profile = ''full'' WHERE id = %L', F));
+    PERFORM _assert(v = 'ok', format('§145 (scored): the owner writing the same value reads %s', v));
+
+  ELSIF p_case = 'grants' THEN
+    -- (grants) Both functions pinned definers, EXECUTE to scrbrd_app alone, never PUBLIC's; the
+    -- trigger present, enabled, calling its function.
+    PERFORM _assert(_v165_acl('match_capture_request(uuid,text)') = 'scrbrd_app:EXECUTE',
+      format('§145 (grants): match_capture_request() is granted %s', coalesce(_v165_acl('match_capture_request(uuid,text)'), '(missing)')));
+    PERFORM _assert(_v165_acl('match_capture_profile_frozen()') = 'scrbrd_app:EXECUTE',
+      format('§145 (grants): match_capture_profile_frozen() is granted %s', coalesce(_v165_acl('match_capture_profile_frozen()'), '(missing)')));
+    SELECT string_agg(x.fn, ' ') INTO v FROM unnest(ARRAY['match_capture_request(uuid,text)', 'match_capture_profile_frozen()']) x(fn)
+     WHERE NOT EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = x.fn::regprocedure AND p.prosecdef
+                         AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(p.proconfig, '{}')))
+        OR has_function_privilege('public', x.fn, 'EXECUTE');
+    PERFORM _assert(v IS NULL, format('§145 (grants): not pinned, or PUBLIC''s: %s', v));
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'match'::regclass AND t.tgname = 'match_capture_profile_frozen'
+                              AND t.tgenabled = 'O' AND t.tgfoid = 'match_capture_profile_frozen()'::regprocedure),
+      '§145 (grants): match_capture_profile_frozen is missing, disabled or calls another function');
+  ELSE
+    RAISE EXCEPTION '§145: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.user_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/170 (section 145) ─────────────────────────────────────────────
 
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
@@ -47515,6 +47672,44 @@ $m130$;
   PERFORM _v168_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/168 (section 141) ─────────────────────────────────────────
+  -- ┌── db/170 (section 145) ─────────────────────────────────────────
+  -- ── 145. Pro mode per fixture ──
+  -- The redesign's question 1: one tap a ball unless the fixture's coach
+  -- asks, before the toss, for the shot and the field (Pro mode). The
+  -- cases (each stages its own fixtures, _v170_case above):
+  --   (coach)   the 1XI coach (team.select at the home side) asks full: set;
+  --             again: unchanged; cleared: set, and it asks nothing
+  --   (office)  the school admin (fixture.update, not team.select): set
+  --   (others)  the scorer, a parent, the 2XI coach, the away side's coach
+  --             on a shared fixture, signed out, an unknown fixture: all
+  --             not_permitted, nothing written; the coach's plain UPDATE
+  --             finds no row (match_update, db/09)
+  --   (read)    the fixture's readers read the request through match's own
+  --             row security: the parent, the scorer, the away coach
+  --   (vocab)   only full, standard, quick: the door says
+  --             capture_profile_unknown, the office's UPDATE meets the CHECK
+  --   (scored)  once the log has its innings_start: the door says
+  --             scoring_started; the office's and the owner's UPDATE are
+  --             refused (match_capture_profile_scored); the same value passes
+  --   (grants)  both functions pinned definers, scrbrd_app's alone, never
+  --             PUBLIC's; the trigger present and enabled
+  --
+  -- Falsified, each against this database in its own rolled-back run: the
+  -- door's team.select branch dropped → (coach) red; its fixture.update
+  -- branch dropped → (office) red; team.select swapped for scoring.start →
+  -- (others) red at the scorer; asked at the away anchors too → (others)
+  -- red at the Westville coach; the unchanged branch dropped → (coach) red;
+  -- the CHECK dropped → (vocab) red; the trigger dropped → (scored) red;
+  -- EXECUTE granted to PUBLIC → (grants) red.
+  PERFORM _v170_case('coach');
+  PERFORM _v170_case('office');
+  PERFORM _v170_case('others');
+  PERFORM _v170_case('read');
+  PERFORM _v170_case('vocab');
+  PERFORM _v170_case('scored');
+  PERFORM _v170_case('grants');
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/170 (section 145) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
