@@ -6581,12 +6581,11 @@ CREATE OR REPLACE FUNCTION _v112_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
                                    FROM role_assignment)
     -- db/128 moved its day to sa_today(); read back on db/92's clock. db/169
     -- stamps his own link by pupil_signin_stamp(); read back as db/92 wrote it.
-    WHEN 'grant_md5' THEN (SELECT md5(replace(replace(replace(prosrc,
+    WHEN 'grant_md5' THEN (SELECT md5(replace(replace(replace(prosrc, 'sa_today()', 'current_date'),
           '''self'', ''verified'', p_decider, now(), pupil_signin_stamp(v_player), '
        || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN ''popia-2026-01'' END, '
        || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN now() END, p_decider);',
           '''self'', ''verified'', p_decider, now(), ''granted'', ''popia-2026-01'', now(), p_decider);'),
-          'sa_today()', 'current_date'),
           '  -- db/108: a pupil is a pupil OF A SIDE (role_assignment_player_team_scoped).' || chr(10)
        || '  -- No side named by the request or the decider: his own side on the roster,' || chr(10)
        || '  -- at this school. None there either: refused by name, before anything is' || chr(10)
