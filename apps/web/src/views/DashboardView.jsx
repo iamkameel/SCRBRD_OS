@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
 import { ROLES } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
-import { addDays, dateStr, humanDate, humanDateTime, today } from "../lib/format.js";
+import { addDays, dateStr, humanDate, today } from "../lib/format.js";
 import { api, signedIn } from "../lib/api.js";
 import { useDutyCoverage, useLive, useWeatherState } from "../lib/live.js";
 import { useNotifications } from "../lib/notifications.js";
 import { combineReads, isModuleOff, readState } from "../lib/readState.js";
 import { isOff, useFeatures, useNav } from "../lib/features.js";
 import { holdsAsHeld } from "../lib/held.js";
-import { Btn, EmptyState, ReadState } from "../ui/primitives.jsx";
+import { EmptyState, ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
 import { Icon, isIcon } from "../ui/icons.jsx";
@@ -23,9 +23,11 @@ import { RecentMatches } from "./cockpit/RecentMatches.jsx";
 import { weatherWords } from "../lib/cockpit.js";
 import { observedStamp } from "../lib/weatherStamp.js";
 import { saClock } from "../lib/saTime.js";
-import { sidesOf, statusSentence } from "../lib/matchCentre.js";
+import { MatchCard } from "../ui/matchCard.jsx";
+import { sideOfTeam } from "../lib/matchCentre.js";
+import { openWords, resultSaidOf } from "../lib/matchCard.js";
 import { cockpitGate } from "../lib/cockpit.js";
-import { requestCoach, requestDuties } from "../lib/cockpitNav.js";
+import { requestCoach, requestDuties, requestResult } from "../lib/cockpitNav.js";
 import { fixFor, requestFix } from "../lib/fixNote.js";
 import { profile } from "../lib/session.js";
 import { LastMatch } from "./cockpit/RecentMatches.jsx";
@@ -118,9 +120,9 @@ export function weekOf(matches, day) {
  * purpose, because a live score is derived, not a column.
  */
 function useLiveScore(matchId) {
-  const [state, setState] = useState({ loading: false, error: null, inn: null, target: null });
+  const [state, setState] = useState({ loading: false, error: null, inn: null, target: null, innings: [] });
   useEffect(() => {
-    if (!matchId || !signedIn()) { setState({ loading: false, error: null, inn: null, target: null }); return; }
+    if (!matchId || !signedIn()) { setState({ loading: false, error: null, inn: null, target: null, innings: [] }); return; }
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
     (async () => {
@@ -133,9 +135,10 @@ function useLiveScore(matchId) {
         const curIn = innings.length - 1;
         const inn = curIn >= 0 ? innings[curIn] : null;
         const target = curIn === 1 ? (inn?.target ?? ((innings[0]?.runs || 0) + 1)) : null;
-        setState({ loading: false, error: null, inn, target });
+        // Every innings of the same fold: the match card's two scores (slice 1). Nothing more is read.
+        setState({ loading: false, error: null, inn, target, innings });
       } catch (e) {
-        if (!cancelled) setState({ loading: false, error: e.code || "unreachable", inn: null, target: null });
+        if (!cancelled) setState({ loading: false, error: e.code || "unreachable", inn: null, target: null, innings: [] });
       }
     })();
     return () => { cancelled = true; };
@@ -145,18 +148,19 @@ function useLiveScore(matchId) {
 
 /**
  * The results of this week's played fixtures, by id: the server's words (GET /api/matches/:id/result, the read the
- * Match Centre makes), null for a read that failed, absent while asking. Signed in only; the demo has none.
+ * Match Centre makes) and each innings' total by side from the same answer (the row's two scores, slice 1), null
+ * for a read that failed, absent while asking. Signed in only; the demo has none.
  * @param {string[]} ids
- * @returns {Record<string, string | null>}
+ * @returns {Record<string, {text: string | null, innings: any[]} | null>}
  */
 function useWeekResults(ids) {
   const key = ids.join(",");
-  const [got, setGot] = useState(/** @type {Record<string, string | null>} */ ({}));
+  const [got, setGot] = useState(/** @type {Record<string, {text: string | null, innings: any[]} | null>} */ ({}));
   useEffect(() => {
     if (!signedIn() || !key) return undefined;
     let off = false;
     Promise.all(key.split(",").map((id) => api(`/api/matches/${id}/result`)
-      .then((r) => [id, r?.result?.text ?? "No result recorded"], () => [id, null])))
+      .then((r) => [id, { text: resultSaidOf(r), innings: Array.isArray(r?.innings) ? r.innings : [] }], () => [id, null])))
       .then((pairs) => { if (!off) setGot(Object.fromEntries(pairs)); });
     return () => { off = true; };
   }, [key]);
@@ -211,7 +215,8 @@ function useWeekResults(ids) {
 function DaySheet({ role, live = true, demoNote = "sample fixtures, no server connected", liveMatch = null, board = null, boardState = {},
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
                     reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true, off = {},
-                    needsYou = null, nextFold = null, lastMatch = null, dso = null, chipDoor = null }) {
+                    needsYou = null, nextFold = null, lastMatch = null, dso = null, chipDoor = null,
+                    liveInnings = null, nowLine = null, nowAction = null, openMatch = null }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
   // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
@@ -242,22 +247,19 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
       </div>
 
       <Bento>
-        {/* 1. Now — a live fixture, on the board, full width. */}
+        {/* 1. Now — a live fixture: the match card at its board size (slice 1), the Board under its two sides. */}
         {liveMatch && (
           <BentoCard level="a" title="Now" data-testid="day-now">
-            {board ? (
-              <>
-                {/* No last-wicket row on the day sheet's board (CRI-1.1 is the Match Centre's and the public page's). */}
-                <Board {...board} lastWicket={undefined} testid="day-board"/>
-                <div style={{ marginTop: T.space.md }}>
-                  {holds("scoring.edit")
-                    ? <Btn variant="success" onClick={() => onOpenScorer && onOpenScorer(liveMatch)}>Open scorer</Btn>
-                    : <Btn variant="ghost" onClick={() => onNav && onNav("matches")}>Match Centre</Btn>}
-                </div>
-              </>
-            ) : (
-              <EmptyState loading={boardState.loading} error={boardState.error} what="the live score" onRetry={onRetry} message="The live score is not available yet." icon="scorebook"/>
-            )}
+            <MatchCard size="board" match={liveMatch} fold={liveInnings?.length ? { innings: liveInnings, result: null } : null}
+              testid="day-now-card" statusTestid="day-now-status"
+              line={nowLine} lineTestid="day-now-line"
+              board={board
+                // No last-wicket row on the day sheet's board (CRI-1.1 is the Match Centre's and the public page's).
+                ? <Board {...board} lastWicket={undefined} testid="day-board"/>
+                : <EmptyState loading={boardState.loading} error={boardState.error} what="the live score" onRetry={onRetry} message="The live score is not available yet." icon="scorebook"/>}
+              action={nowAction ?? (holds("scoring.edit")
+                ? { label: "Resume scoring", onClick: () => onOpenScorer && onOpenScorer(liveMatch), testid: "day-now-open" }
+                : { label: openMatch ? openWords(liveMatch) : "Match Centre", onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" })}/>
           </BentoCard>
         )}
 
@@ -270,14 +272,10 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           <BentoCard level="b" title="Next fixture" data-testid="day-next">
             {next ? (
               <div data-testid={`next-fixture-${next.id}`}>
-                <div style={{ ...T.role.title.md, color: T.content.primary, overflowWrap: "anywhere" }}>{sidesOf(next).home.full} v {sidesOf(next).away.full}</div>
-                {/* Where the fixture stands, in the Match Centre's own sentence (CRI-1.2): "Starts at 10:00", the toss. */}
-                <div data-testid="day-next-status" style={{ ...T.role.body, color: T.content.primary, fontWeight: 600, marginTop: T.space.xs }}>{statusSentence(next).text}</div>
-                <div style={{ ...T.role.body, color: T.content.secondary, marginTop: T.space.xs }}>
-                  {humanDateTime(next.date, next.time)}
-                </div>
+                {/* The match card (slice 1): the day and time, both sides, where it stands and where it is played.
+                    What the card does not say follows it: the bus, the weather, the ready chips. */}
+                <MatchCard size="card" match={next} statusTestid="day-next-status" testid="day-next-card"/>
                 <div style={{ display: "flex", flexDirection: "column", gap: T.space.xs, marginTop: T.space.sm }}>
-                  {next.venue && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="map-pin"/> {next.venue}</div>}
                   {busTime && !off.logistics && <div style={{ ...T.role.body, color: T.content.secondary }}><Icon name="bus"/> Bus {busTime}</div>}
                   {!weather && reads?.weather?.state === "failed" && (
                     <div data-testid="day-weather-read"><ReadState read={reads.weather} onRetry={onRetry} compact testId="day-weather-read-state"/></div>
@@ -352,18 +350,18 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
               <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>
                 {/* One of the two reads failed: what is listed is not the whole week. */}
                 {weekRead?.state === "partial" && <ReadState read={weekRead} onRetry={onRetry} compact testId="week-read-state"/>}
+                {/* Each fixture is the match card's row (slice 1): played ones say their result, those to come their start. */}
                 {holds("fixture.read") && weekMatches.map((m) => {
-                  // A fixture played says its result; one to come its start (§3.10).
-                  // The result read's words where it answered; "could not be read" where it did not; else the sentence.
-                  const said = m.weekResult === null ? { text: "The result could not be read just now." }
-                    : typeof m.weekResult === "string" ? { text: m.weekResult } : statusSentence(m);
                   const played = m.status !== "upcoming";
                   return (
-                    <div key={m.id} data-testid={`week-fixture-${m.id}`} data-played={played ? "true" : "false"} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
-                      <Icon name="trophy"/>
-                      <span style={{ ...T.role.body, color: T.content.primary, flex: "1 1 8em", minWidth: 0, overflowWrap: "anywhere" }}>{m.homeTeam} v {m.awayTeam}</span>
-                      <span style={{ ...T.role.body, color: T.content.secondary }}>{played ? humanDate(m.date) : humanDateTime(m.date, m.time)}</span>
-                      <span data-testid={`week-said-${m.id}`} style={{ ...T.role.body, color: played ? T.content.primary : T.content.secondary, flexBasis: "100%" }}>{said.text}</span>
+                    <div key={m.id} data-testid={`week-fixture-${m.id}`} data-played={played ? "true" : "false"}>
+                      <MatchCard size="row" last match={m} statusTestid={`week-said-${m.id}`}
+                        resultSaid={typeof m.weekResult === "string" && m.weekResult ? m.weekResult : null}
+                        innings={Array.isArray(m.weekInnings) ? m.weekInnings : null}
+                        // The result read did not answer: said, never "Match over" alone.
+                        line={m.weekResult === null ? "The result could not be read just now." : null}
+                        // A quiet list: the whole row opens the match, with no button of its own (§2.6).
+                        onOpen={openMatch ? () => openMatch(m) : null} openLabel={openWords(m)}/>
                     </div>
                   );
                 })}
@@ -452,7 +450,9 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   // match_result(), asked only for those played this week. The fixture read itself carries no result.
   const weekPlain = weekOf(MATCHES, today);
   const weekResults = useWeekResults(weekPlain.filter((m) => m.status !== "upcoming" && !m.calledOff).map((m) => m.id));
-  const weekMatches = weekPlain.map((m) => (weekResults[m.id] === undefined ? m : { ...m, weekResult: weekResults[m.id] }));
+  const weekMatches = weekPlain.map((m) => (weekResults[m.id] === undefined ? m
+    // The result's words where the read said them, "" where it answered without one, null where it failed.
+    : { ...m, weekResult: weekResults[m.id] === null ? null : weekResults[m.id].text ?? "", weekInnings: weekResults[m.id]?.innings ?? null }));
   const weekTraining = TRAINING.filter((s) => s.date && s.date >= weekStart && s.date <= weekEnd)
     .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
 
@@ -471,8 +471,10 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   // bowler, the over as chips — and, this being a spectator screen, the Tier 2
   // line (§10). The pad draws the same board from the same function.
   let board = null;
+  let liveInnings = null;
   if (liveMatch) {
     const inn = signedIn() ? liveScore.inn : demoInnings(liveMatch, PLAYERS);
+    liveInnings = signedIn() ? liveScore.innings : inn ? [inn] : null;
     const target = signedIn() ? liveScore.target : null;
     const overs = liveMatch.overs || inn?.overs || 20;
     const props = boardFromInnings(inn, { target, overs });
@@ -528,12 +530,25 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     }
   };
 
+  // A fixture opens on its own page, the Match Centre's (lib/cockpitNav.js: the fixture on its first tab).
+  const openMatch = (/** @type {any} */ m) => { requestResult(m.id); onNav("matches"); };
+  // The live match's lead (§2.2): for his side's coach, "We're batting" or "We're bowling", from the fold the board
+  // is drawn from, and the Coach tab; for a scorer, Resume scoring (DaySheet's own); for anyone else, "Open v …".
+  const liveGate = liveMatch && signedIn() ? cockpitGate(assignments, liveMatch) : null;
+  const atCrease = liveInnings?.length ? liveInnings[liveInnings.length - 1] : null;
+  const ourEnd = liveGate?.end ?? liveMatch?.mySide ?? null;
+  const batEnd = atCrease && !atCrease.complete && liveMatch ? sideOfTeam(liveMatch, atCrease.battingTeam) : null;
+  const nowLine = ourEnd && batEnd ? (batEnd === ourEnd ? "We're batting" : "We're bowling") : null;
+  const nowAction = liveMatch && liveGate && !holdsAsHeld(role, "scoring.edit")
+    ? { label: "Coach tab", testid: "day-now-open", onClick: () => { requestCoach(liveMatch.id, false); onNav("matches"); } } : null;
+
   const followedBlock = showFollowed
     ? <div className="os-page" data-testid="today-followed"><FollowedSchools followed={followed} lead={followedFirst}/></div> : null;
   return (
     <>
     {followedFirst && followedBlock}
     <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
+      liveInnings={liveInnings} nowLine={nowLine} nowAction={nowAction} openMatch={openMatch}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}

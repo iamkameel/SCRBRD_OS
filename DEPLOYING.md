@@ -2546,6 +2546,18 @@ Pasted on both databases, 15 Nov 2026. Hash-checked:
 `sha256 57ea0012552facfc54be26bdc6672ce893a1a17b6ac8235a604481cfb29bc6ef`,
 from commit 114d2803.
 <!-- ── end db/157 ── -->
+#### Officials hidden from signed-in readers while Officials is off (db/166)
+
+`db/166_officials_signed_in_reads.sql` (PR #348, merge 3cdcbc9c; SCRBRD-144).
+Pasted on the demo and production, 19 Nov 2026. Hash-checked:
+`sha256 571b79833a5434ddf3365ab548e79c440be605569cec41ca5a8203aabe6927de`.
+<!-- ── end db/166 ── -->
+#### The platform key's reads are logged for the school (db/167)
+
+`db/167_owner_key_logged.sql` (PR #362, merge 118e9841): platform controls
+slice 6a. Pasted on the demo and production, 19 Nov 2026. Hash-checked:
+`sha256 6832597ef3f132195973f9748a049bfca25b99968c03751c3fd3368c77acec0b`.
+<!-- ── end db/167 ── -->
 
 ### 5 · Cloud Run, the first time
 

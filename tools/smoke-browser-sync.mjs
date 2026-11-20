@@ -177,7 +177,7 @@ try {
   // the one with a real squad in the seed, and naming it means the assertions
   // below are about a known match rather than whatever happened to be on top.
   const opened = await page.evaluate(() => {
-    const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
+    const isBtn = (b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
     const btns = [...document.querySelectorAll("button")].filter(isBtn);
     for (const b of btns) {
       // Walk up only as far as the CARD — the nearest ancestor that still

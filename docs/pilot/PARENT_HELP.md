@@ -18,7 +18,7 @@ If you see **Join a school**, choose **I am a parent or guardian**, and say whic
 
 ## Follow his match live
 
-Open **Home**. While your son's side is playing, a **Live** card shows the team's score, and his own line when he is batting. Tap **Follow the match**.
+Open **Home**. While your son's side is playing, a **Live** card shows both scores, and his own line when he is batting. Tap **Open v** and the other side.
 
 You can also tap **Matches**, then the match under **Live now**. Past matches are under **Played**.
 

@@ -204,10 +204,10 @@ try {
   // queue behind the previous screen's: 1.4-2.3 s measured, against the fixed
   // wait before this look. Give the card up to 10 s to be drawn; one that is
   // never drawn is judged exactly as before.
-  await page.waitForFunction((opp) => [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || ""))
+  await page.waitForFunction((opp) => [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || ""))
     && document.body.textContent.includes(opp), OPPONENT, { timeout: 10000 }).catch(() => {});
   const opened = await page.evaluate((opp) => {
-    const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
+    const isBtn = (b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
       let card = b;
       while (card.parentElement && [...card.parentElement.querySelectorAll("button")].filter(isBtn).length === 1) card = card.parentElement;
