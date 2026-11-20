@@ -242,7 +242,9 @@ try {
   group("2. A spectator, signed out, opens the public page before play");
   const pu = await open("public", { path: `/live/${MATCH}` });
   await pu.page.waitForSelector('[data-testid="public-match"]', { timeout: 8000 }).catch(() => {});
-  ok(`the page draws the fixture, as a fixture ("${await word(pu.page, "mc-status")}")`, await has(pu.page, "public-match") && (await word(pu.page, "mc-status")) === "Fixture",
+  // Redesign slice 2: the match card's state line, a fixture to come being its day and time ("Sat 21 Nov · 17:25").
+  ok(`the page draws the fixture, as a fixture ("${await word(pu.page, "mc-status")}")`, await has(pu.page, "public-match")
+     && (await tid(pu.page, "mc-status").first().getAttribute("data-kind").catch(() => null)) === "upcoming" && /\d\d:\d\d$/.test(await word(pu.page, "mc-status")),
     (await text(pu.page)).slice(0, 300));
 
   // ── 3 ──────────────────────────────────────────────────────────
@@ -396,7 +398,9 @@ try {
 
   ok(`the public page reads Provisional ("${await word(pu.page, "mc-status")}")`,
      await until(pu.page, () => document.querySelector('[data-testid="mc-status"]')?.textContent?.trim() === "Provisional", ONE_REFRESH_MS), await word(pu.page, "mc-status"));
-  ok("...with the Provisional label beside it", /Provisional/i.test(await inner(pu.page, "public-official")), await inner(pu.page, "public-official"));
+  ok("...said once: the card's state line, with no second Provisional label under it (slice 2's rule)",
+     !/Provisional/i.test(await inner(pu.page, "public-official")), await inner(pu.page, "public-official"));
+  ok(`...and its sentence says provisional ("${await inner(pu.page, "mc-result")}")`, /· provisional$/.test(await inner(pu.page, "mc-result")), await inner(pu.page, "mc-result"));
 
   // The coach's notice (Q2): none is written yet. A notice needs a definer or a trigger (a migration), which waits for the lead.
   const notices = await q(`select count(*)::int n from notification where school_id = $1 and published_at > $2 and (title ilike '%confirm%' or body ilike '%confirm%')`, [HIL, START0]);
@@ -410,20 +414,39 @@ try {
   const cKey = await tid(co.page, "mc-finish").first().evaluate((e) => ({ h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize) })).catch(() => null);
   ok(`...a 44px key on the 12px floor (${JSON.stringify(cKey)})`, !!cKey && cKey.h >= 44 && cKey.fs >= 12);
   // The scorer's phone held the lease (db/132: no confirm under a live lease); it lets go 90 s after its last beat.
-  let confirmed = false, tries = 0, lastSaid = "";
+  // Each press waits for its answer: the button's own busy state ending ("Confirming…" gone), then the words. An
+  // empty answer (a tap that missed, a slow runner) is pressed again like "still holds" is, within the same budget.
+  let confirmed = false, tries = 0, lastSaid = "", empties = 0;
   const tConfirm = Date.now();
+  const answered = () => {
+    const b = document.querySelector('[data-testid="mc-finish"]');
+    const said = (document.querySelector('[data-testid="mc-finish-said"]')?.textContent ?? "").trim();
+    return said.length > 0 && !(b && /Confirming/.test(b.textContent ?? ""));
+  };
   while (!confirmed && Date.now() - tConfirm < 150000) {
     tries++;
-    await tap(co.page, "mc-finish").catch(() => {});
-    await until(co.page, () => (document.querySelector('[data-testid="mc-finish-said"]')?.textContent ?? "").trim().length > 0, 8000);
+    const pressed = await tid(co.page, "mc-finish").first().click({ timeout: 8000 }).then(() => true, () => false);
+    await until(co.page, answered, 30000);
     lastSaid = await inner(co.page, "mc-finish-said");
     if (/^Confirmed\. The match is finished\.$/.test(lastSaid)) { confirmed = true; break; }
+    if (!lastSaid) {
+      empties++;
+      // No words: the server may have the match finished all the same (then there is no button left to press).
+      if ((await statusOf(MATCH)) === "complete") { lastSaid = `(no words on screen after ${pressed ? "a press" : "no press"})`; break; }
+      await co.page.waitForTimeout(2000);
+      continue;
+    }
     if (!/still holds the match/.test(lastSaid)) break;
     await co.page.waitForTimeout(10000);
   }
+  if (empties) note(`${empties} press(es) with no answer on screen, pressed again`);
   note(`confirmed after ${tries} press(es), ${Math.round((Date.now() - tConfirm) / 1000)} s (the scorer's lease letting go)`);
   ok(`he confirms it: "${lastSaid}"`, confirmed, lastSaid);
   ok(`the server has the match complete (${await statusOf(MATCH)})`, (await statusOf(MATCH)) === "complete");
+  // The fixture re-read comes back complete; the answer stays where he read it (the panel no longer goes with it).
+  await afterReads(co.page, 2500);
+  ok("...and the answer is still on his screen once the fixture is re-read", /^Confirmed\. The match is finished\.$/.test(await inner(co.page, "mc-finish-said")),
+     await inner(co.page, "mc-finish-said"));
   const [{ id: coachId }] = await q(`select id from app_user where email = 'coach@example.invalid'`);
   const fins = await q(`select actor_id from scoring_audit where match_id = $1 and event = 'match_finalised'`, [MATCH]);
   ok("...one audit row, the coach's, not the scorer's", fins.length === 1 && fins[0].actor_id === coachId, JSON.stringify(fins));

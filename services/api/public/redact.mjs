@@ -174,11 +174,16 @@ const NOBODY = "\u0000";
  * or null — a position, whichever position the caller shows. A reference
  * with no player row is a typed name (L6), and a player row whose facts are
  * missing names nobody (publicName() fails closed on a missing fact).
+ * `initials` (the 18 Nov rule, PUBLIC_DATA after D4): a boy the rule does
+ * not name comes back as his initial and the dots ("R ••••••") rather than
+ * null, where the deployment has switched it on (server.mjs
+ * PUBLIC_NAME_INITIALS). Off, this answers exactly what it did before.
  * @param {PersonRow | undefined} person
  * @param {string} on  YYYY-MM-DD, the day served
+ * @param {{initials?: boolean}} [o]
  * @returns {string | null}
  */
-export function nameFor(person, on) {
+export function nameFor(person, on, { initials = false } = {}) {
   if (!person) return null;
   const f = person.facts ?? {};
   // PUBLIC_BY_TERMS §6.2 (db/155): the surface the database named for this
@@ -201,6 +206,7 @@ export function nameFor(person, on) {
     neverPublic: f.neverPublic,
     namesOff: f.namesOff,
     consents: f.consents,
+    initials: initials === true,
     label: NOBODY,
   });
   return shown === NOBODY ? null : shown;
@@ -288,11 +294,13 @@ export function areasOf(rows, ctx = {}) {
  * fixture's fold context (its start, format and frozen conditions: the
  * header's), so the words for where a ball went come from the same fold the
  * page runs.
+ * `initials`: the 18 Nov rule, as nameFor() takes it; a boy it gives "R ••••••"
+ * is in `people` under that label, so the page draws it and decides nothing.
  * @param {{rows: LogRow[], people: PersonRow[], secret: string, matchId: string, on: string,
- *          ctx?: import("@scrbrd/scoring").FoldContext}} o
+ *          ctx?: import("@scrbrd/scoring").FoldContext, initials?: boolean}} o
  * @returns {PublicLog}
  */
-export function projectLog({ rows, people, secret, matchId, on, ctx = {} }) {
+export function projectLog({ rows, people, secret, matchId, on, ctx = {}, initials = false }) {
   /** @type {Map<string, PersonRow>} */
   const byId = new Map(people.map((p) => [String(p.player_id).toLowerCase(), p]));
   /** @type {Record<string, string>} */
@@ -311,7 +319,7 @@ export function projectLog({ rows, people, secret, matchId, on, ctx = {} }) {
     const p = playerPseudonym(secret, matchId, person ? person.player_id : key);
     if (person) {
       playerIds.add(person.player_id);
-      const name = nameFor(person, on);
+      const name = nameFor(person, on, { initials });
       if (name) named[p] = name;
     }
     return p;

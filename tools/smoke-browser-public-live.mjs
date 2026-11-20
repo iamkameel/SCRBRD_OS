@@ -376,12 +376,15 @@ try {
   {
     const rowText = async (/** @type {string} */ id) => ((await page.locator(`[data-testid="${id}"]`).first().innerText().catch(() => "")) || "").trim();
     const wicket = await rowText("mc-board-last-wicket");
-    const fresh = await rowText("mc-board-updated");
+    // Redesign slice 2: how fresh the match is, said once, on the match card's state line ("● Live … Updated 4 s ago").
+    const fresh = await rowText("mc-updated");
+    const liveWord = ((await page.locator('[data-testid="mc-status"]').first().textContent().catch(() => "")) || "").trim();
     const sentence = await rowText("mc-status-line");
     // The row's words are never printed: a failure names the kind, not the value (as the scan does).
     ok("the board's last-wicket row is drawn: the never-public boy by his position, the scorecard's line, his figures",
        /^Last wicket Batter c Fielder b \S.* 0 \(1\)$/.test(wicket));
-    ok(`the board's freshness row: "Updated … · Live" ("${fresh}")`, /^Updated (just now|\d+ s ago|\d+ min ago) · Live$/.test(fresh), fresh);
+    ok(`the card's freshness: "Live", and "Updated …" ("${liveWord}" · "${fresh}")`, liveWord === "Live" && /^Updated (just now|\d+ s ago|\d+ min ago)$/.test(fresh), fresh);
+    ok("...said once: the board under it has no freshness row of its own", await page.locator('[data-testid="mc-board-updated"]').count() === 0);
     ok("the header's status sentence is drawn", sentence.length > 0 && await page.locator('[data-testid="mc-status-line"]').getAttribute("data-state") !== null);
     const named = [["the last-wicket row", wicket], ["the freshness row", fresh], ["the status sentence", sentence]]
       .flatMap(([what, t]) => scan(t, needles).map((n) => `${what}: ${n}`));

@@ -549,6 +549,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // Slice 4 (DESIGN_DIRECTION Q2): a live fixture whose log has decided it is the coach's to confirm, and until
   // then it reads "Provisional" to everyone, here as on every card. A super over in play is not decided.
   const provisional = isLive && !log.demo && !!log.result && !liveSO;
+  // The coach's answer, held here and not in the panel: a confirm re-reads the fixture, which comes back complete,
+  // and the panel (drawn while provisional) would go with its answer before anyone read it (CI, 20 Nov).
+  const [confirmedSaid, setConfirmedSaid] = useState(/** @type {string | null} */ (null));
   // OFFICIAL_RESULT (db/114): provisional, under review (staff) or official —
   // the server's state for a finished fixture, read again as the log moves.
   const official = useOfficial(match, !!match.live && !log.demo && !isLive && match.status !== "upcoming", log.events?.length ?? 0);
@@ -701,8 +704,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
               both true of the fixture once it is decided, not of any one tab of it. Never on a
               demonstration fixture: its "log" is a reconstruction with no real amendment to file. */}
           {/* Slice 4: the coach confirms the result (db/130's finish), offered where he may; the server decides. */}
-          {provisional && settled && signedIn() && couldConfirmResult(match.schoolId, match.homeTeam) && (
-            <ConfirmResultPanel match={match} result={result} onConfirmed={() => { log.refresh(); onChanged?.(); }}/>
+          {((provisional && settled && signedIn() && couldConfirmResult(match.schoolId, match.homeTeam)) || confirmedSaid) && (
+            <ConfirmResultPanel match={match} result={result} done={confirmedSaid}
+              onConfirmed={(text) => { setConfirmedSaid(text); log.refresh(); onChanged?.(); }}/>
           )}
           {match.status === "complete" && !log.demo && (
             <>
