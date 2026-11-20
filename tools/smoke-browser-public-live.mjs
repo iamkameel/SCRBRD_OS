@@ -378,7 +378,7 @@ try {
     const wicket = await rowText("mc-board-last-wicket");
     // Redesign slice 2: how fresh the match is, said once, on the match card's state line ("● Live … Updated 4 s ago").
     const fresh = await rowText("mc-updated");
-    const liveWord = await rowText("mc-status");
+    const liveWord = ((await page.locator('[data-testid="mc-status"]').first().textContent().catch(() => "")) || "").trim();
     const sentence = await rowText("mc-status-line");
     // The row's words are never printed: a failure names the kind, not the value (as the scan does).
     ok("the board's last-wicket row is drawn: the never-public boy by his position, the scorecard's line, his figures",
