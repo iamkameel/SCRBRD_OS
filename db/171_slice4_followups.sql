@@ -12,6 +12,12 @@
 -- session.js couldConfirmResult()); three things it left need the database,
 -- and are here. Its proof is db/99 §146.
 --
+-- WHAT "CONFIRM" IS, AND IS NOT (Kameel, 20 Nov 2026: "keep the
+-- separation"). The coach's confirm is db/130's finish: the match is
+-- complete. The official result stays the director of sport's or the
+-- organiser's, through db/114 (OFFICIAL_RESULT D3 unchanged); nothing here
+-- touches it.
+--
 -- ══ 1 · THE SERVER REFUSES A SCORER'S FINISH ════════════════════════
 --   ~ match_finalise() (db/130, db/132)  db/132's body and one step, 1b,
 --       asked before anything is locked, as step 1 is: a caller who holds
