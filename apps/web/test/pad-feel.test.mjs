@@ -43,7 +43,7 @@ import { deliveryEvents, noBallEvent, extraWicketEvent } from "../src/scorer/del
 import { EXTRAS, extraCall, NB_TYPES, NB_FROM } from "../src/scorer/extras.js";
 import { bowlerChoices, batterChoices, undoWords, unavailableWords, noClause } from "../src/scorer/prompts.js";
 import { hapticTick, setHapticOn, HAPTIC_KEY } from "../src/scorer/haptic.js";
-import { Pad } from "../src/scorer/pad.jsx";
+import { Pad, asksOneTap } from "../src/scorer/pad.jsx";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 300)}` : ""); } };
@@ -379,6 +379,51 @@ group("4. The haptic tick: fire and forget, never under reduced motion");
   Object.defineProperty(globalThis, "navigator", { value: {}, configurable: true });
   try { hapticTick(); } catch { threw = true; }
   ok("...nor one with none", !threw);
+}
+
+group("Runs first (redesign slice 3, question 1): how the pad asks, never what it records");
+{
+  ok("an innings that declared nothing opens on one tap a ball", asksOneTap(null) === true && asksOneTap(undefined) === true);
+  ok("...and so does one declared quick", asksOneTap("quick") === true);
+  ok("an innings declared full or standard asked for the shot and the field: the three phases",
+     asksOneTap("full") === false && asksOneTap("standard") === false);
+  ok("the menu's switch wins either way, for this innings",
+     asksOneTap(null, false) === false && asksOneTap("full", true) === true && asksOneTap("quick", false) === false);
+  // A one-tap ball is the call Basic Scoring always made: no shot, no
+  // placement, the quick profile, and nothing else on the event.
+  const st = deriveInnings(open());
+  const [ev] = deliveryEvents({ curIn: 0, before: st, freeHit: false, type: "run", value: 4, shot: null, seg: null, zone: null, approach: null });
+  ok("a one-tap four carries no shot and no field, rather than invented ones",
+     ev.shot == null && ev.seg == null && ev.zone == null && ev.theta == null && ev.radius == null
+       && ev.placementSource == null && ev.captureProfile === "quick" && ev.placementNull === "not_required", JSON.stringify(ev));
+  const after = deriveInnings([...open(), ev]);
+  ok("...and folds like any other ball: four to the striker, one legal ball",
+     after.runs === 4 && after.balls === 1 && after.batsmen.find((b) => b.id === "a1")?.runs === 4);
+  // The fixture's first innings declares quick on the innings_start it has
+  // always written (no new event, no new field); Full or Standard chosen on
+  // the opener sheet before the first ball is a later declaration, and wins.
+  const SQ0 = { battingTeam: "Hilton", bowlingTeam: "Kearsney", squad: SQ, bowlingSquad: BW, overs: 20 };
+  const quickStart = inningsStart({ ...SQ0, captureProfile: CAPTURE_PROFILE.QUICK });
+  ok("the default is the quick profile on innings_start, its kind and fields as ever",
+     quickStart.kind === "innings_start" && quickStart.captureProfile === "quick" && deriveInnings([quickStart]).declaredProfile === "quick");
+  for (const p of ["full", "standard"]) {
+    const chosen = deriveInnings([quickStart, inningsStart({ ...SQ0, captureProfile: p })]);
+    ok(`...a ${p} choice after it, before the first ball, stays ${p}, and asks the three phases`,
+       chosen.declaredProfile === p && asksOneTap(chosen.declaredProfile) === false);
+  }
+  const historic = deriveInnings([inningsStart(SQ0)]);
+  ok("an innings that declared nothing still folds to null, and still opens on one tap",
+     historic.declaredProfile === null && asksOneTap(historic.declaredProfile) === true);
+  const dflt = deriveInnings([...[quickStart, batters({ striker: "a1", nonStriker: "a2" }), bowler({ bowler: "b1" })], ev]);
+  const plain = deriveInnings([...open(), ev]);
+  const strip = (/** @type {any} */ i) => { const { declaredProfile, ...rest } = i; return JSON.stringify(rest); };
+  ok("...and the declaration changes nothing else the fold says", strip(dflt) === strip(plain) && dflt.declaredProfile === "quick");
+  const engine = src("apps/web/src/scorer/engine.jsx");
+  ok("both places a fixture's first innings opens declare quick when the fixture declares nothing",
+     engine.includes("captureProfile: resume.cfg.captureProfile ?? CAPTURE_PROFILE.QUICK,")
+       && engine.includes("captureProfile:match.captureProfile??CAPTURE_PROFILE.QUICK,"));
+  ok("the engine asks asksOneTap, with the menu's choice for this innings only",
+     /const basic=asksOneTap\(inn\?\.declaredProfile,basicChoice\?\.innings===curIn\?basicChoice\.basic:null\);/.test(engine));
 }
 
 Date.now = realNow;
