@@ -37,6 +37,8 @@
 
 18 and 19 Nov 2026: seven merges recorded. #350 (merge 0e177065, 18 Nov): experience slice 4, parent and pupil (db/161, the waiting parent's notice). #351 (merge 46fa434c, 18 Nov): slice 5, the coach's day sheet, and the homes. #352 (merge 9a6d5066, 19 Nov): slice 6, the office. #354 (merge a950dfc5, 19 Nov): "UI/UX: five small fixes from the principles review". #355 (merge cc1b2e44, 19 Nov): "Copy pass: the pupil's screens, sign-in and the no-school home, at a child's reading age". With them the experience pass (slices 1 to 6, #354 and #355 as its small fixes and copy pass) is complete; its named follow-ups stay open. #356 (merge 7e4e8b05, 19 Nov): "Match lifecycle: a fixture goes live at its first ball; the scorer can always finish (db/165)". #357 (commit 43055f80, 19 Nov): SHIPPED, db/165 pasted on demo and production 19 Nov from a5fb7d97, both counts read 0 fixtures to move before the paste; the ledger, both triggers, the API roles' reach and lock_timeout were checked after it on each database. The match lifecycle is closed. #358 (merge 84833659, 19 Nov): "CRI-2.4: low-data mode for the public match page, and a score before the page loads" (steps 1 to 3: 8c094373, 06232b7e, 951fef7c). CRI-2.4 is closed. #353 was recorded earlier (c94bd612).
 
+19 Nov 2026 (later): seven merges, one renumbering and two decisions recorded. #348 (merge 3cdcbc9c, db/166): officials are hidden from signed-in readers while Officials is switched off; SCRBRD-144 is closed. #362 (merge 118e9841, db/167): platform controls slice 6a, so the platform key's reads of a child's data are logged for the school; slices 1–5, 7 and 6b stay open, parked until after the pilot. #363 (bf684527): the SHIPPED lines for db/166 and db/167; both were pasted on the demo and production on 19 Nov. #360 (53d84b1f): B0, the wagon wheel says how many scoring balls were placed (pilot scope item 8). #361 (8f5b8445): CRI-3.3, the Player of the Match suggestion with Kameel's simple points (runs, plus 20 per wicket, plus 10 per catch, run-out or stumping), its working shown and ties shown. #365 (30a3d16c): 36 skills added to `.claude/skills`. #366 (bc21dd20): redesign slice 7, one empty, loading and error state. Renumbering: db/165 shipped ahead of 162–164 on 19 Nov, so the unshipped migrations were renumbered. db/162 became db/166, platform controls 6a took db/167, Migration A db/163 became db/168, and Migration B db/164 becomes db/169. 162–164 are never used. Decision (Kameel, 19 Nov, on the board): "Credit where named; the card says the gap". In the Player of the Match suggestion a fielder is credited wherever the log names him, and the card says how many dismissals named no fielder; this reverses D17 / R12's rule that one unnamed fielding dismissal dropped fielding for everyone (noted beside D17 in `docs/design/RECOGNITION_design.md`). Decision (Kameel, 19 Nov): the SuperAdmin lane is split. 6a was fast-tracked for the pilot; the other slices come after the pilot.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -712,7 +714,7 @@ for the owner's key, a platform administrator, a school administrator and a two-
 - **Seams audit fixes, 30 Oct, db/125** — **Done 2026-10-30** (#223, commit 6551340): a guardian's new passport consent is refused from the boy's 18th birthday; a scout's candidates read is logged; a withdrawn processing consent lapses the passport and scouting consents. db/125 is live on both databases and recorded in `db/SHIPPED.sha256`.
 - **Match-day safety fixes (Fable's match-day audit, 30 Oct)** — **Done 2026-10-31** (#225, commit 22e4898): the pad heartbeats and keeps the screen awake while scoring; a second phone can no longer take over a match without a confirmed, audited "Take over scoring"; the toss can be written under the pad's resume sign-in; every stopped pad lists the balls it kept and offers an action; the runbook covers the paper step after a dead phone. db/126 is live on both databases and recorded in `db/SHIPPED.sha256`.
 
-- **SuperAdmin controls, design** — **Designed 2026-10-31** (#229, commit 4c1422e): `docs/design/PLATFORM_CONTROLS.md`, what a SuperAdmin may switch on and off. Kameel answered all 18 questions as recommended on 31 Oct 2026 (12:17 SAST). Design only; Opus builds from its §9 slices. Nothing built yet.
+- **SuperAdmin controls, design** — **Designed 2026-10-31** (#229, commit 4c1422e): `docs/design/PLATFORM_CONTROLS.md`, what a SuperAdmin may switch on and off. Kameel answered all 18 questions as recommended on 31 Oct 2026 (12:17 SAST). Design only; Opus builds from its §9 slices. Nothing built yet. **Partly done 2026-11-19:** slice 6a (#362, merge 118e9841, db/167), the platform key's reads of a child's data logged for the school, fast-tracked for the pilot; slices 1–5, 7 and 6b stay open, parked until after the pilot (Kameel, 19 Nov).
 
 ## Product completeness
 
@@ -828,7 +830,7 @@ one duplicates an existing entry, strike the `CRI-*` line and point at the older
 - **CRI-2.5** — **Done 2026-11-12** (#309, merge 050ccf15): three spectator charts.
 
 **Sprint 3 (after pilot evidence):** CRI-3.1 notifications S2–S5 with follow and a Result-only default ·
-~~CRI-3.2 tap-to-passport~~ **Done 2026-11-13** (#318, merge 268da601; follow-up #322, merge 8acc88fe): tap a scorecard name to open his passport. · CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes) ·
+~~CRI-3.2 tap-to-passport~~ **Done 2026-11-13** (#318, merge 268da601; follow-up #322, merge 8acc88fe): tap a scorecard name to open his passport. · ~~CRI-3.3 match impact as PoM suggestion (after recognition §7 scoring fixes)~~ **Done 2026-11-19** (#361, commit 8f5b8445): the suggestion shows its points and working, and ties. ·
 CRI-3.4 StatsMagic (the Analytics Explorer, renamed by Kameel 2026-10-28; SCRBRD's counterpart of Cricinfo's Statsguru), one Fable design pass (allowed 2026-10-23).
 
 **Partly done 2026-10-28:** CRI-3.1 decision recorded (#198, `6d23aa0`): notifications S2–S5 come before the pilot, S3 push included (Kameel, 23 Oct). Nothing built; the Sprint 3 placement above is superseded.
@@ -5379,9 +5381,9 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - [ ] `db/99` §136 and §138's tripwires are green.
 **Source:** Fable's red-team of `db/158` and `db/160`, 15 Nov 2026 (finding S4).
 
-### SCRBRD-144 — Officials named in signed-in reads while Officials is switched off (2026-11-15)
+### ~~SCRBRD-144~~ — CLOSED — Officials named in signed-in reads while Officials is switched off (2026-11-15)
 **Priority:** P2 · **Domain:** Privacy / Platform controls · **Type:** build, Opus
-**Status:** open.
+**Status:** closed 19 Nov 2026 by #348 (merge 3cdcbc9c, db/166, pasted on the demo and production 19 Nov).
 **Why:** `db/156` hides officials on the public overlay while Officials is off for the school. Signed-in reads of a match's officials do not yet follow the switch. The appoint gate (`services/api/server.mjs`, around line 715) stays until this is closed.
 **Acceptance criteria:**
 - [ ] A signed-in reader of a school with Officials off sees no official named.

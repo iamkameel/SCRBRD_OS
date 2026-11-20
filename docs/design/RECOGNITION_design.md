@@ -321,6 +321,8 @@ Times are the fixture's time zone; a date is added once it is not today; nothing
 
 **Decided 11 Nov 2026 (Kameel, on R12's questions):** the fielding weight stays ten for each catch, stumping or run out; the Awards tab's lists stay "Top Fielders" and "Top Wicketkeepers"; Fielder of the Season and Wicketkeeper of the Season stay named awards (`kind = 'award'`), decided through the honours route under `recognition.decide`, not new kinds; fielding achievements (first catch, first stumping, milestone counts) and fielding record boards (most catches, keeping dismissals) are a follow-up slice, not R12.
 
+**Changed 19 Nov 2026 (Kameel, on the board: "Credit where named; the card says the gap"):** in the Player of the Match suggestion, a fielder is credited wherever the log names him, and the card says how many dismissals named no fielder. This reverses D17 / R12's rule above that one unnamed fielding dismissal dropped fielding for everyone. The original text of D17 and R12 is left as written.
+
 **Changed 21 Oct 2026 (Kameel, READERS_child_data Q2 and Q6):** D4 reads "masked to `recognition.decide` and the withdrawer; never the pupil, the parent, the side's coach (unless he withdrew), or the public." `audit.read` is removed from it. D3 (above) governs the DSO's withdrawn-honour read: "absent; through the audit on a concern".
 
 ---

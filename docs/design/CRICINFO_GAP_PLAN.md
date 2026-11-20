@@ -150,7 +150,7 @@ Backlog IDs `CRI-*` are in `audit/SCRBRD_IMPLEMENTATION_BACKLOG.md`.
 | --- | --- | --- | --- | --- |
 | CRI-3.1 | Notifications S2–S5; follow child → team → school → competition; Result-only default; pinned matches. Changed 23 Oct 2026 (Kameel): S2–S5 before the pilot, not after; see NOTIFICATIONS.md. | `NOTIFICATIONS.md`, `db/`, `services/api/`, home | Opus policy, Sonnet screens | Push is a pointer; preferences walk green |
 | CRI-3.2 | Tap-to-passport sheet, scope-checked | `scorecard.jsx`, `tabs-core.jsx`, profile view, `packages/policy` | Opus | Parent own child; coach squad; public nothing; merged #318 (13 Nov), follow-up #322 |
-| CRI-3.3 | Match impact as the PoM suggestion, with reasoning | `packages/scoring/src/rating.mjs`, recognition | Opus | After bowler-credit and dismissed-batter fixes merge |
+| ~~CRI-3.3~~ | Match impact as the PoM suggestion, with reasoning | `packages/scoring/src/rating.mjs`, recognition | Opus | **Done 19 Nov 2026** (#361, commit 8f5b8445): Kameel's simple points (runs, plus 20 per wicket, plus 10 per catch, run-out or stumping), the working shown, ties shown |
 | CRI-3.4 | StatsMagic (the Analytics Explorer): one Fable design pass (allowed 2026-10-23), then Opus | `views/compare.jsx`, `views/AnalyticsView.jsx` | Fable, then Opus | Design doc for Kameel; build on his say |
 
 ## 7. Risks and dependencies
