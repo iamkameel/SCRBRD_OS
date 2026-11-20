@@ -495,13 +495,27 @@ try {
     words = await tid(mum.page, "own-signin-words").innerText().catch(() => "");
     ok("she stops it: the row says he cannot sign in", /cannot sign in to his own page/.test(words), words);
     ok("...and the same session reads nothing again, holding nothing", (await players()) === 0 && (await held()) === 0);
-    // R Pillay's yes is the school's (carried over at the paste): she is told so, and offered no Stop (Q6).
+    // R Pillay's yes is the school's stamp, carried over at the paste. She is
+    // told only what it attests (S3: no form is claimed) and, having agreed the
+    // terms, may stop it herself (Kameel, 20 Nov, B); her own yes opens him again.
     const pillayRow = tid(mum.page, `family-open-signin-${PILLAY}`);
     await pillayRow.click({ timeout: 6000 }).catch(() => {});
     await afterReads(mum.page, 1200);
-    const pw = await tid(mum.page, `own-signin-${PILLAY}`).innerText().catch(() => "");
-    ok("R Pillay's row says the school office has his signed form on file, and offers no Stop",
-       /signed consent form on file/.test(pw) && (await tid(mum.page, `own-signin-${PILLAY}`).locator('[data-testid="own-signin-stop"]').count()) === 0, pw);
+    const pRow = tid(mum.page, `own-signin-${PILLAY}`);
+    let pw = await pRow.innerText().catch(() => "");
+    ok("R Pillay's row says the school opened it when it enrolled him, and claims no form",
+       /opened R Pillay's own sign-in when it enrolled him/.test(pw) && /No signed consent form was recorded/.test(pw) && !/has .*consent form .*on file/.test(pw), pw);
+    ok("...and offers her Stop (B)", (await pRow.locator('[data-testid="own-signin-stop"]').count()) === 1);
+    await pRow.locator('[data-testid="own-signin-stop"]').click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1500);
+    pw = await pRow.innerText().catch(() => "");
+    ok("she stops it: he cannot sign in", /cannot sign in to his own page/.test(pw), pw);
+    const pRec = await q(`select answer, how from pupil_signin_consent where player_id = $1 order by seq`, [PILLAY]);
+    ok("...recorded as her no, after the school's stamp", pRec.length === 2 && pRec[0].how === "enrolled" && pRec[1].answer === "no" && pRec[1].how === "guardian", JSON.stringify(pRec));
+    await pRow.locator('[data-testid="own-signin-allow"]').click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1500);
+    pw = await pRow.innerText().catch(() => "");
+    ok("her own yes opens him again", /You allowed R Pillay's own sign-in/.test(pw), pw);
     ok("no page error for his mother", mum.errors.length === 0, mum.errors.join(" | "));
     await mum.ctx.close();
   }

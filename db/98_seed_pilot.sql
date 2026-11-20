@@ -930,9 +930,12 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
 -- when (D). It is still the pupil with `player` and no `selfaccess`, with
 -- no figures of his own (REACH-D2), as every walk that signs in as it
 -- expects.
+-- On the 1st XI since the season began, as the rest of it (db/129 dates a pupil's reach by it).
+SELECT set_config('app.effective_on', '2026-01-15', false);
 INSERT INTO player (id, school_id, team_code, full_name, squad_no, playing_role, born) VALUES
   ('aaaaaaaa-0000-0000-0000-000000000099', '11111111-1111-1111-1111-111111111111', '1XI', 'P Okafor', 12, 'batter',
    (current_date - interval '16 years 3 months')::date);
+SELECT set_config('app.effective_on', '', false);
 UPDATE app_user SET player_id = 'aaaaaaaa-0000-0000-0000-000000000099' WHERE id = '88888888-0000-0000-0000-000000000001';
 DO $seed164$
 BEGIN

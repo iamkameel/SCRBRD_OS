@@ -16266,8 +16266,10 @@ BEGIN
 
   ELSIF p_case = 'tick' THEN
     -- (tick) Q12: the office's grant of `player` to a boy under 18 stamps his own
-    -- link 'pending' and leaves him closed, unless the signed form is on file
-    -- (pupil_signin_office_set(), the tick, first); an adult needs no tick.
+    -- link 'pending' and leaves him closed, until the signed form is on file
+    -- (pupil_signin_office_set(), the tick: the API records it after the
+    -- grant, in the same transaction; recorded before, the grant stamps him
+    -- at once, both proved here); an adult needs no tick.
     K := _v169_bare('tick'); B := _v168_boy(HIL, 'v164tick', 15);
     q := _v169_request(K, B);
     PERFORM _as(REG);
@@ -48721,7 +48723,43 @@ $m130$;
   --               address on his earlier request before the claim and not
   --               after; Westville's office never; his school's office and
   --               principal do, and so does he
+  --   (noboy)     A: a `player` naming no boy is closed, reads its own rows
+  --               only; named, with a yes, it opens; the grant door refuses
+  --               to make one; the seed's spectator@ pupil names its boy
+  --   (form)      D: the form on file names who signed it and the day; each
+  --               refusal records nothing; the office reads the signer, his
+  --               guardian only the day
+  --   (lapse)     C: his account shut and opened again, or its roster link
+  --               moved off him: the school's yes lapses; a guardian's does not
+  --   (left)      C: he left the school since the yes (back or not), or left
+  --               today: the school's yes lapses; a side move does not
+  --   (version)   F: agreeing to -02 keeps her yes; a roll to 'pending'
+  --               records no no, and agreeing at -02 carries it
+  --   (held)      S5: her yes cannot open a recognised boy with no side: the
+  --               door says team_required, she may tap again, the office's
+  --               retry opens him once he has one; a coach may not retry
+  --   (childgiver) N6: a child's own account gives no family's yes
+  --   (agreed)    N11: a guardian not agreed is told only that
+  --   (staffboy)  N13: a boy who is also staff: closed, his staff role
+  --               counts for nothing; open, it counts
+  --   (nothim)    S10: "This account is not him": the office only; the wrong
+  --               account answers as nobody, every yes before is closed, her
+  --               next yes does not reopen it, the claim is declined, the
+  --               DSOs told, and the right account can be recognised
+  --   (born)      a date of birth on record cannot be changed by the
+  --               application (the office, the import's update); a missing
+  --               one is still written (the control)
+  --   (writes)    S9: closed, his availability and a captain's nomination
+  --               are refused, his phone's token written; open, availability
+  --               written (the control); the ungated definers are the list
+  --               read on 20 Nov
   --   (grants)    the doors are scrbrd_app's alone; the record nobody's
+  --   and in older cases: (carry) B, her stop closes the carried-over stamp
+  --   once she has agreed, not the office's real tick, and N10, no adult is
+  --   carried; (second) E, her yes after the office's no opens him, and N13,
+  --   another boy's guardian and a support hour read nothing, the principal
+  --   reads as the office; (revoked) S6, her link's ending is her no, so the
+  --   link verified again does not revive her yes
   --
   -- Falsified once each, on a database at claude/wip-hm-b with this file
   -- applied (then db/164, before the renumber to db/169), the change made as the owner inside the run, and red at its
@@ -48764,6 +48802,33 @@ $m130$;
   --                                           director of sport reads it
   --     (since the renumber the arm is db/168's own, §6b, and this file no
   --      longer adds it: (address) now holds db/168's arm beside the gate)
+  --   Falsified again on 20 Nov, on the red-team's fixes (each a change to
+  --   db/169 made as the owner inside a run of the section alone, red at its
+  --   own assertion, 23 changes):
+  --   the gate without its no-boy arm            → (noboy) red: open
+  --   the grant door without `player` in player_required
+  --                                         → (noboy) red: granted
+  --   yes_stands() without B's arm; the guardian's door not offering the
+  --   carried-over stop                        → (carry) red at each
+  --   the carry-over without its adult skip    → (carry) red: carried
+  --   the account trigger dropped              → (lapse) red
+  --   yes_stands() without pupil_signin_stayed() → (left) red
+  --   the office's door not asking who signed  → (form) red
+  --   the office's no closing every yes, after it too → (second) red
+  --   the link trigger recording any move out of 'granted' → (version) red
+  --   the link trigger without link_ended      → (revoked) red
+  --   the guardian's door not answering held   → (held) red
+  --   the guardian's door without the child-account refusal → (childgiver) red
+  --   pupil_signin_state() without N11's early answer → (agreed) red
+  --   the gate out of app_can()                → (staffboy) red; (writes) red
+  --                                           at his availability
+  --   not_him leaving the roster link; not_him leaving the claim open
+  --                                         → (nothim) red at each
+  --   the date-of-birth trigger dropped        → (born) red
+  --   a new definer reading the caller's boy, ungated → (writes) red
+  --   And the paste (S1): run statement by statement with no stop, it
+  --   errs nowhere; with one gate body put back by hand, §0 refuses it
+  --   (a partial paste).
   PERFORM _v169_case('legacy');
   PERFORM _v169_case('closed');
   PERFORM _v169_case('notices');
