@@ -231,6 +231,8 @@ export class PadSync {
     this.beating = false;
     /** This device put the pen down from the end screen (db/171, release()). */
     this.released = false;
+    /** Taking the pen again after a release: restamp every queued event to the new generation. */
+    this.rebaseAfterRelease = false;
     /** The screen wake lock while attached (navigator.wakeLock), and a request in flight. */
     this.wakeLock = null;
     this.waking = false;
@@ -474,6 +476,7 @@ export class PadSync {
     if (this.stopped) return;
     this.lastAttach = r;
     if (r.ok) {
+      if (this.rebaseAfterRelease) { this.rebaseAfterRelease = false; await engine.attach(engine.epoch ?? r.epoch, { rebase: true }); }
       this.reason = null; this.halted = false; this.attempt = 0;
       this.leaseAt = Date.now();
       this.heldElsewhere = null;
@@ -968,6 +971,10 @@ export class PadSync {
     if (this.released && e && (e.pendingCount || e.toss) && !e.attached && !this.attaching) {
       this.released = false;
       this.reason = null;
+      // The release moved the generation on, and the claim moves it again:
+      // what this device recorded since is restamped to the new one, all of
+      // it, so nothing of its own is set aside as a stale ball.
+      this.rebaseAfterRelease = true;
       this.attach("open");
     }
     if (e?.attached) this.holdWake(); else this.releaseWake();

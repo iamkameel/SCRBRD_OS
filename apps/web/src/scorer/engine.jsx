@@ -1084,11 +1084,20 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // recorded afterwards (an undo) takes the pen again (PadSync.status()).
   const scorersEnd = screen === "result" && fixtureLive && !practiceMode && matchOver && offer.state !== "available"
     && finishOffer(match?.schoolId, match?.teamCode) !== "finish";
+  // Only once the end has held for a moment, with every event the pad shows
+  // in the outbox's sent set: a seal the scorer has just confirmed may not yet
+  // have been offered to the outbox (CI's super over walk, 20 Nov).
   useEffect(() => {
     const ps = syncRef.current, st = padStatus;
     if (!scorersEnd || !ps || !st || !st.attached || !st.cleared || st.released) return;
     if (st.pending || st.held || st.tossPending || st.syncing) return;
-    ps.release().catch(() => {});
+    const t = setTimeout(() => {
+      const e = ps.engine;
+      const unsent = eventsRef.current.some((evs) => (evs ?? []).some((ev) => ev?.id && !e?.sent?.has(ev.id) && !serverKnownRef.current.has(ev.id)));
+      if (!e || e.pendingCount || e.syncing || unsent) return;
+      ps.release().catch(() => {});
+    }, 2000);
+    return () => clearTimeout(t);
   }, [padStatus, scorersEnd]);
 
   const startMatch=cfg=>{
