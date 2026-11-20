@@ -2567,6 +2567,39 @@ Hash-checked:
 `sha256 7c80311d0d67f811b3717c0d70024a7e19993b746a52262170482fc15abcebd2`.
 Recorded in `db/SHIPPED.sha256` by #371 (df071d36).
 <!-- ── end db/168 ── -->
+<!-- ── db/171: the end of a match, the server's half ── -->
+#### The end of a match: the scorer's part, the coach's notice, the pen put down (db/171)
+
+`db/171_slice4_followups.sql` (PR #378, branch claude/wip-s4-followups; redesign
+slice 4's follow-ups, DESIGN_DIRECTION Q2 (a), Kameel 20 Nov 2026: "keep the
+separation"). The server refuses a finish asked only as the scorer
+(`coach_confirms`); whoever may confirm at the home side is told once when a
+live fixture's log decides it; and the scorer's end screen puts the pen down
+(`scoring_release()`), so the coach's Confirm does not wait out a 90 s lease.
+The official result stays db/114's. Its proof is db/99 §146.
+
+To paste:
+
+- **After db/169 and db/170, in that order.** db/169 re-emits `app_can()`, and
+  db/171 copies `app_can()`'s live body into `app_can_but_scorer()` at the
+  paste, so the copy carries db/169's gate. It fails loudly, changing nothing,
+  if the body is not as it expects.
+- **As one transaction:** the SQL Editor's single run, or `psql -1 -v
+  ON_ERROR_STOP=1 -f`. Statement by statement, its new functions would stand
+  executable by PUBLIC until the grants block ran.
+- **Not while a match is being finished.** Between the paste and the API built
+  with it, a scorer's Finish answers `coach_confirms` through the old API as an
+  unworded 422. A match merely live is fine: the three triggers hold their
+  tables' lock until the paste commits (well under a second), so a ball write
+  waits that long, bounded by the file's ten-second `lock_timeout`; a paste
+  that timed out on its lock is simply run again.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  171, and the API refuses to start on a database without it.
+- It can be pasted again: CREATE OR REPLACE throughout and one `CREATE INDEX IF
+  NOT EXISTS`. It resets `lock_timeout` with its last statement.
+
+Not pasted yet. Hash to check: `sha256 05e2fa904ea6283f6cffc1c78195abb1df1fde47a70acb6368e2753231bcf40a`.
+<!-- ── end db/171 ── -->
 
 ### 5 · Cloud Run, the first time
 

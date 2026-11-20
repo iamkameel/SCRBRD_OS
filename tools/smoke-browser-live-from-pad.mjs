@@ -32,12 +32,18 @@
  *      is done. All N balls are sent. The coach confirms the result." with
  *      Back to Today, and no Finish. Until the coach confirms, the score reads
  *      provisional on his Today (Now and This week), on Matches and on the
- *      public page, and nothing offers the pad or a take-over. The coach's
- *      notice is looked for (none is written yet: the lead's migration). The
- *      coach confirms from the Match Centre (db/130's finish, once the
- *      scorer's phone has let go of the lease); then it reads as the result:
+ *      public page, and nothing offers the pad or a take-over. db/171: the
+ *      end screen puts the pen down (the pad's own key, once everything is
+ *      sent: "The coach can confirm the result now."), the server's session
+ *      goes idle; the scorer's finish is refused by the server (403
+ *      coach_confirms, an API call, not only the screen); the coach, and not
+ *      the scorer, is told once ("1XI v … is decided. Confirm the result.").
+ *      The coach opens it from Notices, which lands him on the match's
+ *      Confirm, and confirms on the FIRST press, with no 90 s wait for the
+ *      lease; the notice is then taken back. Then it reads as the result:
  *      Today "Result confirmed", the coach's and the public header "Result".
- *      Screenshots at 390, light and dark, into RS4_SHOTS when it is set.
+ *      Screenshots at 390, light and dark, into RS4_SHOTS when it is set; the
+ *      end screen and the coach's notice at 390 and 1366 too.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-live-from-pad.mjs
@@ -58,7 +64,6 @@ const PORT = port(8919);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DEBUG = !!process.env.BROWSER_LIVE_DEBUG;
 const SHOTS = process.env.RS4_SHOTS || null;
-const START0 = new Date();
 const PHONE = { width: 390, height: 844 };
 const DESKTOP = { width: 1280, height: 800 };
 
@@ -337,27 +342,45 @@ try {
 
   // ── 6 ──────────────────────────────────────────────────────────
   group("6. Slice 4: the scorer's part is done; provisional everywhere; the coach confirms; then the result");
-  const shot = async (page, name) => {
+  const shot = async (page, name, widths = null) => {
     if (!SHOTS) return;
     await mkdir(SHOTS, { recursive: true });
-    for (const scheme of ["light", "dark"]) {
-      await page.emulateMedia({ colorScheme: scheme }).catch(() => {});
-      await page.waitForTimeout(300);
-      await page.screenshot({ path: join(SHOTS, `${name}-390-${scheme}.png`), fullPage: true }).catch(() => {});
+    const was = page.viewportSize();
+    for (const w of widths ?? [was?.width ?? 390]) {
+      if (widths) await page.setViewportSize({ width: w, height: w <= 430 ? 844 : 900 }).catch(() => {});
+      for (const scheme of ["light", "dark"]) {
+        await page.emulateMedia({ colorScheme: scheme }).catch(() => {});
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: join(SHOTS, `${name}-${widths ? w : 390}-${scheme}.png`), fullPage: true }).catch(() => {});
+      }
     }
+    if (widths && was) await page.setViewportSize(was).catch(() => {});
     await page.emulateMedia({ colorScheme: "light" }).catch(() => {});
   };
   ok("the end panel is shown, not hidden", await has(P, "pad-finish-panel"), (await text(P)).slice(0, 400));
   ok(`it says "Your part is done." ("${await inner(P, "pad-done-lead")}")`, (await inner(P, "pad-done-lead")) === "Your part is done.");
+  // db/171: everything sent, the end screen puts the pen down, under the pad's own key.
+  const tEnd = Date.now();
+  ok("the pad puts the pen down once everything is sent",
+     await until(P, () => document.querySelector('[data-testid="pad-finish-panel"]')?.getAttribute("data-released") === "true", 20000),
+     await tid(P, "pad-finish-panel").first().getAttribute("data-released").catch(() => "?"));
   const doneSaid = await inner(P, "pad-done-said");
-  ok(`...that every ball is sent, and who confirms ("${doneSaid}")`, /^All \d+ balls are sent\. The coach confirms the result\.$/.test(doneSaid), doneSaid);
+  ok(`...that every ball is sent, and that the coach can confirm now ("${doneSaid}")`, /^All \d+ balls are sent\. The coach can confirm the result now\.$/.test(doneSaid), doneSaid);
+  const [sess] = await q(`select state, holder_user_id from scoring_session where match_id = $1`, [MATCH]);
+  const [{ id: scorerId }] = await q(`select id from app_user where email = 'scorer@example.invalid'`);
+  const downs = await q(`select actor_id from scoring_audit where match_id = $1 and event = 'pen_released'`, [MATCH]);
+  ok(`...the server's session is idle, nobody holding it (${JSON.stringify(sess)})`, sess?.state === "idle" && sess?.holder_user_id === null);
+  ok("...one pen_released row, the scorer's", downs.length === 1 && downs[0].actor_id === scorerId, JSON.stringify(downs));
+  const scorerFinish = await call(`/api/matches/${MATCH}/finalise`, await tokenFor("scorer@example.invalid"), {});
+  ok(`the server refuses the scorer's finish: 403 coach_confirms (${scorerFinish.status} ${scorerFinish.body?.error})`,
+     scorerFinish.status === 403 && scorerFinish.body?.error === "coach_confirms", JSON.stringify(scorerFinish.body));
   ok("...and offers the scorer no Finish or Confirm", !(await has(P, "pad-finish")));
   const back = await tid(P, "pad-done-back").first().evaluate((e) => ({ h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize), t: e.textContent.trim() })).catch(() => null);
   ok(`"Back to Today" is the one primary, a 44px key on the 12px floor (${JSON.stringify(back)})`, !!back && back.t === "Back to Today" && back.h >= 44 && back.fs >= 12
      && (await P.locator("button", { hasText: /^(New Match|Back home)$/ }).count()) === 0);
   ok("the result screen does not scroll sideways at 390", await P.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
      await P.evaluate(() => `${document.documentElement.scrollWidth} > ${window.innerWidth}`));
-  await shot(P, "scorer-end");
+  await shot(P, "scorer-end", [390, 1366]);
   ok("the fixture is still live: the scorer finished nothing", (await statusOf(MATCH)) === "live", await statusOf(MATCH));
 
   await tap(P, "pad-done-back");
@@ -402,46 +425,47 @@ try {
      !/Provisional/i.test(await inner(pu.page, "public-official")), await inner(pu.page, "public-official"));
   ok(`...and its sentence says provisional ("${await inner(pu.page, "mc-result")}")`, /· provisional$/.test(await inner(pu.page, "mc-result")), await inner(pu.page, "mc-result"));
 
-  // The coach's notice (Q2): none is written yet. A notice needs a definer or a trigger (a migration), which waits for the lead.
-  const notices = await q(`select count(*)::int n from notification where school_id = $1 and published_at > $2 and (title ilike '%confirm%' or body ilike '%confirm%')`, [HIL, START0]);
-  note(`the coach's notice of a result to confirm: ${notices[0]?.n ?? 0} written (NOT BUILT: it needs the lead's migration)`);
+  // The coach's notice (Q2, db/171): written at the chase's seal, once, to who may confirm, never the scorer.
+  const TITLE = `1XI v ${OPPONENT} is decided. Confirm the result.`;
+  const decidedTo = async (email) => ((await (await fetch(`${BASE}/api/read/notifications`, { headers: { authorization: `Bearer ${await tokenFor(email)}` } })).json())?.rows ?? [])
+    .filter((n) => n.subject_id === MATCH && n.title === TITLE);
+  const toCoach = await decidedTo("coach@example.invalid");
+  ok(`the 1XI coach is told once: "${TITLE}"`, toCoach.length === 1 && toCoach[0].urgency === "medium", JSON.stringify(toCoach));
+  ok("...the director of sport too, and the scorer not", (await decidedTo("sarah@example.invalid")).length === 1 && (await decidedTo("scorer@example.invalid")).length === 0);
+  const named = await q(`select count(*)::int n from notification n, player p where n.subject_id = $1 and n.title = $2
+                           and p.school_id = $3 and position(p.full_name in n.title || ' ' || n.body) > 0`, [MATCH, TITLE, HIL]);
+  ok("...naming no child", named[0].n === 0);
 
   const co = await open("coach-confirms");
   ok("the 1XI coach signs in", await signIn(co.page, "coach@example.invalid"));
-  ok("...and opens the fixture in Match Centre", await openMatch(co.page, MATCH), (await text(co.page)).slice(0, 300));
+  const bell = await destLocator(co.page, "notifications");
+  if (await bell.count()) { await bell.click({ timeout: 6000 }).catch(() => {}); await afterReads(co.page, 1200); }
+  const noticeRow = co.page.locator('[data-testid="notice-row"]', { hasText: TITLE });
+  ok("his Notices list it", await noticeRow.first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false), (await text(co.page)).slice(0, 400));
+  ok("...with Confirm the result on it", (await noticeRow.locator('[data-testid="notice-confirm-result"]').count()) === 1);
+  await shot(co.page, "coach-notice", [390, 1366]);
+  await noticeRow.locator('[data-testid="notice-confirm-result"]').first().click({ timeout: 5000 });
+  ok("one tap lands him on the match's Confirm", await until(co.page, () => !!document.querySelector('[data-testid="match-view"]')
+       && document.activeElement?.getAttribute("data-testid") === "mc-finish", 12000),
+     `${await has(co.page, "match-view")} · focus ${await co.page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName)}`);
   ok(`his header says Provisional ("${await word(co.page, "mc-status")}")`, (await word(co.page, "mc-status")) === "Provisional");
-  ok("...and offers him Confirm the result", await until(co.page, () => !!document.querySelector('[data-testid="mc-finish"]'), 8000), (await text(co.page)).slice(0, 400));
   const cKey = await tid(co.page, "mc-finish").first().evaluate((e) => ({ h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize) })).catch(() => null);
-  ok(`...a 44px key on the 12px floor (${JSON.stringify(cKey)})`, !!cKey && cKey.h >= 44 && cKey.fs >= 12);
-  // The scorer's phone held the lease (db/132: no confirm under a live lease); it lets go 90 s after its last beat.
-  // Each press waits for its answer: the button's own busy state ending ("Confirming…" gone), then the words. An
-  // empty answer (a tap that missed, a slow runner) is pressed again like "still holds" is, within the same budget.
-  let confirmed = false, tries = 0, lastSaid = "", empties = 0;
-  const tConfirm = Date.now();
+  ok(`...a 44px key on the 12px floor (${JSON.stringify(cKey)})`, !!cKey && Math.round(cKey.h) >= 44 && cKey.fs >= 12);
+  // db/171: the scorer's end screen put the pen down, so the FIRST press confirms: no 90 s lease to wait out.
+  // The press waits for its answer: the button's own busy state ending ("Confirming…" gone), then the words,
+  // which MatchView now holds once the match re-reads as complete.
   const answered = () => {
     const b = document.querySelector('[data-testid="mc-finish"]');
     const said = (document.querySelector('[data-testid="mc-finish-said"]')?.textContent ?? "").trim();
     return said.length > 0 && !(b && /Confirming/.test(b.textContent ?? ""));
   };
-  while (!confirmed && Date.now() - tConfirm < 150000) {
-    tries++;
-    const pressed = await tid(co.page, "mc-finish").first().click({ timeout: 8000 }).then(() => true, () => false);
-    await until(co.page, answered, 30000);
-    lastSaid = await inner(co.page, "mc-finish-said");
-    if (/^Confirmed\. The match is finished\.$/.test(lastSaid)) { confirmed = true; break; }
-    if (!lastSaid) {
-      empties++;
-      // No words: the server may have the match finished all the same (then there is no button left to press).
-      if ((await statusOf(MATCH)) === "complete") { lastSaid = `(no words on screen after ${pressed ? "a press" : "no press"})`; break; }
-      await co.page.waitForTimeout(2000);
-      continue;
-    }
-    if (!/still holds the match/.test(lastSaid)) break;
-    await co.page.waitForTimeout(10000);
-  }
-  if (empties) note(`${empties} press(es) with no answer on screen, pressed again`);
-  note(`confirmed after ${tries} press(es), ${Math.round((Date.now() - tConfirm) / 1000)} s (the scorer's lease letting go)`);
-  ok(`he confirms it: "${lastSaid}"`, confirmed, lastSaid);
+  await tid(co.page, "mc-finish").first().click({ timeout: 8000 }).catch(() => {});
+  await until(co.page, answered, 30000);
+  const lastSaid = await inner(co.page, "mc-finish-said");
+  const waited = Math.round((Date.now() - tEnd) / 1000);
+  ok(`he confirms it on the first press: "${lastSaid}"`, /^Confirmed\. The match is finished\.$/.test(lastSaid), lastSaid);
+  note(`confirmed ${waited} s after the scorer's end screen (a held lease took up to 90 s to lapse; this one was put down)`);
+  ok("...and his notice is taken back", (await decidedTo("coach@example.invalid")).length === 0);
   ok(`the server has the match complete (${await statusOf(MATCH)})`, (await statusOf(MATCH)) === "complete");
   // The fixture re-read comes back complete; the answer stays where he read it (the panel no longer goes with it).
   await afterReads(co.page, 2500);

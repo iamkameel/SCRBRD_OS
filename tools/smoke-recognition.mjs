@@ -667,7 +667,7 @@ try {
        // R8 (db/146) gave the table a rationale, a coach's Colours nomination's
        // alone: a captain's row never carries one (its CHECK).
        && row.rationale === null && Date.parse(row.closes_at) - Date.now() > 47 * 3600e3, JSON.stringify(row));
-    ok("...nobody is sent a notice about it", (await q(`select count(*)::int n from notification where subject_id = $1`, [M]))[0].n === 0);
+    ok("...nobody is sent a notice about it", (await q(`select count(*)::int n from notification where subject_id = $1 and required_capability <> 'scoring.finalise'`, [M]))[0].n === 0);
     ok("a second nomination is refused", (await pickOne(M, pupil, WHITFIELD, hs)).body?.error === "already_nominated");
     const after = (await nom(M, pupil)).body?.captain?.[0];
     ok("his tab now shows his nomination, open, with the coach, and no pick",
@@ -719,7 +719,7 @@ try {
     ok("the director records no award", na.status === 200 && na.body?.ok === true, JSON.stringify(na.body));
     const nd = (await nom(M2, pupil)).body?.captain?.[0];
     ok("the captain's tab says so, and offers no second pick", nd?.mine?.status === "no_award" && nd.mayNominate === false && nd.refusal === "already_decided", JSON.stringify(nd));
-    ok("...nothing is told to the side", (await q(`select count(*)::int n from notification where subject_id = $1`, [M2]))[0].n === 0);
+    ok("...nothing is told to the side", (await q(`select count(*)::int n from notification where subject_id = $1 and required_capability <> 'scoring.finalise'`, [M2]))[0].n === 0);
     const audit = await rows("/api/read/audit_log?kinds=recognition", head);
     ok("the audit log words the nominations and their decisions, the decider named",
        audit.some((r) => r.action === "Nominated for Player of the Match (the captain's pick)" && r.subject === "T Bekker" && r.actor === "R Pillay")

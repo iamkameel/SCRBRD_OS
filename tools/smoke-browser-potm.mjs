@@ -371,7 +371,7 @@ try {
   const nrow = await q(`select status, nominee_player_id, nominated_by_player_id from recognition_nomination where match_id = $1`, [M2]);
   ok("the database holds one open nomination, his, of T Bekker", nrow.length === 1 && nrow[0].status === "open" && nrow[0].nominee_player_id === BEKKER
      && nrow[0].nominated_by_player_id === PILLAY, JSON.stringify(nrow));
-  ok("...and nobody was sent a notice about it", (await q(`select count(*)::int n from notification where subject_id = $1`, [M2]))[0].n === 0);
+  ok("...and nobody was sent a notice about it", (await q(`select count(*)::int n from notification where subject_id = $1 and required_capability <> 'scoring.finalise'`, [M2]))[0].n === 0);
   ok("no verdict word anywhere on his tab", !/rejected|declined|overruled/i.test(await tid(pu.page, "mc-captain-potm").innerText()));
   ok("no console errors (the captain)", pu.errors.length === 0, pu.errors.join(" | "));
 
