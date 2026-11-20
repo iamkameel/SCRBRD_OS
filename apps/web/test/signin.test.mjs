@@ -32,7 +32,7 @@ import { GRANTABLE_ROLES, SUBJECT_SCOPED_ROLES, SELF_REGISTRABLE_ROLES, SELF_REG
 import { exchangeGoogle, exchangeState, EXCHANGE_WORDS, CLAIM_STEPS, CLAIM_MEANWHILE } from "../src/lib/signin.js";
 import { googleConfig, signInConfig, googleFailure, GOOGLE_FAILURE_WORDS, addSignIn, authReady } from "../src/lib/google.js";
 import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../src/lib/signinNotice.js";
-import { FORM_ON_FILE, OWN_SIGNIN_REFUSALS, ownSigninWords } from "../src/lib/ownSignin.js";
+import { FORM_ON_FILE, OFFICE_WITHDRAW, OWN_SIGNIN_REFUSALS, formReady, heldWords, officeSigninWords, ownSigninWords } from "../src/lib/ownSignin.js";
 import {
   KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, NOTE_MAX, buildRequest, joinWords, parentNote, sentWords, spectatorAsk,
 } from "../src/lib/joinSchool.js";
@@ -247,14 +247,14 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
   // §3.3's sentences, word for word.
   let w = stateWords({ state: "recognised", schoolName: "Test School" });
   ok("recognised: the design's sentence", w.title === "Your school knows this is you." && w.line === "A parent or guardian needs to say yes before your own page opens.", JSON.stringify(w));
-  ok("...and how a yes comes today: the signed form, through the office (Family has nothing to tap until Migration B)", /signed consent form/.test(w.how) && /office/.test(w.how) && !/Family/.test(w.how), w.how);
+  ok("...and how a yes comes: a parent's yes under Family, or the signed form, through the office (db/169)", /signed consent form/.test(w.how) && /office/.test(w.how) && /Family/.test(w.how), w.how);
   w = stateWords({ state: "with_office", schoolName: "Test School" });
   ok("with the office: §2.4's sentence for everyone not matched", w.title === "Sent to the school" && w.line === "Somebody at Test School will answer.", JSON.stringify(w));
   w = stateWords({ state: "declined", schoolName: "Test School" });
   ok("declined: the school has answered, never why", w.title === "The school has answered" && !/because|not on|list|record|known/i.test(w.line), JSON.stringify(w));
   const said = ["with_office", "recognised", "declined", "open"].flatMap((st) => Object.values(stateWords({ state: st, schoolName: "Test School" }))).filter(Boolean);
   ok("no state's words is an oracle, or names a team, a figure or a record", said.every((x) => !FOUND.test(x) && !/\bteam\b|figure|\brecord\b|availability|team-mate/i.test(x)), said.join(" | "));
-  ok("Q9 from the first day: the date, the 30 days, and what then", keepWords({ state: "with_office", keepUntil: "2026-12-18" }) === "This account is kept until 18 December 2026, 30 days from your last claim, while the school office decides. Your own page opens only once the office has a parent's or guardian's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.");
+  ok("Q9 from the first day: the date, the 30 days, and what then", keepWords({ state: "with_office", keepUntil: "2026-12-18" }) === "This account is kept until 18 December 2026, 30 days from your last claim, while the school office decides. Your own page opens only once a parent or guardian says yes, in SCRBRD or on the school's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.");
   ok("...and promises nobody asks a parent: in Migration A the office decides (review S6)",
      !/is asked|we ask|will ask/i.test(keepWords({ state: "with_office", keepUntil: "2026-12-18" }) + CLAIM_FORM.keep) && /office decides/.test(CLAIM_FORM.keep));
   ok("...declined, 30 days from the school's answer, and what then", /until 18 December 2026, 30 days from the school's answer\. Then it is removed, with the schools you follow\./.test(keepWords({ state: "declined", keepUntil: "2026-12-18" })));
@@ -267,7 +267,8 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
 
   // db/169: a yes taken back. §3.4's sentence, word for word; how a yes comes again; no oracle.
   w = stateWords({ state: "closed", schoolName: "Test School" });
-  ok("closed: §3.4's sentence", w.title === "Your own page is closed" && w.line === "Your own page is closed until a parent or guardian says yes again.", JSON.stringify(w));
+  // N8: no "again": a boy enrolled without the form reads this too, and was never open.
+  ok("closed: §3.4's sentence, without 'again'", w.title === "Your own page is closed" && w.line === "Your own page is closed until a parent or guardian says yes.", JSON.stringify(w));
   ok("...and how a yes comes again: Family, or the office", /Family/.test(w.how) && /office at Test School/.test(w.how), w.how);
   ok("...naming no team, figure or record, and no reason", !FOUND.test(w.line + w.how) && !/\bteam\b|figure|\brecord\b|because|withdrew|revoked/i.test(w.line + w.how));
   ok("...and no last day: an account holding a pupil's role is never removed", keepWords({ state: "closed", keepUntil: null }) === null);
@@ -281,8 +282,20 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
     ok("...the other guardian's: named only as the other guardian, and not hers to stop (Q6)",
        /other guardian allowed/.test(ownSigninWords({ ...base, inForce: true, yesHow: "guardian", yesBy: "the guardian" }, "Sipho"))
        && /Only they, or the school office/.test(ownSigninWords({ ...base, inForce: true, yesHow: "guardian" }, "Sipho")));
-    ok("...the school's form, or the stamp carried over: ask the office",
-       ["office", "enrolled"].every((how) => /signed consent form on file/.test(ownSigninWords({ ...base, inForce: true, yesHow: how }, "Sipho"))));
+    // S3: each says only what was attested.
+    ok("...the school's form: on file, signed on its day, never by whom; ask the office",
+       ownSigninWords({ ...base, inForce: true, yesHow: "office", formSignedOn: "2026-11-02", yesAt: "2026-11-18T08:00:00Z" }, "Sipho")
+         === "The school office recorded that it has a consent form for Sipho, signed on 2 November 2026, on file, so his own sign-in is allowed. Ask the office to stop it.");
+    const carried = ownSigninWords({ ...base, inForce: true, yesHow: "enrolled", yesAt: "2026-03-03T08:00:00Z", canStop: true }, "Sipho");
+    ok("...the stamp carried over: no form is claimed, and it is hers to stop (B)",
+       carried === "The school office opened Sipho's own sign-in when it enrolled him on 3 March 2026. No signed consent form was recorded with it. You can stop it at any time."
+         && !/has .*form on file/.test(carried), carried);
+    ok("...not hers until she has agreed the terms (N11)", /Agree to the school's terms first/.test(ownSigninWords({ ...base, agreed: false }, "Sipho")));
+    ok("S5: a yes that could not open him says why", /no side for him/.test(heldWords("team_required", "Sipho")) && /not been opened yet/.test(heldWords("weird", "Sipho")) && heldWords(null, "Sipho") === null);
+    ok("D: the form needs who signed it and a day", formReady({ signedBy: "N Mother", signedOn: "2026-11-02" }) && !formReady({ signedBy: "N", signedOn: "2026-11-02" }) && !formReady({ signedBy: "N Mother", signedOn: "" }));
+    ok("E: the office is told its withdrawal does not hold against a later yes", /does not hold against a yes given afterwards/.test(OFFICE_WITHDRAW.says) && /end his roles or disable his account/.test(OFFICE_WITHDRAW.says));
+    ok("the office reads who signed the form, and when", officeSigninWords({ ...base, inForce: true, yesHow: "office", yesBy: "N Office", formSignedBy: "N Mother", formSignedOn: "2026-11-02" }, "Sipho")
+       === "A consent form signed by N Mother on 2 November 2026 is on file, recorded by N Office.");
     ok("...no date of birth: closed, and the office records it", /no date of birth/.test(ownSigninWords({ ...base, bornKnown: false }, "Sipho")));
     ok("...eighteen: his own", ownSigninWords({ ...base, adult: true, inForce: true }, "Sipho") === "Sipho is 18. His own sign-in is his.");
     ok("every refusal of the tap has words", ["not_permitted", "player_is_an_adult", "terms_not_agreed", "no_date_of_birth", "not_yours_to_stop", "fallback"].every((k) => typeof OWN_SIGNIN_REFUSALS[k] === "string"));

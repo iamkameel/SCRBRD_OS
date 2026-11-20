@@ -7,7 +7,7 @@ import { Modal } from "../ui/primitives.jsx";
 import { api } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { reachesEverySchool, schoolsWhere } from "../lib/session.js";
-import { FORM_ON_FILE } from "../lib/ownSignin.js";
+import { FORM_ON_FILE, formReady } from "../lib/ownSignin.js";
 
 // ══════════════════════════════════════════════════════
 //  ENROLMENT, SHARED
@@ -61,6 +61,9 @@ export const ENROL_MESSAGE = {
   // db/169 (Q12): the office's tick, "The signed consent form is on file".
   form_no_date_of_birth: FORM_ON_FILE.form_no_date_of_birth,
   form_not_permitted: FORM_ON_FILE.form_not_permitted,
+  form_form_signer_required: FORM_ON_FILE.form_form_signer_required,
+  form_form_date_required: FORM_ON_FILE.form_form_date_required,
+  form_form_date_invalid: FORM_ON_FILE.form_form_date_invalid,
 };
 const UNSAID = "This was not saved. The server refused it for a reason that has no words yet, and nothing was changed.";
 /** The words for a refusal code; a sentence even for a code nobody has written one for. */
@@ -212,6 +215,8 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
     team: "",
     withCode: codeByDefault,
     formOnFile: false,
+    formSignedBy: "",
+    formSignedOn: "",
   });
   const set = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
   const [busy, setBusy] = useState(false);
@@ -242,7 +247,9 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
   const pupilByOffice = !byAccount && PUPIL_ROLES.includes(f.role) && !opensPupilAccounts(role);
   const codeWithheld = byAccount && !f.email;
   const ready = !!schoolId && f.name.trim().length >= 2 && (byAccount || EMAIL.test(f.email.trim())) && !!f.role
-    && (!teamScoped || !!f.team) && (!subjectScoped || !!f.player) && !pupilByOffice;
+    && (!teamScoped || !!f.team) && (!subjectScoped || !!f.player) && !pupilByOffice
+    // D (Kameel, 20 Nov): the form ticked names who signed it and the day.
+    && (!(PUPIL_ROLES.includes(f.role) && f.formOnFile) || formReady({ signedBy: f.formSignedBy, signedOn: f.formSignedOn }));
 
   const submit = async () => {
     setError(null);
@@ -260,7 +267,8 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
         withCode: f.withCode === true && !codeWithheld,
         // db/169 (Q12): ticked by a person, never assumed. Unticked, his account is
         // opened and his own page waits for a parent's or guardian's yes.
-        ...(PUPIL_ROLES.includes(f.role) && f.formOnFile === true ? { formOnFile: true } : {}),
+        ...(PUPIL_ROLES.includes(f.role) && f.formOnFile === true
+          ? { formOnFile: true, formSignedBy: f.formSignedBy.trim(), formSignedOn: f.formSignedOn } : {}),
       } });
       await onEnrolled?.({ out, name: f.name.trim(), role: f.role, team: teamScoped ? f.team : null });
     } catch (e) {
@@ -327,6 +335,9 @@ export function EnrolModal({ role, players = [], accountless, initial = {}, fixe
           <span><span style={{ color: D.textPrimary }}>{FORM_ON_FILE.label}</span><br/>{FORM_ON_FILE.hint}</span>
         </label>
       )}
+      {PUPIL_ROLES.includes(f.role) && !pupilByOffice && f.formOnFile === true && (
+        <FormOnFileFields by={f.formSignedBy} on={f.formSignedOn} setBy={set("formSignedBy")} setOn={set("formSignedOn")} testid="enrol-form"/>
+      )}
       {!codeWithheld && !pupilByOffice && (
         <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "44px", cursor: "pointer",
                         fontFamily: D.body, fontSize: "13px", color: D.textSecondary }}>
@@ -391,4 +402,26 @@ export function issuedFrom(out, name) {
   if (out?.code) return { code: out.code, expiresAt: out.expiresAt, name };
   if (out?.codeError) return { code: null, error: out.codeError, name };
   return null;
+}
+
+
+/**
+ * D (Kameel, 20 Nov): who signed the consent form, as written on it, and the
+ * day it was signed. Shown under "The signed consent form is on file" once it
+ * is ticked, here and on the office's requests list.
+ */
+export function FormOnFileFields({ by, on, setBy, setOn, testid }) {
+  const idBy = useId(), idOn = useId();
+  const field = { width: "100%", minHeight: "44px", padding: "9px 12px", boxSizing: "border-box", borderRadius: D.sm,
+                  border: `1px solid ${D.border}`, background: D.surf2, color: D.textPrimary, fontFamily: D.body, fontSize: "16px" };
+  const label = { display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, margin: "6px 0 4px" };
+  const today = new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 10);
+  return (
+    <div role="group" aria-label={FORM_ON_FILE.label} style={{ display: "grid", gap: "2px", padding: "0 0 10px 30px" }}>
+      <label htmlFor={idBy} style={label}>{FORM_ON_FILE.signedBy}</label>
+      <input id={idBy} value={by} maxLength={200} autoComplete="off" onChange={(e) => setBy(e.target.value)} style={field} data-testid={`${testid}-signed-by`}/>
+      <label htmlFor={idOn} style={label}>{FORM_ON_FILE.signedOn}</label>
+      <input id={idOn} type="date" max={today} value={on} onChange={(e) => setOn(e.target.value)} style={field} data-testid={`${testid}-signed-on`}/>
+    </div>
+  );
 }

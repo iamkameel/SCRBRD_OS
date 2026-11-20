@@ -212,7 +212,11 @@ export const IMPORTS = {
                     batting_style = coalesce($6, batting_style),
                     bowling_arm = coalesce($7, bowling_arm),
                     bowling_style = coalesce($8, bowling_style),
-                    born = coalesce($9, born),
+                    -- A date of birth on record is never changed by a file (db/169:
+                    -- the gate opens a boy at 18 by it, and the database refuses
+                    -- the change, player_born_on_record); a file fills one in
+                    -- only where there is none, as the office's dob-capture does.
+                    born = coalesce(born, $9),
                     id_number = coalesce($10, id_number),
                     email = coalesce($11, email),
                     phone = coalesce($12, phone),

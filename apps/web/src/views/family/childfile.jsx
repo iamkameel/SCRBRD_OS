@@ -25,7 +25,7 @@ import { GUARDIAN_TERMS_VERSION, agreedWords } from "../../lib/guardianLink.js";
 import { AgreeTerms } from "./terms.jsx";
 import { HealthConsentPrompt, HealthConsentSection } from "../healthconsent.jsx";
 import { Action, Card, Line, OpenRow, Unread } from "./parts.jsx";
-import { OWN_SIGNIN_REFUSALS, ownSigninWords } from "../../lib/ownSignin.js";
+import { OWN_SIGNIN_REFUSALS, heldWords, ownSigninWords } from "../../lib/ownSignin.js";
 
 /** Roles that never belong in "who else can see this": the break-glass keys and the platform. */
 const NOT_A_PERSON_AT_SCHOOL = new Set(["superadmin", "platformadmin"]);
@@ -340,7 +340,12 @@ export function OwnSignIn({ child, name, w }) {
   }, [child.id, nonce]);
   const answer = async (/** @type {boolean} */ allow) => {
     setBusy(true); setSaid("");
-    try { await api(`/api/players/${child.id}/own-signin`, { method: "POST", body: { allow } }); setNonce((n) => n + 1); }
+    try {
+      const r = await api(`/api/players/${child.id}/own-signin`, { method: "POST", body: { allow } });
+      // S5: her yes is recorded, but his recognised account could not be opened by it: say why.
+      setSaid(heldWords(r?.held, name) ?? "");
+      setNonce((n) => n + 1);
+    }
     catch (e) { setSaid(OWN_SIGNIN_REFUSALS[/** @type {any} */ (e)?.code] ?? OWN_SIGNIN_REFUSALS.fallback); }
     setBusy(false);
   };
@@ -352,8 +357,9 @@ export function OwnSignIn({ child, name, w }) {
           {state.canAllow && !state.inForce && (
             <Line quiet>Until you say yes, {name} sees only the public pages and his school&apos;s safeguarding contacts. You may stop it at any time, and from eighteen it is his.</Line>
           )}
+          {state.held && !said && <Line testid="own-signin-held">{heldWords(true, name)}</Line>}
           <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
-            {state.canAllow && <Action primary disabled={busy} onClick={() => answer(true)} testid="own-signin-allow">Allow his own sign-in</Action>}
+            {state.canAllow && <Action primary disabled={busy} onClick={() => answer(true)} testid="own-signin-allow">{state.yours && state.held ? "Try opening his account again" : "Allow his own sign-in"}</Action>}
             {state.canStop && <Action disabled={busy} onClick={() => answer(false)} testid="own-signin-stop">Stop his own sign-in</Action>}
           </div>
         </>

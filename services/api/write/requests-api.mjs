@@ -21,7 +21,7 @@
  */
 import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
 import { COOLDOWN_WORDS, PUPIL_WAITING_WORDS } from "./register-api.mjs";
-import { recordFormOnFile } from "./pupil-signin-api.mjs";
+import { formOf, recordFormOnFile } from "./pupil-signin-api.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
@@ -166,7 +166,8 @@ export function requestRoutes({ pool, secret }) {
         return { withdrawn: rowCount };
       })),
 
-    // POST /api/users { email, name, role, schoolId, teamCode?, playerId?, note?, withCode?, formOnFile? }
+    // POST /api/users { email, name, role, schoolId, teamCode?, playerId?, note?, withCode?,
+    //                   formOnFile?, formSignedBy?, formSignedOn? }
     //                 | { userId, role, schoolId, teamCode?, playerId?, note?, withCode? }
     //
     // ADD A ROLE BY THE ACCOUNT (db/122, Kameel 29 Oct 2026: "Close both
@@ -196,6 +197,10 @@ export function requestRoutes({ pool, secret }) {
       if (!account && name.length < 2) throw err("name_required");
       const player = b.playerId == null ? null : String(b.playerId);
       if (player && !UUID.test(player)) throw err("player_invalid");
+      // db/169 (Kameel, 20 Nov, A): a pupil's role names the boy it is. The
+      // database refuses one that does not (enrol_person(), the grant door);
+      // said here first, before anything is asked of it.
+      if (PUPIL_ROLES.includes(f.role) && !player) throw err("player_required");
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         if (account) {
           const { rows: [u] } = await client.query(`select email, name from app_user where id = $1`, [account]);
@@ -240,7 +245,7 @@ export function requestRoutes({ pool, secret }) {
         // through the grant door by itself, and enrol_person() then refuses
         // the boy as player_already_has_an_account. A refusal here rolls the
         // grant back with it.
-        if (b.formOnFile === true && player) await recordFormOnFile(client, player);
+        if (b.formOnFile === true && player && PUPIL_ROLES.includes(f.role)) await recordFormOnFile(client, player, formOf(b));
         const out = { userId: r.user_id, assignmentId: r.assignment_id };
         if (b.withCode !== true) return out;
         try {
@@ -327,7 +332,7 @@ export function requestRoutes({ pool, secret }) {
       }
     },
 
-    // POST /api/requests/:id/decide { grant: boolean, note?, playerId?, teamCode?, formOnFile? }
+    // POST /api/requests/:id/decide { grant: boolean, note?, playerId?, teamCode?, formOnFile?, formSignedBy?, formSignedOn? }
     decide: handle(async (req) => {
       const b = req.body || {};
       if (typeof b.grant !== "boolean") throw err("grant_required");
@@ -343,11 +348,13 @@ export function requestRoutes({ pool, secret }) {
           r.reason === "no_such_request" ? 404 : r.reason === "not_permitted" ? 403 : 422);
         // db/169 (Q12): the office's tick, recorded after the grant, in this
         // transaction (as the enrol route above, and for the same reason). A
-        // refusal of the tick rolls the grant back with it.
+        // refusal of the tick rolls the grant back with it. N12: for a
+        // pupil's role only, and for the boy the grant itself recorded on the
+        // request (the grant door writes the player it used), not the one sent.
         if (b.grant === true && b.formOnFile === true) {
           const { rows: [q] } = await client.query(
-            `select coalesce($2::uuid, r.player_id) as player from role_request r where r.id = $1`, [req.params.id, player]);
-          if (q?.player) await recordFormOnFile(client, q.player);
+            `select r.player_id as player, r.role from role_request r where r.id = $1`, [req.params.id]);
+          if (q?.player && PUPIL_ROLES.includes(q.role)) await recordFormOnFile(client, q.player, formOf(b));
         }
         return { id: req.params.id, state: b.grant ? "granted" : "declined", assignmentId: r.assignment_id };
       });

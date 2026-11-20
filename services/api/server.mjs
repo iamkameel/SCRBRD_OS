@@ -885,6 +885,7 @@ const PLAYER_ROUTES = [
   [/^\/api\/pupil-claims\/clear$/,                   "POST", pupilClaims.clear],
   [/^\/api\/pupil-claims\/([^/]+)\/recognise$/,      "POST", pupilClaims.recognise],
   [/^\/api\/pupil-claims\/([^/]+)\/decline$/,        "POST", pupilClaims.decline],
+  [/^\/api\/pupil-claims\/([^/]+)\/not-him$/,        "POST", pupilClaims.notHim],
   // db/169: a boy's own sign-in, the family's yes or no and the office's form on
   // file. Every decision is a db/169 definer's, under the caller.
   [/^\/api\/players\/([^/]+)\/own-signin$/,          "GET",  ownSignin.state],

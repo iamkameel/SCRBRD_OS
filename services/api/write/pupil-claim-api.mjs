@@ -36,6 +36,9 @@
  *   GET  /api/pupil-claims?schoolId=      the office's Pupil claims list: { rows }
  *   POST /api/pupil-claims/:id/recognise { playerId }
  *   POST /api/pupil-claims/:id/decline
+ *   POST /api/pupil-claims/:id/not-him    db/169 (S10): "This account is not him", for a claim the office
+ *                                         recognised (and a yes may have opened): its pupil roles end, its
+ *                                         links go, the boy's yeses are closed, the claim is declined
  *   POST /api/pupil-claims/clear { schoolId }   the accounts past their 30 days: { removed }
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
@@ -60,6 +63,7 @@ export const PUPIL_CLAIM_STATUS = Object.freeze({
   player_is_an_adult: 409,
   player_required: 422,
   not_a_claim: 409,
+  not_recognised: 409,
 });
 
 /** A my_pupil_state() row, as his screen reads it. @param {any} r */
@@ -177,6 +181,11 @@ export function pupilClaimRoutes({ pool, secret }) {
 
     decline: handle(async (client, req) => {
       const { rows } = await client.query(`select * from pupil_claim_decline($1)`, [idOf(req)]);
+      return verdict(rows[0]);
+    }),
+
+    notHim: handle(async (client, req) => {
+      const { rows } = await client.query(`select * from pupil_claim_not_him($1)`, [idOf(req)]);
       return verdict(rows[0]);
     }),
 

@@ -26,6 +26,10 @@ export const DECIDE_WORDS = {
   // db/169 (Q12): the office's tick, "The signed consent form is on file".
   form_no_date_of_birth: "That pupil has no date of birth on the roster, so the signed form cannot open his own page. Add it to the roster first.",
   form_not_permitted: "Only the school office and the principal can record a pupil's signed consent form.",
+  // db/169 (Kameel, 20 Nov, D): the form names who signed it and the day.
+  form_form_signer_required: "Say who signed the consent form, as written on it.",
+  form_form_date_required: "Give the date the consent form was signed.",
+  form_form_date_invalid: "The date the form was signed cannot be after today, or before he was born.",
 };
 const DECIDE_FALLBACK = "That request was not answered. Try again, or ask the platform office.";
 const DECIDE_UNREACHABLE = "SCRBRD could not be reached. The request may or may not have been answered. Check the list before trying again.";
