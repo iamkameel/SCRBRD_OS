@@ -124,6 +124,11 @@ export function isTodayOrNext(m, now) {
  * client never compares names or device ids itself.
  *
  *   complete         the match is over; completion ends scoring (db/33)
+ *   provisional      live, and its log already decides it: the scorer's part
+ *                    is done and the coach confirms the result (redesign
+ *                    slice 4; DESIGN_DIRECTION Q2). Never "Live", never a
+ *                    take-over: whoever holds the token, there is nothing
+ *                    left to score
  *   handover         a handover is under way; the pad's take-over is the route
  *   held_here        this device holds the token: open the pad and go on
  *   held_you         your other device holds it: hand over from that one
@@ -134,9 +139,11 @@ export function isTodayOrNext(m, now) {
  *
  * @param {any} m  the fixture
  * @param {{state?: string|null, held?: string|null} | null | undefined} session
+ * @param {boolean} [decided]  the log already decides the match (a fold the screen made; matchCard.js decidedOn())
  */
-export function fixtureState(m, session) {
+export function fixtureState(m, session, decided = false) {
   if (m?.status === "complete") return "complete";
+  if (m?.status === "live" && decided) return "provisional";
   const st = session?.state ?? null;
   if (st === "handover_pending" || st === "verifying") return "handover";
   if (st && st !== "idle") {
@@ -168,8 +175,10 @@ export const STATE_WORDS = Object.freeze({
   lapsed:      { label: "Live · no device is scoring now",   action: "Open the pad",
                  note: "The last device stopped sending. Opening the pad here takes the scoring." },
   live:        { label: "Live",                              action: "Open the pad",  note: null },
-  complete:    { label: "Complete",                          action: null,
-                 note: "Completion ends scoring. A correction is an amendment." },
+  provisional: { label: "Your part is done · the coach confirms the result", action: null,
+                 note: "The score reads provisional until then." },
+  complete:    { label: "Result confirmed",                  action: null,
+                 note: "Nothing more is scored. A correction is an amendment." },
 });
 
 /**
@@ -185,10 +194,11 @@ export const STATE_WORDS = Object.freeze({
  * @param {any[]|null} [a.officials]  the officials read's rows
  * @param {string|null} [a.userId]
  * @param {Map<string, {rows?: any[], error?: any}>|null} [a.coverage]  match_duties per fixture
+ * @param {Set<string>|null} [a.decided]  live fixtures whose log already decides them
  * @param {number} a.now
  * @returns {{ items: {match: any, appointment: ReturnType<typeof appointmentOf>, group: "appointed"|"team", state: string, sessionError: boolean}[], shown: any[], later: number }}
  */
-export function scorerFixtures({ matches, assignments, officials = [], userId = null, coverage = null, now }) {
+export function scorerFixtures({ matches, assignments, officials = [], userId = null, coverage = null, decided = null, now }) {
   const demo = assignments == null;
   const items = (matches ?? [])
     .filter((m) => isTodayOrNext(m, now))
@@ -198,7 +208,7 @@ export function scorerFixtures({ matches, assignments, officials = [], userId = 
       const cov = coverage?.get?.(m.id) ?? null;
       const session = (cov?.rows ?? []).find((r) => r?.duty === "scoring") ?? null;
       return { match: m, appointment, group: /** @type {"appointed"|"team"} */ (appointment ? "appointed" : "team"),
-               state: fixtureState(m, session), sessionError: !!cov?.error };
+               state: fixtureState(m, session, !!decided?.has?.(m.id)), sessionError: !!cov?.error };
     });
   const big = Number.MAX_SAFE_INTEGER;
   items.sort((x, y) => (x.group === y.group ? 0 : x.group === "appointed" ? -1 : 1)
@@ -258,15 +268,20 @@ export function resumeItems({ saved, pending, serverMatches }) {
 }
 
 /**
- * "3 to send · open the pad to send them", "Nothing waiting to send", or a
- * count this device could not read. Only the pad sends (lib/sync.js PadSync),
- * so the home says where they go from (18 Nov 2026), as P0's note does.
+ * The sync words on Today (redesign slice 4; DESIGN_DIRECTION §2.2's scorer
+ * line, §3.4 Flow C): "Scoring on this phone · all sent"; "3 to send · open
+ * the pad to send them. They're safe on this phone."; with no signal, "No
+ * signal · 3 to send. They're safe on this phone."; or a count this device
+ * could not read. Only the pad sends (lib/sync.js PadSync), so the home says
+ * where they go from (18 Nov 2026), as P0's note does.
  * @param {number|null} n
+ * @param {boolean} [online]  the phone's own word (navigator.onLine); a phone that cannot say is taken as online
  */
-export function pendingWords(n) {
+export function pendingWords(n, online = true) {
   if (n == null) return "Could not count what is still to send";
-  if (n === 0) return "Nothing waiting to send";
-  return `${n} to send · open the pad to send ${n === 1 ? "it" : "them"}`;
+  if (n === 0) return "Scoring on this phone · all sent";
+  if (!online) return `No signal · ${n} to send. They're safe on this phone.`;
+  return `${n} to send · open the pad to send ${n === 1 ? "it" : "them"}. They're safe on this phone.`;
 }
 
 // ── Preparation for the next fixture ─────────────────────────────────

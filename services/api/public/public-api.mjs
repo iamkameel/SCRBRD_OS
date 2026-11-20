@@ -474,10 +474,13 @@ export const NOT_FOUND_HTML = `<!doctype html>
  * @property {string | null} [listenUrl] where to LISTEN; none, no notifications (tests)
  * @property {() => number} [now]
  * @property {{perMinute: number, burst: number}} [rate]
+ * @property {boolean} [initials]       the 18 Nov rule (PUBLIC_NAME_INITIALS, server.mjs):
+ *                                      a boy the rule does not name is "R ••••••" in the log,
+ *                                      not a position. Off unless switched on
  */
 
 /** @param {PublicOptions} o */
-export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenUrl = null, now = Date.now, rate = RATE }) {
+export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenUrl = null, now = Date.now, rate = RATE, initials = false }) {
   if (enabled && !secret) throw new Error("public pages need PUBLIC_PSEUDONYM_SECRET");
   const cache = new PublicCache(now);
   const limit = new RateLimit(now, rate);
@@ -562,7 +565,8 @@ export function publicPages({ pool, enabled, secret, trustProxyHops = 0, listenU
     // on yesterday (must-never 11). With nobody on the sheet there is no name
     // to judge, and the header's day stands.
     const day = people[0]?.served_on ?? h.servedOn;
-    return projectLog({ rows, people, secret: /** @type {string} */ (secret), matchId: id, on: day, ctx: foldContext(h) });
+    return projectLog({ rows, people, secret: /** @type {string} */ (secret), matchId: id, on: day, ctx: foldContext(h),
+      initials: initials === true });
   });
 
   /** @param {string} id @param {any} h @param {boolean} hot */

@@ -21,31 +21,52 @@ import { SideName } from "./bits.jsx";
  */
 export function HeaderScores({ match, played, mark = null, movedInnings = null }) {
   const own = played.filter((inn) => !isSuperOver(inn));
+  const markAt = mark ? markedInnings(played, movedInnings) : null;
+  return (
+    <div data-testid="mc-scores" style={{ display: "grid", gap: "2px" }}>
+      {own.map((inn, i) => <ScoreLine key={i} match={match} inn={inn} mark={inn === markAt ? mark : null}/>)}
+      <SuperOverScores match={match} played={played} mark={mark} markAt={markAt}/>
+    </div>
+  );
+}
+
+/**
+ * The innings the correction mark sits beside: the latest that moved, else the last.
+ * @param {any[]} played  @param {Map<any, string> | null | undefined} movedInnings
+ */
+export const markedInnings = (played, movedInnings) => played.filter((inn) => movedInnings?.has(inn)).pop() ?? played[played.length - 1] ?? null;
+
+/**
+ * Each super over apart and labelled, under the match's own lines (§4): the
+ * header's, and the public page's match card's (redesign slice 2), which says
+ * the match's own two sides itself.
+ * @param {{match: any, played: any[], mark?: any, markAt?: any}} p
+ */
+export function SuperOverScores({ match, played, mark = null, markAt = null }) {
   const pairs = superOversOf(played);
-  const markAt = mark ? (played.filter((inn) => movedInnings?.has(inn)).pop() ?? played[played.length - 1] ?? null) : null;
-  const line = (inn, k) => (
-    <div key={k} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", columnGap: T.space.md, maxWidth: "520px" }}>
+  if (!pairs.length) return null;
+  return pairs.map((p) => (
+    <div key={p.n} data-testid={`mc-superover-score-${p.n}`} role="group" aria-label={superOverTitle(p.n)}
+      style={{ display: "grid", gap: "2px", marginTop: T.space.xs, paddingTop: T.space.xs, borderTop: `1px solid ${T.line.subtle}` }}>
+      <span style={{ ...T.role.label, color: T.content.secondary }}>{superOverTitle(p.n)}</span>
+      {p.innings.map((inn, k) => <ScoreLine key={k} match={match} inn={inn} mark={inn === markAt ? mark : null}/>)}
+    </div>
+  ));
+}
+
+/** One innings' line: the side, and its runs, wickets and overs. */
+function ScoreLine({ match, inn, mark }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", columnGap: T.space.md, maxWidth: "520px" }}>
       <span style={{ ...T.role.body, color: T.content.secondary, minWidth: 0 }}>
         <SideName side={teamOf(match, inn.battingTeam)}/>
       </span>
       <span style={{ ...T.role.figure.sm, fontSize: "16px", color: T.content.primary, whiteSpace: "nowrap" }}>
         {inn.runs}/{inn.wickets} <span style={{ color: T.content.tertiary }}>({oversOf(inn.balls)})</span>
       </span>
-      {inn === markAt && (
+      {mark && (
         <span data-testid="mc-score-mark" style={{ flexBasis: "100%", display: "flex", justifyContent: "flex-end" }}>{mark}</span>
       )}
-    </div>
-  );
-  return (
-    <div data-testid="mc-scores" style={{ display: "grid", gap: "2px" }}>
-      {own.map((inn, i) => line(inn, i))}
-      {pairs.map((p) => (
-        <div key={p.n} data-testid={`mc-superover-score-${p.n}`} role="group" aria-label={superOverTitle(p.n)}
-          style={{ display: "grid", gap: "2px", marginTop: T.space.xs, paddingTop: T.space.xs, borderTop: `1px solid ${T.line.subtle}` }}>
-          <span style={{ ...T.role.label, color: T.content.secondary }}>{superOverTitle(p.n)}</span>
-          {p.innings.map((inn, k) => line(inn, k))}
-        </div>
-      ))}
     </div>
   );
 }

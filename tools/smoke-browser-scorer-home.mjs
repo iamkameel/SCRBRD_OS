@@ -326,7 +326,9 @@ try {
      && /Resume scoring/.test(await tid(`p0-queue-${MINE}-open`).innerText().catch(() => "")), await tid("scorer-p0").innerText().catch(() => ""));
   ok("...the sections: P0, Now, Start, This week (its read failed, and it says so)", (await sectionsOf()) === "p0,now,start,week", await sectionsOf());
   ok(`...with what is still to send counted (${queued})`, Number(await attr(`resume-${MINE}`, "data-pending")) === queued
-     && (await tid(`resume-${MINE}-pending`).innerText().catch(() => "")).startsWith(`${queued} to send`), await attr(`resume-${MINE}`, "data-pending"));
+     // Slice 4's sync words: with no signal, "No signal · 6 to send. They're safe on this phone."
+     && new RegExp(`^(No signal · )?${queued} to send.*They're safe on this phone`).test(await tid(`resume-${MINE}-pending`).innerText().catch(() => "")),
+     `${await attr(`resume-${MINE}`, "data-pending")} · ${await tid(`resume-${MINE}-pending`).innerText().catch(() => "")}`);
   ok("the fixture list did not answer, and says so (not 'none')",
      await until(async () => (await attr("scorer-fixtures-read", "data-state")) === "failed")
      && /Couldn't load/.test(await tid("scorer-fixtures-read").innerText().catch(() => "")));
@@ -612,7 +614,8 @@ try {
   ok("every tap in it is 44px or more (>= 43.5)", floor && floor.small.length === 0, JSON.stringify(floor?.small));
   ok("no text in it under 12px", floor && floor.tiny.length === 0, JSON.stringify(floor?.tiny));
   ok("no sideways scroll at 360", floor && !floor.sideways);
-  const ys = await g.evaluate(() => ["scorer-resume", "scorer-start", "scorer-pilots"].map((id) => document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect().top ?? -1));
+  // From the page's top: the pad's result screen, one column at a phone's width since slice 4, can leave the page scrolled on the way back.
+  const ys = await g.evaluate(() => ["scorer-resume", "scorer-start", "scorer-pilots"].map((id) => { const el = document.querySelector(`[data-testid="${id}"]`); return el ? el.getBoundingClientRect().top + window.scrollY : -1; }));
   ok("one column, in the day's order: Now, Start, Pilot Matches", ys.every((y) => y >= 0) && ys[0] < ys[1] && ys[1] < ys[2], JSON.stringify(ys));
   await G.ctx.close();
 

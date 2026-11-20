@@ -18,7 +18,7 @@ import { ScorecardTab } from "./scorecard.jsx";
 import { HeaderScores, StatusLine } from "./scores.jsx";
 import { liveSuperOverLine, matchInningsOf, superOverCommentary } from "../../lib/superOver.js";
 import { Quiet } from "./bits.jsx";
-import { ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
+import { ConfirmResultPanel, ConfirmScorecardPrompt, OnwardLinks, PreTossCard, RevisionBanner } from "./fulltime.jsx";
 import { OfficialLine, OfficialPanel, useOfficial } from "./official.jsx";
 import { PotmPanel, usePotm } from "./potm.jsx";
 import { liveRefreshMs, useMoments, useTicker } from "./live.js";
@@ -27,7 +27,7 @@ import { CaptainTab } from "./captainTab.jsx";
 import { termsOf } from "../../lib/captain.js";
 import { cockpitGate, withSwitches } from "../../lib/cockpit.js";
 import { useFeatures } from "../../lib/features.js";
-import { profile } from "../../lib/session.js";
+import { couldConfirmResult, profile } from "../../lib/session.js";
 import { CoachTab } from "../cockpit/CoachTab.jsx";
 import { clockWords, correctedAt, correctionsOf, inningsWords, correctionText, withCorrectionLines } from "../../lib/corrections.js";
 import { ballLine } from "../../lib/correctionEffect.js";
@@ -368,7 +368,7 @@ const COACH_TAB = { id: "coach", label: "Coach" };
  * not one this reader may open (§2.1 P4). Everything else is the Match Centre
  * as every signed-in reader has it.
  */
-function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDuties = null, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false, route = null }) {
+function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDuties = null, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false, route = null, onChanged = null }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);
@@ -546,6 +546,12 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // actually carries, off the innings the board is showing.
   const notice = revisionNotice(boardInn);
   const isLive = match.status === "live";
+  // Slice 4 (DESIGN_DIRECTION Q2): a live fixture whose log has decided it is the coach's to confirm, and until
+  // then it reads "Provisional" to everyone, here as on every card. A super over in play is not decided.
+  const provisional = isLive && !log.demo && !!log.result && !liveSO;
+  // The coach's answer, held here and not in the panel: a confirm re-reads the fixture, which comes back complete,
+  // and the panel (drawn while provisional) would go with its answer before anyone read it (CI, 20 Nov).
+  const [confirmedSaid, setConfirmedSaid] = useState(/** @type {string | null} */ (null));
   // OFFICIAL_RESULT (db/114): provisional, under review (staff) or official —
   // the server's state for a finished fixture, read again as the log moves.
   const official = useOfficial(match, !!match.live && !log.demo && !isLive && match.status !== "upcoming", log.events?.length ?? 0);
@@ -627,7 +633,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         {/* CRI-1.4: the one way from reading this match into scoring it — an explicit tap, offered only where the
             caller found an assignment granting the scoring routes' capability over this fixture (lib/enterScoring.js).
             Nothing else on this page opens the pad, claims the match or calls a scoring route. */}
-        {canScoreIt && (isLive || match.status === "upcoming") && onOpenScorer && (
+        {canScoreIt && (isLive || match.status === "upcoming") && !provisional && onOpenScorer && (
           <button type="button" onClick={() => onOpenScorer(match)} className="pressBtn os-state" data-testid="mc-enter-scoring"
             style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
               background: T.brand.green, color: T.surface.canvas,
@@ -657,7 +663,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !(log.result && !liveSO) ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
             {isLive && !(log.result && !liveSO) && <span className="live-dot" aria-hidden="true"/>}
-            {(log.result && !liveSO) || (server && server.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {provisional ? "Provisional" : (log.result && !liveSO) || (server && server.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           {log.demo && <StateLabel kind="demo" compact/>}
         </div>
@@ -697,6 +703,11 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           {/* The full-time screen links onward (item 4) and the confirm-or-correct prompt (item 5) —
               both true of the fixture once it is decided, not of any one tab of it. Never on a
               demonstration fixture: its "log" is a reconstruction with no real amendment to file. */}
+          {/* Slice 4: the coach confirms the result (db/130's finish), offered where he may; the server decides. */}
+          {((provisional && settled && signedIn() && couldConfirmResult(match.schoolId, match.homeTeam)) || confirmedSaid) && (
+            <ConfirmResultPanel match={match} result={result} done={confirmedSaid}
+              onConfirmed={(text) => { setConfirmedSaid(text); log.refresh(); onChanged?.(); }}/>
+          )}
           {match.status === "complete" && !log.demo && (
             <>
               <OnwardLinks match={match} sides={sides} matches={matches} onOpenFixture={onOpenFixture} onTeamResults={onTeamResults}/>

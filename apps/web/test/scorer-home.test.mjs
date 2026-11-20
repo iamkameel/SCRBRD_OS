@@ -100,7 +100,12 @@ group("The state a scorer acts on, per fixture");
   ok("a takeover being verified", fixtureState(live, { state: "verifying", held: "another" }) === "handover");
   ok("live, no session read to say more", fixtureState(live, null) === "live");
   ok("complete, whatever the session", fixtureState({ ...up, status: "complete" }, { state: "active", held: "this_device" }) === "complete");
-  ok("every state has its words", ["not_started", "held_here", "held_you", "held_other", "handover", "lapsed", "live", "complete"].every((s) => STATE_WORDS[s]?.label));
+  ok("slice 4: live and decided is provisional, whoever holds it, and never a take-over",
+     fixtureState(live, { state: "active", held: "lapsed" }, true) === "provisional" && fixtureState(live, null, true) === "provisional"
+     && STATE_WORDS.provisional.action === null && /coach confirms the result/.test(STATE_WORDS.provisional.label)
+     && !/Live|take/i.test(STATE_WORDS.provisional.label + STATE_WORDS.provisional.note));
+  ok("...but not a scheduled match, nor a finished one", fixtureState(up, null, true) === "not_started" && fixtureState({ ...up, status: "complete" }, null, true) === "complete");
+  ok("every state has its words", ["not_started", "held_here", "held_you", "held_other", "handover", "lapsed", "live", "provisional", "complete"].every((s) => STATE_WORDS[s]?.label));
   ok("held by another device: the pad (and its take-over) is the route, never a claim from here",
     STATE_WORDS.held_other.action === "Open the pad" && /hands over/.test(STATE_WORDS.held_other.note));
   ok("complete offers no scoring", STATE_WORDS.complete.action === null);
@@ -173,8 +178,10 @@ group("Resume: what this device is mid-way through");
   ok("a fixture the server no longer lists him is shown, with no door back into it", f && f.openable === false && f.match === null, f);
   const unknown = resumeItems({ saved: [saved[1]], pending: new Map([["b", null]]), serverMatches: null });
   ok("an outbox that could not be read is not 'nothing to send'", unknown[0]?.pending === null && /Could not/.test(pendingWords(null)));
-  ok("the words: 3 to send and where from, nothing waiting", pendingWords(3) === "3 to send · open the pad to send them"
-     && pendingWords(1) === "1 to send · open the pad to send it" && pendingWords(0) === "Nothing waiting to send");
+  ok("the words: 3 to send and where from, all sent", pendingWords(3) === "3 to send · open the pad to send them. They're safe on this phone."
+     && pendingWords(1) === "1 to send · open the pad to send it. They're safe on this phone." && pendingWords(0) === "Scoring on this phone · all sent");
+  ok("no signal: said first, and that they are safe (slice 4, Flow C)", pendingWords(2, false) === "No signal · 2 to send. They're safe on this phone."
+     && pendingWords(0, false) === "Scoring on this phone · all sent");
   ok("a practice id never reaches here (its log is under practice:)", resumeItems({ saved: [], pending: new Map(), serverMatches: null }).length === 0);
 }
 
