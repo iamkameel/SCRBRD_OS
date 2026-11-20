@@ -250,6 +250,85 @@ try {
     await r.ctx.close();
   }
 
+  group("4b. The 18 Nov names: \"R ••••••\" where the deployment switches it on; production keeps its positions");
+  {
+    // Kameel, 18 Nov 2026 (PUBLIC_DATA, after D4): a boy without public consent is his initial and six dots on every
+    // public surface, never-public boys alike; production after counsel. server.mjs PUBLIC_NAME_INITIALS=on, in
+    // development only. Two more servers on this database: the demo's (on) and production's (on, and refused).
+    const DOTS = "\u2022".repeat(6);
+    const boot = async (/** @type {number} */ at, /** @type {Record<string, string>} */ env) => {
+      const child = spawn(process.execPath, ["services/api/server.mjs"], {
+        env: { ...process.env, DATABASE_URL: appUrl(), PORT: String(at), PUBLIC_PAGES: "on", PUBLIC_TRUST_PROXY_HOPS: "1", SERVE_CLIENT: "apps/web/dist",
+               SESSION_SECRET: "browser-public-initials-session-0123456789abcdef", PUBLIC_PSEUDONYM_SECRET: "browser-public-initials-pseudonyms-0123456789abcdef", ...env },
+        stdio: ["ignore", "pipe", "pipe"] });
+      const said = /** @type {string[]} */ ([]);
+      child.stderr.on("data", (d) => said.push(d.toString()));
+      for (let i = 0; i < 80; i++) {
+        try { const r = await fetch(`http://127.0.0.1:${at}/api/health`); if ((await r.json()).db === "ok") break; } catch { /* not up */ }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return { child, said, base: `http://127.0.0.1:${at}` };
+    };
+    const people = async (/** @type {string} */ base) => (await (await fetch(`${base}/api/public/matches/${pub}/log`, { headers: { "x-forwarded-for": "10.85.0.1" } })).json()).people ?? {};
+    const demo = await boot(PORT + 1, { NODE_ENV: "development", PUBLIC_NAME_INITIALS: "on" });
+    const prod = await boot(PORT + 2, { NODE_ENV: "production", PUBLIC_NAME_INITIALS: "on" });
+    try {
+      const on = Object.values(await people(demo.base)).sort();
+      ok("on (the demo): the public read sends the unconsented, the marked, the names-off and the withdrawn boy as an initial and six dots",
+         JSON.stringify(on) === JSON.stringify(["D " + DOTS, "L Botha", "P " + DOTS, "S " + DOTS, "T " + DOTS].sort()), on.join(" | "));
+      ok("...and no first name, surname or reason with them", leaks(JSON.stringify(on)).length === 0, leaks(JSON.stringify(on)).join(","));
+      const off = Object.values(await people(BASE)).sort();
+      ok("off (this walk's own server, as before): the read names L Botha alone; everyone else is a position", JSON.stringify(off) === JSON.stringify(["L Botha"]), off.join(" | "));
+      const pr = Object.values(await people(prod.base)).sort();
+      ok("production with PUBLIC_NAME_INITIALS=on: refused, the read is today's, name for name", JSON.stringify(pr) === JSON.stringify(off), pr.join(" | "));
+      ok("...and it says so as it starts", prod.said.join("").includes("PUBLIC_NAME_INITIALS=on is ignored in production"), prod.said.join("").slice(0, 300));
+
+      // The screen draws what it is sent.
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 900 }, extraHTTPHeaders: { "x-forwarded-for": "10.85.0.2" } });
+      await offline(ctx);
+      const page = await ctx.newPage();
+      await page.goto(`${demo.base}/scorecard/${pub}`, { waitUntil: "networkidle" });
+      await page.waitForSelector('[data-testid="mc-bat-row"]', { timeout: 10000 }).catch(() => {});
+      await tid(page, "mc-innings-0").click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const shown = (await page.locator('[data-testid="mc-bat-row"]').allInnerTexts()).map((r) => r.split("\n")[0].replace("*", "").trim());
+      ok("on: the scorecard shows the boys without consent as \"S ••••••\", never \"Batter\"",
+         shown.includes("S " + DOTS) && shown.includes("P " + DOTS) && shown.includes(EXPECTED.botha) && !shown.includes("Batter"), shown.join(" | "));
+      const bowl = await page.locator('[data-testid="mc-bowling"] [role="rowheader"]').allInnerTexts();
+      ok("...Westville, unpublished, still 'Bowler': the dots are for a side whose school published", bowl.length === 2 && bowl.every((b) => b === "Bowler"), bowl.join(","));
+      ok("...the note says how the rest are shown", (await tid(page, "public-note").getAttribute("data-names")) === "initials"
+         && /by an initial/.test(await tid(page, "public-note").innerText()));
+      const all = await text(page);
+      ok("...and the page leaks no name part", leaks(all).length === 0, leaks(all).join(","));
+      await page.goto(`${demo.base}/display/${pub}`, { waitUntil: "networkidle" });
+      await page.waitForSelector('[data-testid="display-bowler"]', { timeout: 10000 }).catch(() => {});
+      // Westville bat now, and Westville has not published: its pair stay positions. Hilton bowl, and its bowler is
+      // named or dotted, never "Bowler".
+      const shownOn = await page.evaluate(() => ({
+        bowler: document.querySelector('[data-testid="display-bowler"] .dv-name')?.textContent ?? null,
+        pair: [...document.querySelectorAll('[data-testid="display-batter"] .dv-name')].map((n) => n.textContent),
+        titles: [...document.querySelectorAll('[data-testid="display-title"]')].map((n) => n.textContent),
+        batting: document.querySelector('[data-testid="display-title"] [data-batting="true"][data-end]')?.getAttribute("data-end") ?? null,
+      }));
+      ok("on: the ground display's bowler, a Hilton boy, is named or dotted, never 'Bowler'",
+         shownOn.bowler === EXPECTED.botha || String(shownOn.bowler).endsWith(" " + DOTS), JSON.stringify(shownOn));
+      ok("...the unpublished side's pair stay 'Batter'", shownOn.pair.length === 2 && shownOn.pair.every((n) => n === "Batter"), JSON.stringify(shownOn.pair));
+      ok("...under one title naming both sides, the side batting marked", shownOn.titles.length === 1 && /Hilton College 1XI/.test(shownOn.titles[0])
+         && /Westville Boys' High 1XI/.test(shownOn.titles[0]) && shownOn.batting === "away", JSON.stringify(shownOn));
+      await page.goto(`${prod.base}/scorecard/${pub}`, { waitUntil: "networkidle" });
+      await page.waitForSelector('[data-testid="mc-bat-row"]', { timeout: 10000 }).catch(() => {});
+      await tid(page, "mc-innings-0").click({ timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const prodRows = (await page.locator('[data-testid="mc-bat-row"]').allInnerTexts()).map((r) => r.split("\n")[0].replace("*", "").trim());
+      ok("production: the scorecard's positions, as today, and no dot on the page", prodRows.filter((x) => x === "Batter").length === 4 && prodRows.includes(EXPECTED.botha)
+         && !(await text(page)).includes(DOTS) && (await tid(page, "public-note").getAttribute("data-names")) === "positions", prodRows.join(" | "));
+      await ctx.close();
+    } finally {
+      demo.child.kill();
+      prod.child.kill();
+    }
+  }
+
   group("7. The ball, said: a live region that speaks only what arrives");
   {
     // Ten dot balls first, so the chase is at twelve legal balls and the scenario panel (GA-I29) is drawn
