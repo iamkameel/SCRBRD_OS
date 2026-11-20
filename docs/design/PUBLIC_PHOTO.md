@@ -313,7 +313,3 @@ Slice 6's board half waits on R11 (PBT slice 8). No slice here is worth building
 10. **A harmful upload.** What the checker, the DSO and SCRBRD must do, keep and report if an indecent image of a child is uploaded, and under which Acts.
 11. **Retention** (section 14). May the hash of a deleted picture and its consent records be kept as evidence, and for how long after he leaves?
 12. **A copy found elsewhere.** Is that a security compromise under section 22 when the publication itself was lawful, and who must be told?
-
----
-
-**To the lead.** Seven slices after slice 0; ten questions for Kameel, twelve for counsel. Three things to know. (1) The documents on the reading list are at `origin/main`; the working tree at `/home/user/SCRBRD_OS` is at 14 Nov and has neither the 18 Nov notes nor three of the four documents, so I read them from `origin/main`. (2) `CLAUDE.md`'s entry for this problem says "after the 25 Nov reset"; today is 20 Nov. (3) "Public profile" is not a page today, and A4 forbids one; the whole design rests on Q1(a).
