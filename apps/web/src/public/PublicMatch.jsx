@@ -349,7 +349,9 @@ export function PublicMatch({ matchId, view }) {
   const decided = st.state === "result" || st.state === "super_over";
   // A ground, a time and an age group the card has not said already: while play is on, or after it. Before the
   // first ball the card's own sentence says where and when ("Starts 17:25 · Hilton Oval"), and it is said once.
-  const line = card.state.kind === "upcoming" ? null : matchLine({ match, competition: null, weather: null });
+  // Once played, the card's state line keeps the day ("Result · Tue 17 Nov"), so the line does not say it again.
+  const line = card.state.kind === "upcoming" ? null
+    : matchLine({ match: card.day ? { ...match, date: null } : match, competition: null, weather: null }) || null;
   const notice = revisionNotice(boardInn);
   // Q14 (Kameel, 19 Nov: "Updates every 15 seconds"): the pace this page reads at, said while it is live. In Low
   // data the switch's own line says it ("about once a minute"), so it is not said twice.
