@@ -2702,6 +2702,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
                 {!tie&&<div style={{color:D.emerald,fontSize:"16px",fontFamily:D.body,fontWeight:500}}>{margin}</div>}
               </>}
           </Glass>
+          {/* Slice 4: the scorer's end, or the coach's Confirm, under the result on the first screen, not past both scorecards. */}
+          {fixtureEnd&&(finishAs==="finish"
+            ?<FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
+               left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
+               attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
+            :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}
+               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}/>)}
           {/* A tied match: the button where a super over may start, the
               engine's words where it may not (the tie stands). */}
           {offer.state!=="none"&&<div style={{marginBottom:"28px"}}><SuperOverOffer offer={offer} onStart={()=>setModal("superOver")}/></div>}
@@ -2739,16 +2746,6 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               done={practice?.pilot?.finished===true}
               onDone={async()=>{const r=await recordWrite(matchId,"that it was finished",()=>updatePilotState(matchId,{finished:true,finishedAt:Date.now()}));if(r)setPractice(r);}}/>
           )}
-          {/* Always a panel on a fixture's result screen (18 Nov 2026): Finish,
-              or the sign-in that returns here, or who may finish it. It was
-              hidden in silence after any reload, which drops the token and,
-              before this, the home school. */}
-          {fixtureEnd&&(finishAs==="finish"
-            ?<FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
-               left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
-               attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
-            :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}
-               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}/>)}
           {/* §2.5 step 6: at the result of a Practice or Pilot Match, an
               account with no school is asked once; never during play. */}
           {practiceMode&&onJoinSchool&&offer.state!=="available"&&(
