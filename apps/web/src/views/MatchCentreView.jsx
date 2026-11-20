@@ -4,7 +4,7 @@ import { useTheme } from "../design/theme.js";
 import { humanDate } from "../lib/format.js";
 import { useLive } from "../lib/live.js";
 import { canScore, holdsCapability } from "../rbac/index.js";
-import { profile, schoolsWhere } from "../lib/session.js";
+import { couldAskProMode, profile, schoolsWhere } from "../lib/session.js";
 import { ENTERABLE, mayEnterScoring } from "../lib/enterScoring.js";
 import { Btn, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { MatchCard } from "../ui/matchCard.jsx";
@@ -22,7 +22,7 @@ import { DrsPanel } from "./drs.jsx";
 import { isOff, useFeatures } from "../lib/features.js";
 import { PublishPanel } from "./publication.jsx";
 import { ReportIncident } from "./discipline.jsx";
-import { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
+import { AddFixtureModal, ProModeControl, RescheduleFixture, SCHOOL_TEAMS } from "./fixtures.jsx";
 import { useRows, useWeather } from "../lib/live.js";
 import { readState } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
@@ -383,6 +383,13 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                 // offers its new-date path, not the one it had (db/133).
                 (()=>{ const fresh = MATCHES.find(m=>m.id===selMatch.id) ?? selMatch;
                   return <RescheduleFixture key={`${fresh.id}-${fresh.status}`} match={fresh} grounds={GROUNDS} onChanged={()=>setMatchesNonce(n=>n+1)}/>; })()
+              )}
+              {/* Pro mode (db/170): the side's coach or the office asks, before the
+                  toss, for the shot and the field on every ball. couldAskProMode()
+                  is a courtesy; match_capture_request() decides. */}
+              {selMatch.live&&selMatch.status==="upcoming"&&selMatch.mySide!=="away"&&couldAskProMode(selMatch.schoolId,selMatch.homeTeam)&&(
+                (()=>{ const fresh = MATCHES.find(m=>m.id===selMatch.id) ?? selMatch;
+                  return <ProModeControl key={`${fresh.id}-${fresh.captureProfile ?? "none"}`} match={fresh} onChanged={()=>setMatchesNonce(n=>n+1)}/>; })()
               )}
               {/* Naming the side, for the one assignment that holds team.select
                   for a side of this fixture, while it is still to be played.

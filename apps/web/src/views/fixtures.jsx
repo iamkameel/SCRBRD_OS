@@ -465,4 +465,55 @@ function RescheduleFixture({ match, grounds, onChanged }) {
   );
 }
 
-export { AddFixtureModal, RescheduleFixture, SCHOOL_TEAMS };
+/**
+ * Pro mode (db/170; the redesign's question 1, Kameel: runs first, one tap a
+ * ball). The fixture's coach, or the office, asks before the toss for the
+ * scorer's pad to record the shot and where it went on every ball; the pad
+ * declares it on the first innings. Off, the pad scores one tap a ball.
+ *
+ * Offered on a fixture still to be played, to whoever couldAskProMode() says
+ * holds team.select or fixture.update at its home side: a courtesy, not the
+ * gate. match_capture_request() decides, and fixes the choice once scoring
+ * has started; its refusals are said here in words.
+ */
+const PRO_MODE_REFUSAL = {
+  not_permitted: "Only this side's coach or the sports office can change how this fixture is scored.",
+  scoring_started: "Scoring has started, so the scorer chooses this on the pad now.",
+  capture_profile_unknown: "That is not a way the pad can score.",
+};
+
+function ProModeControl({ match, onChanged }) {
+  const [on, setOn] = useState(match.captureProfile === "full");
+  const [said, setSaid] = useState("");
+  const [busy, setBusy] = useState(false);
+  const change = async (want) => {
+    setSaid(""); setBusy(true);
+    try {
+      await api(`/api/fixtures/${match.id}/capture-profile`, { method: "POST", body: { captureProfile: want ? "full" : null } });
+      setOn(want);
+      onChanged?.();
+    } catch (e) {
+      setSaid(PRO_MODE_REFUSAL[e?.code] ?? "That could not be saved. Try again.");
+    } finally { setBusy(false); }
+  };
+  return (
+    <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="fixture-pro-mode" data-on={on ? "true" : "false"}>
+      <label style={{display:"flex",gap:"10px",alignItems:"flex-start",minHeight:"44px",cursor:busy?"wait":"pointer"}}>
+        <input type="checkbox" checked={on} disabled={busy} onChange={(e)=>change(e.target.checked)}
+          data-testid="fixture-pro-mode-toggle" aria-describedby={`pro-mode-hint-${match.id}`}
+          style={{width:"20px",height:"20px",marginTop:"2px",flexShrink:0}}/>
+        <span style={{display:"grid",gap:"4px"}}>
+          <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Record every shot (Pro mode)</span>
+          <span id={`pro-mode-hint-${match.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>
+            {on
+              ? "The scorer's pad asks the shot and where it went on every ball. The scorer can still change this before the first ball."
+              : "Off: the scorer's pad scores one tap a ball, runs, extras and wickets."}
+          </span>
+        </span>
+      </label>
+      {said&&<div role="alert" data-testid="fixture-pro-mode-refused" style={{fontFamily:D.body,fontSize:"12px",color:textOn(D.rose),marginTop:"6px"}}>{said}</div>}
+    </Card>
+  );
+}
+
+export { AddFixtureModal, ProModeControl, RescheduleFixture, SCHOOL_TEAMS };

@@ -864,9 +864,11 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
             ...firstInningsSides({ batsFirst: toss.batsFirst, fixture: resume.cfg,
               homeSquad: homeSquadRef.current, awaySquad: awaySquadRef.current }),
             overs: resume.cfg.overs ?? 20,
-            // A fixture that carries a declaration passes it on; none does yet,
-            // so this innings opens declared quick: runs first, one tap a ball
-            // (redesign slice 3, question 1). The declaration is what the pad
+            // A fixture that carries a declaration passes it on: Pro mode, which
+            // its coach asked for before the toss (db/170), declares full, the
+            // shot and the field on every ball. One that asks nothing opens
+            // declared quick: runs first, one tap a ball (redesign slice 3,
+            // question 1). The declaration is what the pad
             // asks, so the charts read its missing points as never asked for,
             // not as missing. The scorer may declare Full or Standard on the
             // opener sheet before the first ball; the latest one stands.
@@ -1298,8 +1300,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const open={...inningsStart({
       ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current,awaySquad:awaySquadRef.current}),
       overs:match.overs??20,
-      // Runs first: undeclared by the fixture, the innings declares quick, as
-      // the opening on hydration does (above). Never a second innings_start.
+      // Pro mode (db/170) declares what the fixture's coach asked for; a
+      // fixture that asks nothing declares quick, runs first, as the opening
+      // on hydration does (above). Never a second innings_start.
       captureProfile:match.captureProfile??CAPTURE_PROFILE.QUICK,
     }),innings:0,id:newEventId(deviceIdRef.current,matchIdRef.current??"local")};
     setEvents(prev=>{

@@ -190,6 +190,19 @@ export function couldFinalise(schoolId, teamCode) {
 }
 
 /**
+ * May this person ask for Pro mode on this fixture (db/170: team.select or
+ * fixture.update at the home side)? Like couldFinalise(), it decides whether
+ * to OFFER the control, never whether to allow it: match_capture_request()
+ * asks app_can() again.
+ */
+export function couldAskProMode(schoolId, teamCode) {
+  return (_profile?.assignments ?? []).some((a) =>
+    (roleGrants(a.role, "team.select") || roleGrants(a.role, "fixture.update")) &&
+    (a.school == null || a.school === schoolId) &&
+    (a.team == null || a.team === teamCode));
+}
+
+/**
  * Is this build talking to a real backend?
  *
  * The answer drives what the UI says out loud. A demo running on mock data

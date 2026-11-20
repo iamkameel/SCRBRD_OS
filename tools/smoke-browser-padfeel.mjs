@@ -39,6 +39,12 @@
  *      under the title bar when the page scrolls. Pro mode and the menu's
  *      switch still offer the shot and the field, and record nothing by
  *      being opened.
+ *   H  Pro mode per fixture (db/170): the 1XI coach ticks "Record every shot
+ *      (Pro mode)" on a second fixture's panel; the scorer may not change it,
+ *      nor may anybody ask a profile that is not one. The scorer opens it and
+ *      the pad asks the shot first, then where it went, its one innings_start
+ *      declared full; once it has, the coach's change is refused
+ *      (scoring_started). The fixture that asked nothing opened on one tap.
  *
  *   node tools/migrate.mjs --reset --seed
  *   pnpm build && node tools/smoke-browser-padfeel.mjs
@@ -122,15 +128,19 @@ async function liveScore(innings = 0) {
 const browser = await chromium.launch({ ...launchOptions() });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await offline(ctx);
-const page = await ctx.newPage();
-watchReads(page);
 const errors = [];
-page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
-page.on("console", (m) => {
-  if (m.type() !== "error") return;
-  const t = m.text();
-  if (!/Failed to load resource/.test(t)) errors.push(`console.error: ${t}`);
-});
+/** A page whose errors the walk counts; `page` below is the one the helpers drive. */
+const watched = (p) => {
+  watchReads(p);
+  p.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  p.on("console", (m) => {
+    if (m.type() !== "error") return;
+    const t = m.text();
+    if (!/Failed to load resource/.test(t)) errors.push(`console.error: ${t}`);
+  });
+  return p;
+};
+let page = watched(await ctx.newPage());
 
 const text = () => page.$eval("body", (el) => el.innerText);
 const click = async (re, ms = 3000) => {
@@ -232,6 +242,48 @@ const extra = async (label, kindKey, runsKey, { before, want, setup = null, kind
 
 const vibes = () => page.evaluate(() => window.__vib?.length ?? -1);
 
+/** Signed in as `who` (the persona's button) on `page`, to Match Centre. */
+const signInTo = async (who) => {
+  await click(/Get Started|Log In/, 5000);
+  await page.waitForTimeout(600);
+  await click(who, 4000);
+  await click(/^Sign In$/, 5000);
+  await page.waitForTimeout(2200);
+  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
+  await afterReads(page, 1200);
+};
+/** The scorer signs in and opens the fixture whose card names `opponent`. */
+const openAsScorer = async (opponent) => {
+  await signInTo(/Scorer/);
+  return page.evaluate((opp) => {
+    const isBtn = (b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
+    for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
+      let card = b;
+      while (card.parentElement && [...card.parentElement.querySelectorAll("button")].filter(isBtn).length === 1) card = card.parentElement;
+      if ((card.textContent || "").includes(opp)) { b.click(); return true; }
+    }
+    return false;
+  }, opponent);
+};
+/** A fresh browser context (its own storage, signed out), at the app. */
+const freshPage = async (viewport = { width: 1280, height: 800 }) => {
+  const c = await browser.newContext({ viewport });
+  await offline(c);
+  page = watched(await c.newPage());
+  await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+  await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+};
+/** A dev sign-in's token, for the API's answer to that person. */
+const tokenOf = async (email) => (await (await fetch(`${API}/api/auth/dev-login`, {
+  method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ email, deviceId: `padfeel-walk-${email}` }) })).json())?.token;
+const askPro = async (token, matchId, captureProfile) => {
+  const r = await fetch(`${API}/api/fixtures/${matchId}/capture-profile`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ captureProfile }) });
+  return { status: r.status, body: await r.json().catch(() => ({})) };
+};
+
 try {
   for (let i = 0; i < 60; i++) {
     try { const r = await fetch(`${API}/api/health`); if ((await r.json()).db === "ok") break; } catch { /* not up */ }
@@ -246,23 +298,7 @@ try {
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
 
   group("Opening the pad on a real fixture, at 390 × 844");
-  await click(/Get Started|Log In/, 5000);
-  await page.waitForTimeout(600);
-  await click(/Scorer/, 4000);
-  await click(/^Sign In$/, 5000);
-  await page.waitForTimeout(2200);
-  await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
-  await afterReads(page, 1200);
-  const opened = await page.evaluate(() => {
-    const isBtn = (b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
-    for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
-      let card = b;
-      while (card.parentElement && [...card.parentElement.querySelectorAll("button")].filter(isBtn).length === 1) card = card.parentElement;
-      if (/Michaelhouse/i.test(card.textContent || "")) { b.click(); return true; }
-    }
-    return false;
-  });
-  ok("the 1XI fixture offers the scorer", opened);
+  ok("the 1XI fixture offers the scorer", await openAsScorer("Michaelhouse"));
   await page.waitForTimeout(2500);
   await page.setViewportSize({ width: 390, height: 844 });
   const isReady = await ready();
@@ -580,6 +616,78 @@ try {
   }
 
   await agree("the end of the walk");
+
+  // ── H ────────────────────────────────────────────────────────
+  group("H. Pro mode per fixture (db/170): the coach asks, and the pad opens asking the shot and the field");
+  {
+    // A second 1XI fixture, unscored, its toss recorded: the one the coach asks Pro mode for.
+    const OPP = "Pro Mode Invitational XI";
+    const PRO = (await dbq(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+                            select school_id, team_code, $2, now() + interval '3 hours', sport, format, overs, 'scheduled'
+                              from match where id = $1 returning id`, [MATCH, OPP]))[0].id;
+    await dbq(`insert into match_toss (match_id, school_id, won_by, decision)
+               select id, school_id, 'home', 'bat' from match where id = $1`, [PRO]);
+    const proOf = async () => (await dbq(`select capture_profile from match where id = $1`, [PRO]))[0]?.capture_profile ?? null;
+    ok("the new fixture asks nothing", (await proOf()) === null);
+
+    // The coach, on the fixture's own panel: one control, in plain words.
+    await freshPage();
+    await signInTo(/coach@example\.invalid|Head Coach/);
+    await tid(`match-card-${PRO}`).first().click({ timeout: 6000 }).catch(() => {});
+    await afterReads(page, 800);
+    const words = await tid("fixture-pro-mode").first().innerText().catch(() => "");
+    ok(`the coach is offered "Record every shot (Pro mode)", off (${JSON.stringify(words.slice(0, 120))})`,
+       /Record every shot \(Pro mode\)/.test(words) && (await attr("fixture-pro-mode", "data-on")) === "false"
+         && /one tap a ball/.test(words));
+    await tid("fixture-pro-mode-toggle").first().click({ timeout: 4000 }).catch(() => {});
+    await afterReads(page, 1200);
+    ok("...he ticks it: the fixture asks full, and the panel says the pad asks the shot",
+       (await proOf()) === "full" && (await attr("fixture-pro-mode", "data-on")) === "true"
+         && /asks the shot and where it went on every ball/.test(await tid("fixture-pro-mode").first().innerText().catch(() => "")),
+       `${await proOf()} / ${await attr("fixture-pro-mode", "data-on")}`);
+    await page.context().close();
+
+    // Nobody but the side's coach or the office: the scorer's ask is refused, and nothing changes.
+    coachToken ??= await tokenOf("coach@example.invalid");
+    const scorerToken = await tokenOf("scorer@example.invalid");
+    const refused = await askPro(scorerToken, PRO, null);
+    ok(`the scorer cannot change it: 403 not_permitted (${refused.status} ${JSON.stringify(refused.body)})`,
+       refused.status === 403 && refused.body?.error === "not_permitted" && (await proOf()) === "full");
+    const word = await askPro(coachToken, PRO, "extreme");
+    ok(`...nor can the coach ask for a profile that is not one (${word.status} ${JSON.stringify(word.body)})`,
+       word.status === 400 && word.body?.error === "capture_profile_unknown" && (await proOf()) === "full");
+
+    // The scorer opens it: the pad asks the shot first, then where it went.
+    await freshPage();
+    ok("the Pro mode fixture offers the scorer", await openAsScorer(OPP));
+    await page.waitForTimeout(2500);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const proReady = await ready();
+    ok("the pad is ready, and opens on the three phases, the shot first, without switching anything",
+       proReady && (await has("three-phase-pad")) && !(await has("basic-pad"))
+         && (await attr("three-phase-pad", "data-phase")) === "1" && (await has("shot-drive")),
+       (await text()).slice(0, 400));
+    await settle();
+    const proRows = await dbq(`select ${EVENT_COLUMNS} from ball_event where match_id = $1 order by seq`, [PRO]);
+    const proStarts = proRows.filter((r) => r.kind === "innings_start" && (r.innings ?? 0) === 0);
+    const proInn = deriveInnings(proRows.map(fromRow).filter((e) => (e.innings ?? 0) === 0));
+    ok("...its one innings_start declares the full profile, the event it always was",
+       proStarts.length === 1 && proStarts[0].capture_profile === "full" && proInn.declaredProfile === "full",
+       JSON.stringify(proStarts.map((r) => r.capture_profile)));
+    await tap("shot-drive");
+    ok("...a shot, then where it went, on the field", (await attr("three-phase-pad", "data-phase")) === "2" && (await has("area-field")));
+    await tap("key-undo");
+    ok("...undo starts the ball again, and nothing was recorded",
+       (await attr("three-phase-pad", "data-phase")) === "1"
+         && (await dbq(`select count(*)::int as n from ball_event where match_id = $1`, [PRO]))[0].n === proRows.length);
+    // Once the pad has declared, the request is the scorer's now.
+    const late = await askPro(coachToken, PRO, null);
+    ok(`the coach clearing it after the toss: 409 scoring_started (${late.status} ${JSON.stringify(late.body)})`,
+       late.status === 409 && late.body?.error === "scoring_started" && (await proOf()) === "full");
+    // And the fixture that asked nothing (the walk's first, A to G) opened on one tap a ball.
+    const first = await serverLog(0);
+    ok("the fixture that asked nothing stayed declared quick, one tap a ball", first.inn.declaredProfile === "quick");
+  }
 
   ok("no console errors on the pad", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (e) {
