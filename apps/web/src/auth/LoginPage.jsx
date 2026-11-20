@@ -4,7 +4,7 @@ import { ROLES } from "../design/roles.js";
 import { T, clr } from "../design/tokens.js";
 import { mode as apiMode, signIn, signInWithCode, signInWithToken, devLoginAvailable } from "../lib/session.js";
 import { googleAvailable, googleIdToken, GOOGLE_FAILURE_WORDS } from "../lib/google.js";
-import { exchangeGoogle, CLAIM_STEPS, EXCHANGE_WORDS } from "../lib/signin.js";
+import { exchangeGoogle, CLAIM_MEANWHILE, CLAIM_STEPS, EXCHANGE_WORDS } from "../lib/signin.js";
 import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../lib/signinNotice.js";
 import { primaryRole } from "../lib/primaryRole.js";
 import { Icon } from "../ui/icons.jsx";
@@ -290,6 +290,9 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
                   <ol style={{margin:0,paddingLeft:"20px"}}>
                     {CLAIM_STEPS.map((x) => <li key={x} style={{marginBottom:"4px"}}>{x}</li>)}
                   </ol>
+                  <div data-testid="google-claim-meanwhile" style={{marginTop:"8px"}}>{CLAIM_MEANWHILE.words}</div>
+                  <a href={CLAIM_MEANWHILE.href} data-testid="google-claim-public"
+                    style={{display:"inline-flex",alignItems:"center",minHeight:"44px",color:T.brand.blueText,fontWeight:600,fontSize:"14px"}}>{CLAIM_MEANWHILE.link}</a>
                 </div>
               )}
 

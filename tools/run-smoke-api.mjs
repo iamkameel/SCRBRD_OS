@@ -642,6 +642,11 @@ const BROWSER_WALKS = ["browser-sync", "browser-read", "browser-deck", "browser-
   // ways to sign in (add, refuse, remove), and the office's Claims list; 12px
   // and 44px, both themes.
   "browser-signup",
+  // The honesty model's Migration A (db/168): a boy under 18 says "I am a
+  // pupil here"; §3.3's left column is on his screen and its right is not,
+  // with the office and once it has recognised him; Raise a concern (Q8),
+  // Remove this account (Q9), and the claim_required screen's public pages.
+  "browser-under18",
   // The scorer's first run (EXPERIENCE_PASS slice 1; Q3, Q5, Q25): a new
   // account with no school reaches the first ball of a Practice Match with no
   // name typed, sees the Board move, finds it under Now after a reload and a

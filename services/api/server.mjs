@@ -130,6 +130,8 @@ import { scorebookRoutes, scorebookFileRoutes } from "./write/scorebook-api.mjs"
 import { liftRoutes } from "./write/lift-api.mjs";
 import { pilotRoutes } from "./write/pilot-api.mjs";
 import { followRoutes } from "./write/follow-api.mjs";
+// "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/168).
+import { pupilClaimRoutes } from "./write/pupil-claim-api.mjs";
 // Practice Match's live weather hint, from Google (2026-10-02): a hint, never
 // the match's record; nothing stored (weather/weather-api.mjs).
 import { weatherRoutes, weatherConfig } from "./weather/weather-api.mjs";
@@ -488,6 +490,7 @@ const colours = coloursRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
 const staffRegister = registerRoutes({ pool, secret: SECRET });
+const pupilClaims = pupilClaimRoutes({ pool, secret: SECRET });
 // Sign-up with Google (SCRBRD-140 phase 1, db/81). Google's keys for
 // scrbrd-os; FIREBASE_TEST_KEYS (the walk's own key) is refused in
 // production and verifies only a project that is not scrbrd-os.
@@ -545,6 +548,8 @@ const follows = followRoutes({ pool, secret: SECRET, today: publicSite.followedT
 // computer least of all.
 NO_STORE_ROUTES.add(follows.list);
 NO_STORE_ROUTES.add(follows.today);
+NO_STORE_ROUTES.add(pupilClaims.state);
+NO_STORE_ROUTES.add(pupilClaims.list);
 // The key is read once, here, and goes nowhere but Google's header. Unset,
 // the hint answers 503 weather_unavailable and the scorer picks by hand.
 // Only an enrolled account may spend the quota (db/81's app_enrolled()): a
@@ -866,6 +871,16 @@ const PLAYER_ROUTES = [
   // platform's answer. Each decision is a db/158 definer's, under the caller.
   [/^\/api\/school-requests$/,                      "POST", requests.schoolAsk],
   [/^\/api\/school-requests\/([^/]+)\/decide$/,      "POST", requests.schoolDecide],
+  // "I am a pupil here" (db/168, the honesty model's Migration A): the boy's
+  // own claim, state and way out, and the office's Pupil claims list. Every
+  // decision is a db/168 definer's, under the caller.
+  [/^\/api\/pupil\/state$/,                         "GET",  pupilClaims.state],
+  [/^\/api\/pupil\/claim$/,                         "POST", pupilClaims.claim],
+  [/^\/api\/pupil\/remove$/,                        "POST", pupilClaims.removeSelf],
+  [/^\/api\/pupil-claims$/,                          "GET",  pupilClaims.list],
+  [/^\/api\/pupil-claims\/clear$/,                   "POST", pupilClaims.clear],
+  [/^\/api\/pupil-claims\/([^/]+)\/recognise$/,      "POST", pupilClaims.recognise],
+  [/^\/api\/pupil-claims\/([^/]+)\/decline$/,        "POST", pupilClaims.decline],
   // The office opening an account for somebody already on the roster — the
   // push half of onboarding. Authenticated: enrol_person() checks
   // user.role.assign and the granter table under the caller's identity.
@@ -1455,6 +1470,8 @@ const PLATFORM_LOGGED = new Map(/** @type {[unknown, import("./read/platform-rea
   [nomination.toDecide,       { resource: "potm_to_decide" }],
   [recognition.toReview,      { resource: "potm_to_review" }],
   [colours.list,              { resource: "colours_nominations" }],
+  // Migration A: the office's list of pupils who said "I am a pupil here" (under-18 accounts).
+  [pupilClaims.list,          { resource: "pupil_claims" }],
   [signIn.accountSignIns,     { resource: "account_sign_ins",    subject: "account" }],
   [signIn.preview,            { resource: "account_preview",     subject: "account" }],
   [results.result,            { resource: "match_result",        subject: "match" }],
@@ -1473,6 +1490,8 @@ const PLATFORM_LOGGED = new Map(/** @type {[unknown, import("./read/platform-rea
  * @type {Set<unknown>}
  */
 const NOT_PLATFORM_LOGGED = new Set([
+  // The caller's own claim state: his own account, not a child he reads.
+  pupilClaims.state,
   toss.read, listing.read, publicName.namesOff, rewards.figures, requests.schools,
   staffRegister.list, staffRegister.redactDue,
   playing.catalogue, playing.entered, playing.list, playing.preview, playing.match,

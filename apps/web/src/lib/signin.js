@@ -102,3 +102,15 @@ export const CLAIM_STEPS = [
   "Once they have, press Continue with Google again.",
   "Or ask them for a sign-in code and enter it below. Then you can add Google from Me.",
 ];
+
+/**
+ * The honesty model (SCRBRD-140 §3.6): a claim is a wait, not a refusal, and
+ * the public pages are offered while it lasts. Said the same for every
+ * account the office set up, a pupil's among them: it never says whose the
+ * account is, or what it holds.
+ */
+export const CLAIM_MEANWHILE = Object.freeze({
+  words: "Meanwhile, every school's public matches are open to you, signed in or not: fixtures, live scores and scorecards.",
+  link: "Watch the public matches",
+  href: "/",
+});

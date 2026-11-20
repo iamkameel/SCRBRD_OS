@@ -439,6 +439,8 @@ const HAND_WRITTEN_SINCE_47 = {
   recognition_audit: {},
   // db/148: a decider's review of an award a correction moved is never public as a whole (N5).
   recognition_review: {},
+  // db/168: a pupil's claim (what he typed, his roster row once known) is never public as a whole (N4).
+  pupil_claim: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */
