@@ -70,6 +70,7 @@ ground for publishing it on these pages is the prior consent of a competent pers
 
 - *18 Nov 2026:* a boy without public consent will be shown as his initial and fixed-length dots ("R ••••••") on every public surface, never-public boys alike. Decided, not built; production after counsel.
 - *18 Nov 2026:* a photo may show where a family sets the profile public. Not built; Fable designs it; counsel reads it; A8 stands until then.
+- *20 Nov 2026:* Kameel decided Fable's photo design (), all ten as recommended. A8 ("no child's photo on a public page") stands unchanged for the pilot; it changes only after the pilot, after counsel answers that design's §13, and after the information officer re-signs this document.
 
 ## 3. Never public (N1–N5)
 
