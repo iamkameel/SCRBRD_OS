@@ -25,6 +25,7 @@ import { GUARDIAN_TERMS_VERSION, agreedWords } from "../../lib/guardianLink.js";
 import { AgreeTerms } from "./terms.jsx";
 import { HealthConsentPrompt, HealthConsentSection } from "../healthconsent.jsx";
 import { Action, Card, Line, OpenRow, Unread } from "./parts.jsx";
+import { OWN_SIGNIN_REFUSALS, heldWords, ownSigninWords } from "../../lib/ownSignin.js";
 
 /** Roles that never belong in "who else can see this": the break-glass keys and the platform. */
 const NOT_A_PERSON_AT_SCHOOL = new Set(["superadmin", "platformadmin"]);
@@ -95,6 +96,12 @@ export function ChildFileCard({ child, role, w, todo = null, onAgreed }) {
           <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Public match pages, health monitoring, where {name}&apos;s {w.record} may travel, and scouts</span>
         </OpenRow>
         {panel === "consents" && <Consents child={child} role={role} nonce={consentNonce} onChanged={() => setConsentNonce((n) => n + 1)}/>}
+        {/* db/169 (Q5): his own sign-in, allowed or stopped by her, on her own link. */}
+        <OpenRow onClick={() => toggle("signin")} testid={`family-open-signin-${child.id}`}>
+          <span style={{ ...T.role.body, fontWeight: 600 }}>His own sign-in</span>
+          <span style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>Whether {name} may sign in to his own page</span>
+        </OpenRow>
+        {panel === "signin" && <OwnSignIn child={child} name={name} w={w}/>}
       </div>
     </Card>
   );
@@ -307,6 +314,57 @@ export function Consents({ child, role, nonce = 0, onChanged }) {
       {/* Q16: health monitoring, moved whole from Settings → Me; the wording, version and rules are healthconsent.jsx's. */}
       <HealthConsentSection role={role} playerId={child.id} nonce={nonce} onChanged={onChanged}/>
       <PassportTab role={role} only={[child]}/>
+    </div>
+  );
+}
+
+
+// ── db/169 · His own sign-in (Q5, Q6) ──────────────────
+
+/**
+ * Whether the boy may sign in to his own page, and her yes or no. Read only
+ * when opened; the database decides who may answer, and works out whether a
+ * yes is in force on every read he makes.
+ */
+export function OwnSignIn({ child, name, w }) {
+  const [state, setState] = useState(/** @type {any} */ (undefined));
+  const [nonce, setNonce] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState("");
+  useEffect(() => {
+    let off = false;
+    api(`/api/players/${child.id}/own-signin`)
+      .then((r) => { if (!off) setState(r?.ownSignIn ?? null); })
+      .catch(() => { if (!off) setState(null); });
+    return () => { off = true; };
+  }, [child.id, nonce]);
+  const answer = async (/** @type {boolean} */ allow) => {
+    setBusy(true); setSaid("");
+    try {
+      const r = await api(`/api/players/${child.id}/own-signin`, { method: "POST", body: { allow } });
+      // S5: her yes is recorded, but his recognised account could not be opened by it: say why.
+      setSaid(heldWords(r?.held, name) ?? "");
+      setNonce((n) => n + 1);
+    }
+    catch (e) { setSaid(OWN_SIGNIN_REFUSALS[/** @type {any} */ (e)?.code] ?? OWN_SIGNIN_REFUSALS.fallback); }
+    setBusy(false);
+  };
+  return (
+    <div data-testid={`own-signin-${child.id}`} style={{ display: "grid", gap: T.space.sm, padding: `0 ${T.space.xs}` }}>
+      {state === undefined ? <Line quiet>Reading…</Line> : state === null ? <Unread what="his own sign-in"/> : (
+        <>
+          <Line testid="own-signin-words">{ownSigninWords(state, name, w.place)}</Line>
+          {state.canAllow && !state.inForce && (
+            <Line quiet>Until you say yes, {name} sees only the public pages and his school&apos;s safeguarding contacts. You may stop it at any time, and from eighteen it is his.</Line>
+          )}
+          {state.held && !said && <Line testid="own-signin-held">{heldWords(true, name)}</Line>}
+          <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
+            {state.canAllow && <Action primary disabled={busy} onClick={() => answer(true)} testid="own-signin-allow">{state.yours && state.held ? "Try opening his account again" : "Allow his own sign-in"}</Action>}
+            {state.canStop && <Action disabled={busy} onClick={() => answer(false)} testid="own-signin-stop">Stop his own sign-in</Action>}
+          </div>
+        </>
+      )}
+      {said && <Line testid="own-signin-said">{said}</Line>}
     </div>
   );
 }
