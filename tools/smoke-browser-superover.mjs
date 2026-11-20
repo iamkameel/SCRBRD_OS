@@ -546,7 +546,8 @@ try {
   const ptid = (id) => pub.locator(`[data-testid="${id}"]`);
   ok("the public scorecard opens", (await ptid("mc-panel-scorecard").count()) === 1);
   const pres = ((await ptid("mc-result").first().innerText().catch(() => "")) || "").trim();
-  ok("its result line: the engine's words, sides named, nobody else", /^Match tied; the first super over tied; .+ won the second$/.test(pres), pres);
+  // Redesign slice 2 (§2.2): the public match card says a result on the pad, not yet confirmed, as provisional.
+  ok("its result line: the engine's words, sides named, nobody else", /^Match tied; the first super over tied; .+ won the second( · provisional)?$/.test(pres), pres);
   const psc = await pub.evaluate(() => {
     const root = document.querySelector('[data-testid="mc-scorecard"]');
     const own = [...root.querySelectorAll('[data-testid="mc-total"]')].filter((n) => !n.closest('[data-testid^="mc-superover-"]'));
