@@ -45,21 +45,23 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The labels, from public_match_people()'s rows: nameFor() on the day each
- * row was served, and nothing for a boy it does not name.
- * @param {any[]} people  @returns {Record<string, string>}
+ * row was served, and nothing for a boy it does not name — or, with the
+ * 18 Nov rule switched on (`initials`, server.mjs PUBLIC_NAME_INITIALS), his
+ * initial and the dots, exactly as the public page would show him.
+ * @param {any[]} people  @param {{initials?: boolean}} [o]  @returns {Record<string, string>}
  */
-export function groundLabels(people) {
+export function groundLabels(people, { initials = false } = {}) {
   /** @type {Record<string, string>} */
   const out = {};
   for (const p of Array.isArray(people) ? people : []) {
-    const label = nameFor(p, p?.served_on);
+    const label = nameFor(p, p?.served_on, { initials });
     if (label && typeof p?.player_id === "string" && UUID.test(p.player_id)) out[p.player_id] = label;
   }
   return out;
 }
 
-/** @param {RouteDeps} deps @returns {Record<string, IdHandler>} */
-export function groundNamesRoutes({ pool, secret }) {
+/** @param {RouteDeps & {initials?: boolean}} deps @returns {Record<string, IdHandler>} */
+export function groundNamesRoutes({ pool, secret, initials = false }) {
   return {
     read: async (req, res) => {
       const id = String(req.params.id ?? "");
@@ -67,7 +69,7 @@ export function groundNamesRoutes({ pool, secret }) {
       try {
         const rows = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
           (await client.query(`select team, position_only, log_seq, people from ground_screen_names($1)`, [id])).rows);
-        res.json(groundAnswer(id, rows));
+        res.json(groundAnswer(id, rows, { initials }));
       } catch (/** @type {any} */ e) {
         // A fixed word: never a database message.
         res.status(e?.status || 500).json({ error: e?.status && typeof e.code === "string" ? e.code : "unavailable" });
@@ -80,13 +82,13 @@ export function groundNamesRoutes({ pool, secret }) {
  * The answer from ground_screen_names()'s rows: the sides as the database
  * answered them, and labels only from the facts it sent for a side answered
  * false. A side answered anything but false lends no label, whatever came.
- * @param {string} matchId @param {any[]} rows
+ * @param {string} matchId @param {any[]} rows  @param {{initials?: boolean}} [o]
  */
-export function groundAnswer(matchId, rows) {
+export function groundAnswer(matchId, rows, { initials = false } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const sides = list.map((r) => ({ team: r.team, position_only: r.position_only !== false, log_seq: Number(r.log_seq) || 0 }));
   /** @type {Record<string, string>} */
   const labels = {};
-  for (const r of list) if (r.position_only === false) Object.assign(labels, groundLabels(r.people));
+  for (const r of list) if (r.position_only === false) Object.assign(labels, groundLabels(r.people, { initials }));
   return { matchId, sides, labels };
 }
