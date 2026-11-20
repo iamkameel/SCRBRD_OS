@@ -180,3 +180,5 @@ demo again: rebuilding it means repeating sections 1 and 2.
 
 The demo never gets a backup, a school list or a real account. If any of those
 is ever needed, it is production's job.
+
+*20 Nov 2026:* `PUBLIC_NAME_INITIALS=on` is now set on the demo service (Kameel: "Switch it on (the demo holds test players only)"); production ignores it until counsel has read the 18 Nov rule.

@@ -49,6 +49,8 @@ Six things to decide, said once:
    It is for a lost phone, a stolen credential, a person asked to step back while something is looked at. A
    person who has left gets their roles ended (db/77) and then, if nothing stands anywhere, the account
    disabled. One screen, "Off-board", does the roles first and the account last (D15).
+   *20 Nov 2026 (Kameel, on the board, Migration B, a disable):* "Drop it: a disable keeps the school's yes (lifecycle D1)". Switching a pupil's account off and on again does not end the school's yes. His account ending, his roster link moving, or his leaving the school (a move to another school included) still end it.
+
 2. **Who may disable is who may act on the account today** (`auth_office_refusal()`, db/81): `user.invite` at
    the account's school, and every live role one the caller could grant there. So the office cannot disable
    its principal, its director of sport, its DSO or its physio, and the DSO's and the owner's keys stay out of

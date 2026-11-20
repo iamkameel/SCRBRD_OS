@@ -43,6 +43,8 @@
 
 Decision (Kameel, 20 Nov, on the board): keep the separation. After a match, the coach's confirm finishes it; the official result stays with the director of sport or the competition organiser (OFFICIAL_RESULT D3 unchanged).
 
+Decisions (Kameel, 20 Nov 2026, on the board): (1) Migration B, a disable: "Drop it: a disable keeps the school's yes (lifecycle D1)". Switching a pupil's account off and on again does not end the school's yes; his account ending, his roster link moving, or his leaving the school (a move to another school included) still end it. (2) Date of birth: "The office corrects it; every change is audited (a follow-up)", with his note: "Date of birth should be match with an ID No." The office may correct a recorded date of birth; every change is logged (old date, new date, who); a date that does not match the ID number is refused on the server. A follow-up after db/169, not built yet (open item below). (3) Pro mode: "The team manager too, as built". The coach, the team manager and the office may switch Pro mode on for an upcoming home fixture (db/170, PR #377). (4) The demo's names: "Switch it on (the demo holds test players only)". `PUBLIC_NAME_INITIALS=on` is set on the demo service only, on 20 Nov; production ignores it until counsel has read the 18 Nov rule.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -5403,6 +5405,16 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - [ ] Reword that comment so the grep returns 0.
 - [ ] Tick SCRBRD-002's box.
 **Source:** the backlog map of 15 Nov 2026.
+
+### Date of birth: the office corrects it, every change audited (follow-up to db/169, 2026-11-20)
+**Priority:** P2 · **Domain:** Privacy / Sign-up · **Type:** build, Opus (a migration, and a minor's data)
+**Status:** open, not built. Decided by Kameel, 20 Nov: "The office corrects it; every change is audited (a follow-up)".
+**Why:** his note: "Date of birth should be match with an ID No."
+**Acceptance criteria:**
+- [ ] The office may correct a recorded date of birth.
+- [ ] Every change is logged: the old date, the new date, and who.
+- [ ] A date that does not match the ID number is refused on the server.
+**Source:** Kameel, on the board, 20 Nov 2026. Number not assigned.
 
 ---
 
