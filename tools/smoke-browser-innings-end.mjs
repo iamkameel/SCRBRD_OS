@@ -230,7 +230,7 @@ try {
 
   const card = page.locator(`[data-testid="match-card-${MATCH}"]`);
   const opened = (await scoreBtn.isVisible())
-    && /Start Scoring|Open Live Scorer/i.test(await scoreBtn.innerText())
+    && /Start Scoring|Open Live Scorer|Resume Scoring/i.test(await scoreBtn.innerText())
     && /Michaelhouse/i.test(await card.innerText().catch(() => ""))
     && (await card.locator(`[data-testid="mc-score-${MATCH}"]`).count()) === 1
     && await scoreBtn.click({ timeout: 3000 }).then(() => true, () => false);
