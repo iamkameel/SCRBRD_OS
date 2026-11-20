@@ -8,8 +8,8 @@ import { profile, schoolsWhere } from "../lib/session.js";
 import { ENTERABLE, mayEnterScoring } from "../lib/enterScoring.js";
 import { Btn, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { MatchCard } from "../ui/matchCard.jsx";
-import { demoScore, openWords, resultSaidOf } from "../lib/matchCard.js";
-import { deriveMatch, fromRow } from "@scrbrd/scoring";
+import { decidedOn, demoScore, openWords, resultSaidOf } from "../lib/matchCard.js";
+import { useLiveFolds } from "../lib/liveFolds.js";
 import { WeatherChip } from "./shared.jsx";
 import { MatchView } from "./matchcentre/MatchView.jsx";
 import { SideName } from "./matchcentre/bits.jsx";
@@ -34,27 +34,6 @@ import { clearCoach, peekCoach } from "../lib/cockpitNav.js";
 import { PickSideEntry } from "./cockpit/PickSide.jsx";
 import { APP_MATCHES, appPath, parseAppPath } from "../lib/matchTabs.js";
 import { navigate, usePath } from "../lib/route.js";
-
-/**
- * The live fixtures' innings, by id, folded from each one's log (GET /api/matches/:id/events and deriveMatch(),
- * as the server folds it): the read DashboardView's useLiveScore makes for "Now". A log that could not be read
- * has no entry, and its row keeps no score. Signed in only.
- * @param {string[]} ids  @param {number} nonce
- * @returns {Record<string, any[]>}
- */
-function useLiveFolds(ids, nonce) {
-  const key = ids.join(",");
-  const [got, setGot] = useState(/** @type {Record<string, any[]>} */ ({}));
-  useEffect(() => {
-    if (!key) return undefined;
-    let off = false;
-    Promise.all(key.split(",").map((id) => api(`/api/matches/${id}/events`)
-      .then((r) => [id, deriveMatch((r?.events ?? []).map(fromRow), r?.fold ?? {}).innings], () => [id, null])))
-      .then((pairs) => { if (!off) setGot(Object.fromEntries(pairs.filter(([, inn]) => inn))); });
-    return () => { off = true; };
-  }, [key, nonce]);
-  return got;
-}
 
 // A hand on the page: any of these means the person is steering, so the held scroll below lets go.
 const HAND = ["wheel", "touchstart", "pointerdown", "keydown"];
@@ -245,7 +224,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
         initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false} initialCorrections={coachOn?.corrections ?? false}
         route={{ tab: route?.matchId === fresh.id ? route.tab : null, setTab: (t) => navigate(appPath(fresh.id, t)) }}
         onOpenScorer={onOpenScorer} onNavProfile={onNavProfile} onNav={onNav} onOpenDuties={openDuties}
-        matches={MATCHES} onOpenFixture={openFixture} onTeamResults={teamResults}/>
+        matches={MATCHES} onOpenFixture={openFixture} onTeamResults={teamResults} onChanged={() => setMatchesNonce((n) => n + 1)}/>
     );
   }
   return (
@@ -310,12 +289,16 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                 // at the toss. Whether this person MAY score it is decided by the database when the scorer claims it;
                 // scoresHere() only decides whether to offer the button (over this fixture, by the routes' own
                 // capability), and being wrong shows a button that then says no, never the wrong data.
-                const scoring = (isLive||m.status==="upcoming")&&scoresHere(m)
+                // Slice 4: a live fixture whose log decides it is the coach's to confirm, not anybody's to score or
+                // take over: its row is "Provisional" (the fold says so) and its one action opens it.
+                const fold = liveFolds[m.id]?.innings?.length ? liveFolds[m.id] : null;
+                const decided = decidedOn(m, fold);
+                const scoring = (isLive||m.status==="upcoming")&&!decided&&scoresHere(m)
                   ? { label: isLive ? "Resume scoring" : "Start scoring", testid: `mc-score-${m.id}`, onClick: () => onOpenScorer&&onOpenScorer(m) } : null;
                 return (
                   <div key={m.id} style={{padding:`0 ${T.space.lg}`,background:isSel?T.surface.interactive:"transparent",boxShadow:isSel?`inset 3px 0 0 ${D.sky}`:"none"}}>
                     <MatchCard size="row" match={m} innings={said?.innings ?? null} resultSaid={said?.text ?? null} scores={scores}
-                      fold={liveFolds[m.id]?.length ? { innings: liveFolds[m.id], result: null } : null}
+                      fold={fold}
                       testid={`match-card-${m.id}`} statusTestid={`mc-card-status-${m.id}`} last={n===filtered.length-1}
                       onOpen={()=>setSelMatch(isSel?null:m)} openLabel={`Match details: ${sides.home.full} v ${sides.away.full}, ${humanDate(m.date)}`}
                       expanded={isSel} controls={isSel?"match-details":undefined}

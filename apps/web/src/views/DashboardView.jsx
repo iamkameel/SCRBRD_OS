@@ -25,11 +25,11 @@ import { observedStamp } from "../lib/weatherStamp.js";
 import { saClock } from "../lib/saTime.js";
 import { MatchCard } from "../ui/matchCard.jsx";
 import { sideOfTeam } from "../lib/matchCentre.js";
-import { openWords, resultSaidOf } from "../lib/matchCard.js";
+import { decidedOn, openWords, resultSaidOf } from "../lib/matchCard.js";
 import { cockpitGate } from "../lib/cockpit.js";
 import { requestCoach, requestDuties, requestResult } from "../lib/cockpitNav.js";
 import { fixFor, requestFix } from "../lib/fixNote.js";
-import { profile } from "../lib/session.js";
+import { couldConfirmResult, profile } from "../lib/session.js";
 import { LastMatch } from "./cockpit/RecentMatches.jsx";
 import { NeedsYou } from "./needsyou.jsx";
 import { DsoCard } from "./family/dso.jsx";
@@ -120,9 +120,9 @@ export function weekOf(matches, day) {
  * purpose, because a live score is derived, not a column.
  */
 function useLiveScore(matchId) {
-  const [state, setState] = useState({ loading: false, error: null, inn: null, target: null, innings: [] });
+  const [state, setState] = useState({ loading: false, error: null, inn: null, target: null, innings: [], result: null, conditions: null });
   useEffect(() => {
-    if (!matchId || !signedIn()) { setState({ loading: false, error: null, inn: null, target: null, innings: [] }); return; }
+    if (!matchId || !signedIn()) { setState({ loading: false, error: null, inn: null, target: null, innings: [], result: null, conditions: null }); return; }
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
     (async () => {
@@ -131,14 +131,15 @@ function useLiveScore(matchId) {
         if (cancelled) return;
         const evs = (rows || []).map(fromRow);
         // Folded as the server folds it: the fixture's start and format (SCRBRD-113).
-        const { innings } = deriveMatch(evs, fold ?? {});
+        const { innings, result } = deriveMatch(evs, fold ?? {});
         const curIn = innings.length - 1;
         const inn = curIn >= 0 ? innings[curIn] : null;
         const target = curIn === 1 ? (inn?.target ?? ((innings[0]?.runs || 0) + 1)) : null;
         // Every innings of the same fold: the match card's two scores (slice 1). Nothing more is read.
-        setState({ loading: false, error: null, inn, target, innings });
+        // And its result, so a match the pad has decided reads "Provisional" until the coach confirms it (slice 4).
+        setState({ loading: false, error: null, inn, target, innings, result: result ?? null, conditions: fold?.conditions ?? null });
       } catch (e) {
-        if (!cancelled) setState({ loading: false, error: e.code || "unreachable", inn: null, target: null, innings: [] });
+        if (!cancelled) setState({ loading: false, error: e.code || "unreachable", inn: null, target: null, innings: [], result: null, conditions: null });
       }
     })();
     return () => { cancelled = true; };
@@ -216,7 +217,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
                     reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true, off = {},
                     needsYou = null, nextFold = null, lastMatch = null, dso = null, chipDoor = null,
-                    liveInnings = null, nowLine = null, nowAction = null, openMatch = null }) {
+                    liveInnings = null, liveResult = null, liveConditions = null, nowLine = null, nowAction = null, openMatch = null }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
   // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
@@ -233,6 +234,10 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
   const said = (r) => (r && !["ok", "empty", "stale"].includes(r.state) ? r : null);
   const draw = (r, fallback) => (said(r) ? <ReadState read={r} onRetry={onRetry} compact/> : fallback);
 
+  // Slice 4: the live match's fold with its result; decided on the pad, it reads "Provisional", and the scorer's
+  // "Resume scoring" gives way to the match, where the coach confirms it.
+  const liveFold = liveInnings?.length ? { innings: liveInnings, result: liveResult, conditions: liveConditions } : null;
+  const liveDecided = decidedOn(liveMatch, liveFold);
   return (
     <div className="os-page" data-testid="day-sheet">
       <div style={{ marginBottom: T.space.lg }}>
@@ -250,14 +255,18 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
         {/* 1. Now — a live fixture: the match card at its board size (slice 1), the Board under its two sides. */}
         {liveMatch && (
           <BentoCard level="a" title="Now" data-testid="day-now">
-            <MatchCard size="board" match={liveMatch} fold={liveInnings?.length ? { innings: liveInnings, result: null } : null}
+            <MatchCard size="board" match={liveMatch} fold={liveFold}
               testid="day-now-card" statusTestid="day-now-status"
               line={nowLine} lineTestid="day-now-line"
               board={board
                 // No last-wicket row on the day sheet's board (CRI-1.1 is the Match Centre's and the public page's).
                 ? <Board {...board} lastWicket={undefined} testid="day-board"/>
                 : <EmptyState loading={boardState.loading} error={boardState.error} what="the live score" onRetry={onRetry} message="The live score is not available yet." icon="scorebook"/>}
-              action={nowAction ?? (holds("scoring.edit")
+              action={liveDecided
+                // Slice 4: the result to confirm is on the match's own page, for whoever may confirm it.
+                ? { label: live && couldConfirmResult(liveMatch.schoolId, liveMatch.homeTeam) ? "Confirm the result" : openMatch ? openWords(liveMatch) : "Match Centre",
+                    onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" }
+                : nowAction ?? (holds("scoring.edit")
                 ? { label: "Resume scoring", onClick: () => onOpenScorer && onOpenScorer(liveMatch), testid: "day-now-open" }
                 : { label: openMatch ? openWords(liveMatch) : "Match Centre", onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" })}/>
           </BentoCard>
@@ -548,7 +557,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     <>
     {followedFirst && followedBlock}
     <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
-      liveInnings={liveInnings} nowLine={nowLine} nowAction={nowAction} openMatch={openMatch}
+      liveInnings={liveInnings} liveResult={signedIn() ? liveScore.result : null} liveConditions={signedIn() ? liveScore.conditions : null} nowLine={nowLine} nowAction={nowAction} openMatch={openMatch}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}

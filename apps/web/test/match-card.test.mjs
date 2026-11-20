@@ -7,7 +7,7 @@
  *   node apps/web/test/match-card.test.mjs
  */
 import { inningsStart, batters, bowler, ball, deriveInnings } from "@scrbrd/scoring";
-import { cardModel, demoScore, openWords, oversWords, paceWords, resultSaidOf, scoreWords, scoresOf, startsIn, stateOf } from "../src/lib/matchCard.js";
+import { cardModel, decidedOn, demoScore, openWords, oversWords, paceWords, resultSaidOf, scoreWords, scoresOf, startsIn, stateOf } from "../src/lib/matchCard.js";
 import { statusSentence } from "../src/lib/matchCentre.js";
 
 let pass = 0, fail = 0;
@@ -54,6 +54,24 @@ ok("...provisional where the screen read it so", stateOf({ ...M, status: "comple
 ok("a result on the pad while live is provisional, never Live", stateOf({ ...M, status: "live" }, { state: "result" }).words === "Provisional");
 ok("postponed", stateOf({ ...M, status: "postponed" }, { state: "postponed" }).words === "Postponed");
 ok("called off", stateOf({ ...M, status: "complete", calledOff: true }, { state: "abandoned" }).words === "Called off");
+
+group("Slice 4: a result on the pad, not yet confirmed");
+{
+  const won = { innings: [inn1], result: { winner: "1XI", margin: "12 runs" } };
+  ok("a live fixture whose log decides it is decided", decidedOn({ ...M, status: "live" }, won));
+  ok("...not while play goes on", !decidedOn({ ...M, status: "live" }, { innings: [inn1], result: null }));
+  ok("...not without a fold: nothing read, nothing claimed", !decidedOn({ ...M, status: "live" }, null));
+  ok("...nor once confirmed (complete)", !decidedOn({ ...M, status: "complete" }, won));
+  const tieSO = { innings: [inn1], result: { outcome: "tie", winner: null, margin: "tie", decidedBy: null }, conditions: { "result.tie_break": "super_over" } };
+  ok("...nor a tie whose conditions provide a super over still to play", !decidedOn({ ...M, status: "live" }, tieSO));
+  ok("...and the card says the same: one Provisional, decidedOn()'s", cardModel({ match: { ...M, status: "live" }, fold: tieSO }).state.kind === "live");
+  const c = cardModel({ match: { ...M, status: "live" }, fold: won });
+  ok("the card says Provisional, never Live", c.state.kind === "provisional" && c.state.words === "Provisional", c.state);
+  ok("...and the sentence says provisional", c.sentence.text === "Hilton College 1XI won by 12 runs · provisional", c.sentence.text);
+  ok("...with nobody batting", c.sides.every((x) => !x.batting));
+  const done = cardModel({ match: { ...M, status: "complete" }, resultSaid: "Hilton College 1XI won by 12 runs" });
+  ok("confirmed, it reads as the result", done.state.words === "Result" && done.sentence.text === "Hilton College 1XI won by 12 runs", done);
+}
 
 group("In the last hour: \"in 12 min\"");
 const start = Date.parse(M.startsAt);

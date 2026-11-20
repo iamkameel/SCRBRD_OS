@@ -16,7 +16,8 @@
  *      approves it from the fixture's Corrections sheet.
  *   4. The innings ends at its two overs, the reply is scored on Basic Scoring
  *      (no wagon wheel: the timing set beside the wheel's) until the match is
- *      decided, the review gate closes each innings, and the scorer finishes
+ *      decided, the review gate closes each innings; the scorer's part is done
+ *      and the coach confirms the result (redesign slice 4, Kameel's Q2), finishing
  *      the match from the result screen (db/130; refused before it is decided,
  *      and to a parent and the office). The result is confirmed official, and
  *      the director publishes the home side to the public pages.
@@ -611,42 +612,40 @@ try {
   // the scorer says so (db/130): everything after full time — the scorer's
   // confirm-or-correct prompt, the official result, a parent's Played row —
   // waits on it.
-  group("4. The scorer finishes the match from the result screen");
+  group("4. The scorer's part is done; the coach confirms the result (slice 4, Q2)");
   const parentTry = await finish("parent.whitfield@example.invalid");
-  ok(`a parent may not finish it (${parentTry.status} ${parentTry.body?.error})`, parentTry.status === 403 && parentTry.body?.error === "not_permitted",
+  ok(`a parent may not confirm it (${parentTry.status} ${parentTry.body?.error})`, parentTry.status === 403 && parentTry.body?.error === "not_permitted",
     JSON.stringify(parentTry));
   const officeTry = await finish("registrar@example.invalid");
   ok(`nor may the office, which holds fixture.update and not scoring.finalise (${officeTry.status} ${officeTry.body?.error})`,
     officeTry.status === 403 && officeTry.body?.error === "not_permitted", JSON.stringify(officeTry));
   ok("...and the match is still not complete", (await q(`select status from match where id = $1`, [MATCH]))[0].status !== "complete");
-  // A phone that sleeps or reloads at full time (18 Nov 2026): the pad comes
-  // back on its result, and Finish is not hidden in silence. The token went
-  // with the reload, so the screen says to sign in, and the sign-in comes back.
+  // A phone that sleeps or reloads at full time (18 Nov 2026): the pad comes back on its result, and says the
+  // scorer's part is done rather than nothing (slice 4: he is not the one who confirms).
   await P.reload({ waitUntil: "networkidle" });
   await afterReads(P, 1500);
-  ok("after a reload at full time the pad reopens on its result, saying \"Sign in to finish this match.\"",
-    await until(P, () => document.querySelector('[data-testid="pad-finish-signin-lead"]')?.textContent?.trim() === "Sign in to finish this match.", 12000),
+  ok("after a reload at full time the pad reopens on its result: \"Your part is done.\"",
+    await until(P, () => document.querySelector('[data-testid="pad-done-lead"]')?.textContent?.trim() === "Your part is done.", 12000),
     (await text(P)).slice(0, 400));
-  await tap(P, "pad-finish-signin");
-  await afterReads(P, 800);
-  await signIn(P, "scorer@example.invalid");   // its own check (a menu) is not this screen's: the pad has none
-  ok("...he signs in from it and is back on the result screen", await until(P, () => !!document.querySelector('[data-testid="pad-finish"]'), 12000), (await text(P)).slice(0, 400));
-  await until(P, () => !document.querySelector('[data-testid="pad-finish"]')?.disabled, 10000);
-  ok("the result screen offers him Finish the match", await has(P, "pad-finish"), (await text(P)).slice(0, 400));
-  const fin = await tid(P, "pad-finish").first().evaluate((e) => ({ h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize) })).catch(() => null);
-  ok(`...a 44px key on the 12px floor (${JSON.stringify(fin)})`, !!fin && fin.h >= 44 && fin.fs >= 12);
+  ok(`...every ball sent, and who confirms ("${await inner(P, "pad-done-said")}")`,
+    /^All \d+ balls are sent\. The coach confirms the result\.$/.test(await inner(P, "pad-done-said")));
+  ok("...and no Finish for the scorer", !(await has(P, "pad-finish")));
   await beat(P, 1200);
-  await tap(P, "pad-finish");
-  ok("he finishes it: 'Finished. The result now waits for confirmation.'",
-    await until(P, () => /^Finished\. The result now waits for confirmation\.$/.test(document.querySelector('[data-testid="pad-finish-said"]')?.textContent?.trim() ?? ""), 8000),
-    await inner(P, "pad-finish-said"));
-  ok("...and New Match is still there", (await P.locator("button", { hasText: /^New Match$/ }).count()) === 1);
+  // The coach confirms (db/130's finish under his own role). The scorer's phone held the lease, and Finish is
+  // refused under another phone's live lease (db/132), so it waits for that to lapse (90 s).
+  let conf = null;
+  for (let i = 0; i < 16; i++) {
+    conf = await finish("coach@example.invalid");
+    if (conf.body?.error !== "held_elsewhere") break;
+    await new Promise((r) => setTimeout(r, 10000));
+  }
+  ok(`the coach confirms it (${conf?.status} ${conf?.body?.state})`, conf?.status === 200 && conf?.body?.state === "finished", JSON.stringify(conf));
   const [{ status: afterFinish }] = await q(`select status from match where id = $1`, [MATCH]);
   ok(`the server has the match complete (${afterFinish})`, afterFinish === "complete");
-  const [{ id: scorerId }] = await q(`select id from app_user where email = 'scorer@example.invalid'`);
+  const [{ id: coachId }] = await q(`select id from app_user where email = 'coach@example.invalid'`);
   const fins = await q(`select actor_id from scoring_audit where match_id = $1 and event = 'match_finalised'`, [MATCH]);
-  ok("...with one audit row, his", fins.length === 1 && fins[0].actor_id === scorerId, JSON.stringify(fins));
-  const twice = await finish("scorer@example.invalid");
+  ok("...with one audit row, the coach's", fins.length === 1 && fins[0].actor_id === coachId, JSON.stringify(fins));
+  const twice = await finish("coach@example.invalid");
   ok(`a second press is a no-op (${twice.status} ${twice.body?.state})`, twice.status === 200 && twice.body?.state === "already_complete"
     && (await q(`select count(*)::int n from scoring_audit where match_id = $1 and event = 'match_finalised'`, [MATCH]))[0].n === 1);
   await beat(P, 2000);
@@ -655,6 +654,12 @@ try {
   group("3b. After full time: the scorer asks for an amendment of the wide");
   await tid(P, "exit-scorer").first().click({ timeout: 4000 }).catch(async () => { await P.locator(".os-exit-scorer").first().click({ timeout: 4000 }).catch(() => {}); });
   await afterReads(P, 1200);
+  // The pad scored under its own key after the reload (slice 4: nothing on it asks him to sign in), so he signs in.
+  if (/no server connected|DEMO/.test(await text(P))) {
+    await P.goto(`${BASE}/app`, { waitUntil: "networkidle" });
+    if (!(await P.locator("button", { hasText: /Get Started|Log In/ }).count())) await click(P, /^Sign in$/, 4000);
+    await signIn(P, "scorer@example.invalid");
+  }
   ok("he opens the finished match from Match Centre", await openMatch(P, MATCH), (await text(P)).slice(0, 300));
   const [wide] = await q(`select idempotency_key from ball_event where match_id = $1 and kind = 'ball' and ball_type = 'Wd' and innings = 0`, [MATCH]);
   if (await has(P, "mc-confirm-open")) {

@@ -110,7 +110,8 @@ group("the page offers nothing else that enters scoring");
   const mv = readFileSync(new URL("../src/views/matchcentre/MatchView.jsx", import.meta.url), "utf8");
   const calls = mv.match(/onOpenScorer\(/g) ?? [];
   ok("MatchView calls onOpenScorer in one place, the button's own tap", calls.length === 1 && /onClick=\{\(\) => onOpenScorer\(match\)\}[^>]*data-testid="mc-enter-scoring"/.test(mv));
-  ok("...drawn only where its caller passed canScoreIt", /\{canScoreIt && \(isLive \|\| match\.status === "upcoming"\) && onOpenScorer && \(/.test(mv));
+  // Slice 4: and never on a live match the pad has decided (provisional): the coach confirms it, nobody scores it.
+  ok("...drawn only where its caller passed canScoreIt", /\{canScoreIt && \(isLive \|\| match\.status === "upcoming"\) && !provisional && onOpenScorer && \(/.test(mv));
   ok("...and MatchView never claims a session or writes the log", !/session\/claim|\/events`, \{ method: "POST"|handover/.test(mv));
   const mc = readFileSync(new URL("../src/views/MatchCentreView.jsx", import.meta.url), "utf8");
   ok("the Match Centre's one gate is the fixture's own when signed in",
@@ -118,7 +119,7 @@ group("the page offers nothing else that enters scoring");
   ok("...the match page passes it", /const enters = scoresHere\(fresh\);/.test(mc) && /canScoreIt=\{enters\}/.test(mc));
   // Slice 1: the list's row is the match card, whose one action is the scorer's where scoresHere() offers it.
   ok("...and every fixture card's scorer button in the list asks it, and nothing else",
-     /\(isLive\|\|m\.status==="upcoming"\)&&scoresHere\(m\)\s*\?\s*\{ label: isLive \? "Resume scoring" : "Start scoring", testid: `mc-score-\$\{m\.id\}`/.test(mc)
+     /\(isLive\|\|m\.status==="upcoming"\)&&!decided&&scoresHere\(m\)\s*\?\s*\{ label: isLive \? "Resume scoring" : "Start scoring", testid: `mc-score-\$\{m\.id\}`/.test(mc)
      && !/canScore\(role\)&&<Btn/.test(mc));
 }
 
