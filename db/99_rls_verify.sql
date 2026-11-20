@@ -10830,7 +10830,7 @@ DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
   WES uuid := '22222222-2222-2222-2222-222222222222';
   OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
-  ids jsonb; v_b uuid; v_n uuid; v_l uuid; m uuid; k text; a uuid;
+  ids jsonb; v_b uuid; v_n uuid; v_l uuid; m uuid; k text; a uuid; v_m uuid;
   hundred text[] := array_fill('6'::text, ARRAY[16]) || ARRAY['3', '1'];   -- 100, its last ball a single
 BEGIN
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
@@ -10857,6 +10857,14 @@ BEGIN
   -- The boy, as every pupil, is a player on his side as well as his own record.
   INSERT INTO role_assignment (person_id, role, school_id, team_code)
   VALUES ((ids->>'twohats')::uuid, 'scorer', HIL, NULL), ((ids->>'self')::uuid, 'player', HIL, '1XI');
+  -- db/169 (Kameel, 20 Nov, A): a `player` names the boy it is, or the gate
+  -- closes it. The team-mate is his own 1XI boy (no figures), enrolled as a
+  -- school's pupils were before db/169: the school's yes on record.
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, '1XI', 'V141 Mate', 43, 'batter', make_date(extract(year FROM sa_today())::int - 16, 7, 1))
+  RETURNING id INTO v_m;
+  UPDATE app_user SET player_id = v_m WHERE id = (ids->>'mate')::uuid;
+  INSERT INTO pupil_signin_consent (player_id, answer, how, given_by_name) VALUES (v_m, 'yes', 'enrolled', 'db/99 fixture');
   -- Who each subject-scoped assignment is about.
   FOR k, a IN SELECT x.k, x.p FROM (VALUES ('self', v_b), ('guard', v_b), ('guard2', v_n)) x(k, p) LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
