@@ -163,6 +163,7 @@ const SUITES = [
   // CRI-1.2: where a fixture stands, in one sentence per state — the list's
   // card and the match's header ask the one function (statusSentence).
   ["status-sentence",   "apps/web/test/status-sentence.test.mjs"],
+  ["match-card",        "apps/web/test/match-card.test.mjs"],
   // CRI-1.3: on a phone Summary, Scorecard and Commentary, the rest under More;
   // one address per tab, signed in and public, read back both ways.
   ["match-tabs",        "apps/web/test/match-tabs.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
@@ -313,12 +314,12 @@ const SUITES = [
   ["skills-history", "apps/web/test/skillsHistory.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
-  // per-fixture count: "N to resolve" and "Could not read X", a failed read
+  // per-fixture count: "N to resolve" and "Couldn't load X", a failed read
   // never the same as nothing.
   ["queue", "apps/web/test/queue.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The parent's action list, phase A0 (GA-I20): R1 an answer owed and R2
   // answer again, over a side's worth of rows narrowed to his own; the
-  // fourteen-day fold; "N to do" and "Could not read X", a failed read never
+  // fourteen-day fold; "N to do" and "Couldn't load X", a failed read never
   // the same as nothing; no reason, no note, no "done".
   ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,

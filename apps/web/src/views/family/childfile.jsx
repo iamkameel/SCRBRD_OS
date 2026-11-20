@@ -139,7 +139,7 @@ export function WhoToRing({ child, role }) {
   const free = [1, 2, 3].find((p) => !mine.some((c) => c.priority === p)) ?? 3;
   return (
     <div data-testid="who-to-ring" style={{ display: "grid", gap: T.space.sm, padding: `0 ${T.space.xs}` }}>
-      {loading && !rows.length ? <Line quiet>Reading the contacts…</Line> : error ? <Unread what="the contacts"/> : null}
+      {loading && !rows.length ? <Line quiet>Reading the contacts…</Line> : error ? <Unread what="the contacts" onRetry={() => setNonce((n) => n + 1)}/> : null}
       {!loading && !error && !mine.length && <Line>No one is on record to ring. Add the first number below.</Line>}
       {mine.map((c) => (
         <div key={c.id} data-testid={`contact-${c.id}`} style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md,
@@ -214,11 +214,12 @@ const SAY = {
  * untrue.
  */
 export function TheirRecord({ child, role, self = false }) {
-  const { rows, loading, error } = useLive("players", role);
+  const [nonce, setNonce] = useState(0);
+  const { rows, loading, error } = useLive("players", role, nonce);
   const p = rows.find((r) => r.id === child.id) ?? null;
   const [showId, setShowId] = useState(false);
   if (loading && !rows.length) return <Line quiet>Reading the record…</Line>;
-  if (error) return <Unread what="the record"/>;
+  if (error) return <Unread what="the record" onRetry={() => setNonce((n) => n + 1)}/>;
   if (!p) return <Line quiet>The record could not be read.</Line>;
   const rowsOf = [
     ["Full name", p.name],
@@ -265,13 +266,14 @@ export function TheirRecord({ child, role, self = false }) {
  * not what the physio has to do.
  */
 export function Health({ child, role, self = false }) {
-  const { rows, loading, error, disabled } = useLive("injuries", role);
+  const [nonce, setNonce] = useState(0);
+  const { rows, loading, error, disabled } = useLive("injuries", role, nonce);
   const mine = rows.filter((i) => i.player === child.id);
   const [open, setOpen] = useState(null);
   const [seen, setSeen] = useState(null);
   if (disabled) return <Line quiet>The {self ? "" : "school's "}injury records are not in use here.</Line>;
   if (loading && !rows.length) return <Line quiet>Reading the health record…</Line>;
-  if (error) return <Unread what="the health record"/>;
+  if (error) return <Unread what="the health record" onRetry={() => setNonce((n) => n + 1)}/>;
   if (!mine.length) return <Line testid="health-none">No injury is on record.</Line>;
   return (
     <div data-testid="health" style={{ display: "grid", gap: T.space.sm, padding: `0 ${T.space.xs}` }}>

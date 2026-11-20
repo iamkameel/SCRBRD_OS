@@ -1643,7 +1643,7 @@ export function liveResources() { return Object.keys(ADAPT); }
  */
 // The reads derived from the whole ball log under its row security
 // (demo-season PERF: career 3.5 to 10 s on the demo's season). Under the
-// default ten seconds a pupil's passport said "Could not read your career
+// default ten seconds a pupil's passport said "Couldn't load your career
 // figures" of a read that was still on its way; these wait for it.
 const SLOW_READS = new Set(["career", "career_by_season", "innings_by_season", "milestones", "personal_bests", "record_boards"]);
 const timeoutFor = (/** @type {string} */ resource) => (SLOW_READS.has(resource) ? 30000 : undefined);

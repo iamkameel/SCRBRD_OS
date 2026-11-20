@@ -714,7 +714,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
       <div role="tabpanel" id={`mc-panel-${tab}`} aria-labelledby={panelLabel(tabs, tab, phone)} data-testid={`mc-panel-${tab}`} tabIndex={0}
         style={{ outline: "none" }}>
         {log.loading ? <Quiet>Loading the match…</Quiet>
-          : log.error ? <Quiet>Could not load this match ({log.error}). This is not the same as there being nothing.</Quiet>
+          : log.error ? <Quiet>Couldn't load this match ({log.error}). This is not the same as there being nothing.</Quiet>
           // One boundary per tab's panel, keyed on the tab: a panel that
           // throws is a card in its own place, and the header, the tab bar
           // and the other five tabs stay.

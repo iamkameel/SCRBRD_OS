@@ -98,20 +98,10 @@ function SponsorsView({ role }) {
         sub="The boards a school sells — and the terms that stay between the school and the sponsor"
         color={D.amber}/>
 
-      {loading && (
-        <Card style={{ padding: "28px", textAlign: "center" }}>
-          <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>Loading sponsorships…</span>
-        </Card>
-      )}
+      {loading && <Card><EmptyState loading what="sponsorships"/></Card>}
       {/* "We could not ask" and "there are none" are different sentences and
           only one of them is true at a time. */}
-      {!loading && error && (
-        <Card style={{ padding: "28px", textAlign: "center" }}>
-          <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>
-            Could not load sponsorships ({error}).
-          </span>
-        </Card>
-      )}
+      {!loading && error && <Card><EmptyState error={error} what="sponsorships" onRetry={() => bump((n) => n + 1)}/></Card>}
 
       {!loading && !error && (
         <>

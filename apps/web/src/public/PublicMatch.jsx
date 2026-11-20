@@ -325,12 +325,12 @@ export function PublicMatch({ matchId, view }) {
   if (!match) return (
     <Frame low={low.on}>
       <div aria-live="polite">
-        <Quiet testid="public-error">Could not load this match{data.error === "busy" ? " — too many requests; try again shortly" : ""}.</Quiet>
+        <Quiet testid="public-error">Couldn't load this match{data.error === "busy" ? " — too many requests; try again shortly" : ""}.</Quiet>
         <button type="button" data-testid="public-retry" onClick={() => { if (!data.refreshing) data.refresh(); }} className="pressBtn os-state"
           style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", background: "transparent",
             border: `1px solid ${T.brand.accentText}`, borderRadius: T.radius.pill, cursor: "pointer", color: T.brand.accentText,
             fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
-          {data.refreshing ? "Trying again…" : "Try again"}
+          {data.refreshing ? "Retrying…" : "Retry"}
         </button>
       </div>
     </Frame>

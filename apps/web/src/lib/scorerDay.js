@@ -133,7 +133,7 @@ export const P0_WORDS = Object.freeze({
   calloff: "Calling off · not yet on SCRBRD",
   calloffNote: "Open the pad: it calls the match off on SCRBRD once the end of the innings has gone.",
   // Review S5: a match whose balls this phone could not read.
-  unread: "Could not read this match's balls on this phone",
+  unread: "Couldn't load this match's balls on this phone",
   unreadNote: "Open the pad to try again. Nothing is deleted.",
   // Review S3: a change to the match's record that did not save.
   write: "A change to this match did not save on this phone",

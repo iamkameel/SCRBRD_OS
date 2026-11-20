@@ -161,9 +161,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // did not open. Wait up to 10 s for a scoring button to be drawn, then search
 // exactly as before (none drawn: false, as before).
 const openMichaelhouse = async (page) => (await page.waitForFunction(() =>
-  [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")),
+  [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "")),
   null, { timeout: 10000 }).catch(() => null), page.evaluate(() => {
-  const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
+  const isBtn = (b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
   const btns = [...document.querySelectorAll("button")].filter(isBtn);
   for (const b of btns) {
     let card = b;

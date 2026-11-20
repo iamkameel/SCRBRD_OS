@@ -215,13 +215,13 @@ try {
   // screen ("the 1XI fixture offers the scorer", then every later check).
   // The check below still finds the one card and judges it as before.
   await page.waitForFunction(() => [...document.querySelectorAll("button")]
-    .some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")), null, { timeout: 15000 }).catch(() => {});
+    .some((b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "")), null, { timeout: 15000 }).catch(() => {});
 
   const highWaterRow = (await dbq(`select coalesce(max(id), 0) as high from ball_event`))[0];
   const highWater = highWaterRow.high;
 
   const opened = await page.evaluate(() => {
-    const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
+    const isBtn = (b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
     const btns = [...document.querySelectorAll("button")].filter(isBtn);
     for (const b of btns) {
       let card = b;

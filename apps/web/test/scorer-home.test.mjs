@@ -213,7 +213,7 @@ group("Before the toss: each line from a read that exists, with who fixes it");
 
   const failed = prepLines({ match: comp, duties: null, fold: null });
   const f = Object.fromEntries(failed.map((l) => [l.key, l]));
-  ok("a roster read that failed is never 'missing'", ["squad", "umpires", "pitch"].every((k) => f[k].state === "unknown" && /^Could not read/.test(f[k].text) && f[k].who === null), failed);
+  ok("a roster read that failed is never 'missing'", ["squad", "umpires", "pitch"].every((k) => f[k].state === "unknown" && /^Couldn't load/.test(f[k].text) && f[k].who === null), failed);
   ok("a conditions read that failed is never 'missing'", f.conditions.state === "unknown");
   ok("the fixture's own ground still answers", f.ground.state === "ok");
   ok("conditions still coming say so", prepLines({ match: comp, duties, fold: undefined }).find((l) => l.key === "conditions").state === "loading");

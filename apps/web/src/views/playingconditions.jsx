@@ -510,7 +510,7 @@ export function PlayingConditions({ competition }) {
 
   const { data, catalogue } = state;
   if (!data || !catalogue) {
-    return <div data-testid="pc-root" style={S.card}><EmptyState loading={state.loading} error={!!state.error}/></div>;
+    return <div data-testid="pc-root" style={S.card}><EmptyState loading={state.loading} error={!!state.error} what="the playing conditions" onRetry={() => { setState((s) => ({ ...s, loading: true, error: null })); setNonce((n) => n + 1); }}/></div>;
   }
 
   const me = profile()?.user?.id ?? null;

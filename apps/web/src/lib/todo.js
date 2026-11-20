@@ -30,7 +30,7 @@
  * computes no age: every "is he eighteen" is the server's word.
  *
  * THE RULES ARE HONEST ABOUT A READ THAT DID NOT ANSWER (I08). `null` is a read
- * that failed and makes a "Could not read …" row and a "· 1 read failed" in the
+ * that failed and makes a "Couldn't load …" row and a "· 1 read failed" in the
  * count; `[]` is a read that answered with nothing and says nothing; a read not
  * made yet is `undefined` and the count says "Reading…"; OFF is a source that
  * does not apply (a module switched off, a reader it is not for) and says
@@ -164,7 +164,7 @@ function row(o, now) {
 }
 
 /**
- * A read that did not answer, as a row in its place: "Could not read the
+ * A read that did not answer, as a row in its place: "Couldn't load the
  * answers for Sat v Kearsney", with the one door of trying again.
  * @param {string} key  @param {string} label  @param {string | null} matchId  @param {boolean} [retry]
  */

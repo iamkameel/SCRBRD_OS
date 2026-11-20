@@ -5,10 +5,11 @@ import { profile } from "../../lib/session.js";
 import { requestCoach } from "../../lib/cockpitNav.js";
 import { busOf, isMatchDay, sideFoot, sideRows, withSwitches } from "../../lib/cockpit.js";
 import { useFeatures } from "../../lib/features.js";
-import { humanDate, humanDateTime } from "../../lib/format.js";
+import { humanDate } from "../../lib/format.js";
 import { sidesOf } from "../../lib/matchCentre.js";
 import { chooseFixtures, countOf } from "../../lib/queue.js";
 import { BentoCard } from "../../ui/surfaces.jsx";
+import { MatchCard } from "../../ui/matchCard.jsx";
 import { useCockpit, useFeed } from "./useCockpit.js";
 
 /**
@@ -23,7 +24,7 @@ import { useCockpit, useFeed } from "./useCockpit.js";
  * before.
  *
  * Each card is one line about the side and the bus, a count ("N to resolve",
- * the feed over the reads made here) with a "Could not read X" line for every
+ * the feed over the reads made here) with a "Couldn't load X" line for every
  * read that failed, and one tap into the Coach tab. It draws nothing for anyone
  * the gate does not admit, and nothing signed out. The lift reads are logged by
  * the database, so they are made only on the match day, and a card that has
@@ -111,8 +112,11 @@ function Card({ match, gate, onNav, now, title, named, folded = false }) {
         {/* With one fixture the card says what it always has; with several, which of his sides it is. Folded into the
             next fixture's card, the fixture is already said above it. */}
         {folded && <p style={{ ...T.role.label, color: T.content.secondary, margin: 0 }}>{title}</p>}
-        <p data-testid="matchday-line" style={{ ...(folded ? T.role.body : T.role.title.md), fontWeight: 600, color: T.content.primary, margin: 0 }}>{named ? `${ours} v ${opponent}` : `v ${opponent}`}</p>
-        {!folded && <p style={line}>{humanDateTime(match.date, match.time)}</p>}
+        {folded
+          ? <p data-testid="matchday-line" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{named ? `${ours} v ${opponent}` : `v ${opponent}`}</p>
+          // The match card (slice 1): the day, his side first, both named in full, where it stands. The count and
+          // the two buttons that follow are the card's own.
+          : <MatchCard size="card" match={match} ownEnd={gate.end} now={now} testid="matchday-line" statusTestid="matchday-status"/>}
         {loading ? <p style={line}>Reading the day…</p> : (
           <>
             <p data-testid="matchday-side" style={line}>

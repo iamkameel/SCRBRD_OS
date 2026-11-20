@@ -113,9 +113,24 @@ export function NoneOr({ read, what, none, onRetry, testid }) {
   return <ReadState compact read={said} onRetry={onRetry} testId={testid ? `${testid}-read-state` : "read-state"}/>;
 }
 
-/** "Could not load …" is a different statement from "nothing", and says so. */
-export function Unread({ what }) {
-  return <Line quiet>Could not load {what} just now. This is not the same as there being none.</Line>;
+/** "Couldn't load …" is a different statement from "nothing", and says so. */
+export function Unread({ what, onRetry = null }) {
+  return (
+    <>
+      <Line quiet>Couldn't load {what} just now. This is not the same as there being none.</Line>
+      {onRetry && <RetryBtn onRetry={onRetry}/>}
+    </>
+  );
+}
+
+/** The one Retry: 44px, the same on every failed read (redesign slice 7). */
+export function RetryBtn({ onRetry, testid = "retry" }) {
+  return (
+    <button type="button" onClick={onRetry} data-testid={testid} className="pressBtn" style={{
+      minHeight: "44px", minWidth: "44px", padding: "0 20px", borderRadius: T.radius.pill, justifySelf: "start",
+      border: `1px solid ${T.line.normal}`, background: "transparent", color: T.content.primary,
+      fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, cursor: "pointer" }}>Retry</button>
+  );
 }
 
 // ── The child switcher (§3.1) ──────────────────────────
@@ -228,7 +243,7 @@ export function AvailabilityBlock({ match, child, role, self = false, compact = 
   };
 
   if (loading && !rows.length) return <><Line quiet>Reading the answer…</Line>{action?.(undefined)}</>;
-  if (error) return <><Unread what="the answer"/>{action?.(undefined)}</>;
+  if (error) return <><Unread what="the answer" onRetry={() => setNonce((n) => n + 1)}/>{action?.(undefined)}</>;
   const by = saidBy(row, child, self);
   return (
     <div data-testid={`availability-${pid}`} style={{ display: "grid", gap: T.space.sm }}>

@@ -201,7 +201,7 @@ const openScorer = async (matchId) => {
   await afterReads(page, 1500);
   const opened = await page.evaluate((id) => {
     const card = document.querySelector(`[data-testid="match-card-${id}"]`);
-    const b = [...(card?.querySelectorAll("button") ?? [])].find((x) => /Start Scoring|Open Live Scorer/i.test(x.textContent || ""));
+    const b = [...(card?.querySelectorAll("button") ?? [])].find((x) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(x.textContent || ""));
     if (!b) return false;
     b.click();
     return true;

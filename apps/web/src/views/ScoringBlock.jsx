@@ -113,7 +113,7 @@ export function ScoringBlock({ onOpenPad, onJoin = null }) {
   return (
     <section data-testid="scoring-block" aria-label="Scoring" style={{ marginBottom: "4px" }}>
       {!phone.ok && (
-        <p role="status" data-testid="scoring-phone-unread" style={{ ...line(), marginBottom: "12px" }}>Could not read this phone's saved matches. Nothing is deleted.</p>
+        <p role="status" data-testid="scoring-phone-unread" style={{ ...line(), marginBottom: "12px" }}>Couldn't load this phone's saved matches. Nothing is deleted.</p>
       )}
 
       {now.length > 0 && (
@@ -126,7 +126,7 @@ export function ScoringBlock({ onOpenPad, onJoin = null }) {
                 <StateLabel kind={it.kind === "pilot" ? "pilot" : "practice"} compact/>
               </div>
               {it.error
-                ? <p role="alert" style={{ ...line(), color: T.semantic.criticalText }} data-testid={`now-${it.matchId}-unread`}>Could not read this match's balls on this phone. Nothing is deleted.</p>
+                ? <p role="alert" style={{ ...line(), color: T.semantic.criticalText }} data-testid={`now-${it.matchId}-unread`}>Couldn't load this match's balls on this phone. Nothing is deleted.</p>
                 : it.board
                 ? <Board {...it.board} size="card" compact testid={`now-${it.matchId}-board`}/>
                 : <p style={line()}>No ball on the board yet.</p>}

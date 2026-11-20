@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { D, themed } from "../design/tokens.js";
 import { useLive } from "../lib/live.js";
 import { Card, EmptyState } from "../ui/primitives.jsx";
@@ -71,8 +72,9 @@ const STATUS_TONE = themed(() => ({
 }));
 
 function DutyRoster({ matchId, role }) {
-  const { rows, loading, error } = useLive("match_duties", role, 0, { matchId });
-  if (loading || error) return <EmptyState loading={loading} error={error}/>;
+  const [nonce, setNonce] = useState(0);
+  const { rows, loading, error } = useLive("match_duties", role, nonce, { matchId });
+  if (loading || error) return <EmptyState loading={loading} error={error} what="the duties" onRetry={() => setNonce((n) => n + 1)}/>;
   const byDuty = new Map();
   for (const r of rows) byDuty.set(r.duty, [...(byDuty.get(r.duty) ?? []), r]);
   const covered = SLOTS.filter((s) => byDuty.has(s.key)).length;

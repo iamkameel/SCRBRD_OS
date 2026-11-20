@@ -268,10 +268,11 @@ export function matchupFigures(line) {
  * The words that would make the tab a leak: an injury, a fitness word, a
  * guideline, an availability, a reason, a win chance. The walk reads every
  * word of the tab against this; so does the unit test, against the screen's
- * own strings.
+ * own strings. "Couldn't load" is the one error phrase every screen says
+ * (redesign slice 7), so the bare word "load" is refused except after it.
  */
 export const NEVER_ON_THE_TAB =
-  /injur|fitness|\bfit\b|physio|rehab|restrict|return date|guideline|workload|\bload\b|wellness|available|unavailable|doubtful|availability|\breason|because|\bwhy\b|threat|probab|win chance|chance of winning/i;
+  /injur|fitness|\bfit\b|physio|rehab|restrict|return date|guideline|workload|(?<!couldn't )\bload\b|wellness|available|unavailable|doubtful|availability|\breason|because|\bwhy\b|threat|probab|win chance|chance of winning/i;
 
 // ── The match's terms, and the over story ──────────────
 

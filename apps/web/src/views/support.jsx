@@ -188,7 +188,7 @@ function SupportAccessLive({ role }) {
           <Select label="School" value={form.schoolId} onChange={set("schoolId")} data-testid="support-school"
             options={[{ value: "", label: schools.loading ? "Loading schools…" : "Choose a school" },
                       ...schools.rows.map((s) => ({ value: s.id, label: s.name }))]}/>
-          {schools.error && <div role="alert" style={{ ...SUB(), color: textOn(D.rose), marginTop: "-8px", marginBottom: "10px" }}>Could not load the schools ({schools.error}).</div>}
+          {schools.error && <div role="alert" style={{ ...SUB(), color: textOn(D.rose), marginTop: "-8px", marginBottom: "10px" }}>Couldn't load the schools ({schools.error}).</div>}
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px" }}>
             <Select label="As" value={form.role} onChange={set("role")} data-testid="support-role"
               options={[{ value: "", label: "Choose a role" }, ...SUPPORT_ROLES.map((r) => ({ value: r, label: roleLabel(r) }))]}/>
@@ -209,9 +209,9 @@ function SupportAccessLive({ role }) {
           Live or not is the server's answer, re-read every half minute. A session the school ends shows here as ended, by them.
         </div>
         {sessions.loading && !mine.length
-          ? <EmptyState loading/>
+          ? <EmptyState loading what="your sessions"/>
           : sessions.error
-            ? <EmptyState error/>
+            ? <EmptyState error={sessions.error} what="your sessions" onRetry={() => setNonce((n) => n + 1)}/>
             : mine.length === 0
               ? <EmptyState icon="life-buoy" message="You have not begun a support session."/>
               : <>
