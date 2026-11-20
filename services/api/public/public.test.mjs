@@ -30,6 +30,7 @@ import {
   isPublicPath, cacheTtl, HOT_PER_MINUTE,
 } from "./public-api.mjs";
 import { publicationRoutes } from "../write/publication-api.mjs";
+import { groundAnswer } from "../read/ground-names-api.mjs";
 import { signToken } from "../auth/auth.mjs";
 import { migrationFiles } from "../migration-names.mjs";
 
@@ -231,6 +232,39 @@ ok("the innings_start keeps no twelfth man and no capture profile", !("twelfthMa
 ok("every event carries only its kind's fields and the common five", out.events.every((e) =>
   Object.keys(e).every((k) => PUBLIC_EVENT_COMMON.includes(k) || PUBLIC_EVENT_FIELDS[e.kind].includes(k))));
 ok("bowler_suspended and an unknown kind are dropped whole", !out.events.some((e) => e.kind === "bowler_suspended" || e.kind === "note"));
+// The 18 Nov rule (PUBLIC_DATA after D4; server.mjs PUBLIC_NAME_INITIALS): switched on, every boy the
+// rule does not name on a published side of the platform is his initial and six dots; a typed name and a
+// side not published stay positions. Switched off (above), exactly as before.
+{
+  const D = "\u2022".repeat(6);
+  const dots = projectLog({ rows: ROWS, people: PEOPLE, secret: SECRET, matchId: M1, on: ON, initials: true });
+  const dStart = /** @type {any} */ (dots.events.find((e) => e.kind === "innings_start"));
+  ok("18 Nov, on: the batting squad is 'D Erasmus', then 'P ••••••' (never-public), 'S ••••••' (nothing), 'T ••••••' (names off, his known-as), 'Batter' (unpublished), 'L ••••••' (no facts: as never-public, the same as every boy not named)",
+     JSON.stringify(dStart.squad.map((/** @type {any} */ m) => m.label)) === JSON.stringify(["D Erasmus", `P ${D}`, `S ${D}`, `T ${D}`, "Batter", `L ${D}`]), dStart.squad);
+  ok("...the fielding squad: 'R van der Bowlmerwe', 'M ••••••', and the typed name still 'Bowler' (L6)",
+     JSON.stringify(dStart.bowlingSquad.map((/** @type {any} */ m) => m.label)) === JSON.stringify(["R van der Bowlmerwe", `M ${D}`, "Bowler"]), dStart.bowlingSquad);
+  ok("...people carries the dotted labels under their pseudonyms, and nobody else",
+     dots.people[playerPseudonym(SECRET, M1, P.nobody)] === `S ${D}` && dots.people[playerPseudonym(SECRET, M1, P.marked)] === `P ${D}`
+     && !(playerPseudonym(SECRET, M1, P.unpub) in dots.people) && !(playerPseudonym(SECRET, M1, TYPED) in dots.people)
+     && Object.keys(dots.people).length === 7, dots.people);
+  const dWire = JSON.stringify({ events: dots.events, people: dots.people, last: dots.last });
+  ok("...and still no unconsented name part, id, reason or placement on the wire", leaks(dWire).length === 0, leaks(dWire));
+  ok("...the events themselves are the same as with it off: only the labels moved",
+     JSON.stringify(dots.events.map((e) => e.kind === "innings_start" ? { ...e, squad: null, bowlingSquad: null } : e))
+     === JSON.stringify(out.events.map((e) => e.kind === "innings_start" ? { ...e, squad: null, bowlingSquad: null } : e)));
+  ok("off (no option, or false): the projection is today's, byte for byte",
+     JSON.stringify(projectLog({ rows: ROWS, people: PEOPLE, secret: SECRET, matchId: M1, on: ON, initials: false }).people) === JSON.stringify(out.people));
+}
+// The ground screen's labels (ground-names-api.mjs) take the same switch, from the same rule.
+{
+  const D = "\u2022".repeat(6);
+  const rows = [{ team: "home", position_only: false, log_seq: 3, people: PEOPLE }, { team: "away", position_only: true, log_seq: 3, people: PEOPLE }];
+  const off = groundAnswer(M1, rows), on = groundAnswer(M1, rows, { initials: true });
+  ok("ground screen, off: the named boys only, as before", JSON.stringify(Object.values(off.labels).sort()) === JSON.stringify(["D Erasmus", "R van der Bowlmerwe"]), off.labels);
+  ok("ground screen, on: a boy not named is his initial and the dots; the unpublished boy is left out",
+     on.labels[P.nobody] === `S ${D}` && on.labels[P.marked] === `P ${D}` && !(P.unpub in on.labels) && on.labels[P.erasmus] === "D Erasmus", on.labels);
+  ok("...and a position-only side still lends no label at all", Object.keys(on.labels).length === 7 && on.sides[1].position_only === true);
+}
 const change = out.events.filter((e) => e.kind === "bowler")[1];
 ok("a mid-over bowler change keeps no reason", change && !("reason" in change));
 const retires = out.events.filter((e) => e.kind === "retire");
