@@ -346,8 +346,9 @@ END $older$;
 -- A SQL function with its own search_path is planned afresh on every call,
 -- and row security calls these once per row per check: measured on the
 -- seed, a pupil's read of the ball log went from 5 ms (db/168) to 140 ms
--- with SQL bodies, and to about 9 ms as plpgsql, whose plans are kept. A
--- coach's from 4 ms to about 5 ms. The answers are the same.
+-- with SQL bodies, and to about 11 ms as plpgsql, whose plans are kept; a
+-- coach's from 4 to 5 ms. The answers are the same. (S8: measured on the
+-- seed, not the build database; time it there before the paste.)
 
 -- C: is he still at the school, and has he been there throughout since p_since?
 -- By his school's membership record: a day he left it (a membership ended
