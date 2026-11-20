@@ -1257,8 +1257,9 @@ try {
   // §5.2 row 13: the result's card is the long one, 6 s; the result view holds it from there, the totals in view throughout.
   ok("the moment clears after its six seconds, the totals in view throughout",
      await until(L, () => !document.querySelector('[data-testid="mc-moment"]'), 7500));
-  ok("the header now says Result, and gives the winner and the margin in words",
-     await until(L, () => document.querySelector('[data-testid="mc-status"]')?.textContent === "Result", 8000));
+  // Slice 4 (Q2): decided on the pad and still live, the result is the coach's to confirm, so it reads Provisional.
+  ok("the header now says Provisional (the coach has not confirmed it), and gives the winner and the margin in words",
+     await until(L, () => document.querySelector('[data-testid="mc-status"]')?.textContent === "Provisional", 8000));
   const resultLine = await tid(L, "mc-result").innerText().catch(() => "");
   ok(`"${finalMatch.result.winner} won by ${finalMatch.result.margin}"`, resultLine === `${finalMatch.result.winner} won by ${finalMatch.result.margin}`, resultLine);
   ok("no console errors (live)", lv.errors.length === 0, lv.errors.join(" | "));
