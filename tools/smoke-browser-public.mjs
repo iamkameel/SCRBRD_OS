@@ -419,7 +419,7 @@ try {
     for (const x of [gone, missing, unseeded]) await x.ctx.close();
   }
 
-  group("5b. A failed read offers Try again, which re-runs the same read (glossary review item 5)");
+  group("5b. A failed read offers Retry, which re-runs the same read (glossary review item 5)");
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const page = await ctx.newPage();
@@ -432,19 +432,19 @@ try {
     });
     await page.goto(`${BASE}/live/${pub}`, { waitUntil: "networkidle" });
     await tid(page, "public-error").waitFor({ timeout: 10000 }).catch(() => {});
-    ok("the read fails: \"Could not load this match\", with Try again", /Could not load this match/.test(await tid(page, "public-error").innerText().catch(() => ""))
-       && (await tid(page, "public-retry").innerText().catch(() => "")).trim() === "Try again", (await text(page)).slice(0, 200));
+    ok("the read fails: \"Couldn't load this match\", with Retry", /Couldn't load this match/.test(await tid(page, "public-error").innerText().catch(() => ""))
+       && (await tid(page, "public-retry").innerText().catch(() => "")).trim() === "Retry", (await text(page)).slice(0, 200));
     const box = await tid(page, "public-retry").boundingBox().catch(() => null);
     ok("...a 44px target", !!box && box.height >= 44 && box.width >= 44, JSON.stringify(box));
     const failed = await text(page);
     ok("...and nothing more than before: no score, no name", await tid(page, "public-match").count() === 0 && leaks(failed).length === 0
-       && failed.replace(/\s+/g, " ").trim() === "Could not load this match. Try again", failed);
+       && failed.replace(/\s+/g, " ").trim() === "Couldn't load this match. Retry", failed);
     const before = asked.length;
     failing = false;
     await tid(page, "public-retry").click({ timeout: 4000 }).catch(() => {});
     await page.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }).catch(() => {});
     const again = asked.slice(before);
-    ok("Try again asks the same two reads once more, and the match renders",
+    ok("Retry asks the same two reads once more, and the match renders",
        again.includes(`/api/public/matches/${pub}`) && again.includes(`/api/public/matches/${pub}/log`) && await tid(page, "public-match").count() === 1, again.join(", "));
     await ctx.close();
   }

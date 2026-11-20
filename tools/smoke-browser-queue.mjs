@@ -378,7 +378,7 @@ try {
   await d.page.route(kill, (r) => r.abort());
   await queue(d.page);
   const unreadC = await group_(d.page, C).locator('[data-testid="queue-unread"]').allInnerTexts();
-  ok("C says 'Could not read the duties' in its own words, with the read's error", unreadC.length === 1 && /^Could not read the duties \(\w+\)/.test(unreadC[0].trim()), unreadC.join("|"));
+  ok("C says 'Couldn't load the duties' in its own words, with the read's error", unreadC.length === 1 && /^Couldn't load the duties \(\w+\)/.test(unreadC[0].trim()), unreadC.join("|"));
   ok("...and no scorer or umpire row is drawn from a read that did not answer", (await rowsOf(d.page, C)).every((r) => r.rule !== "O4"));
   const hf = nums(await headerText(d.page));
   ok("...the header counts it: '1 read failed', and the open number is not 'all clear'", hf?.failed === 1 && !/all clear/i.test(await headerText(d.page)), await headerText(d.page));
@@ -581,7 +581,7 @@ try {
     await k.page.waitForTimeout(500);
     const failedLine = (await group_(k.page, CLEAN).locator('[data-testid="queue-group-line"]').innerText()).trim();
     ok("the duties read killed: the header is '0 open · 1 read failed · 1 fixture', never 'all clear'; the group says '0 to resolve', never 'Nothing to resolve'",
-       (await headerText(k.page)) === "0 open · 1 read failed · 1 fixture" && failedLine === "0 to resolve" && /Could not read the duties/.test(await inner(k.page, "queue")) && !/all clear|nothing to resolve/i.test(await inner(k.page, "queue")), `${await headerText(k.page)} | ${failedLine}`);
+       (await headerText(k.page)) === "0 open · 1 read failed · 1 fixture" && failedLine === "0 to resolve" && /Couldn't load the duties/.test(await inner(k.page, "queue")) && !/all clear|nothing to resolve/i.test(await inner(k.page, "queue")), `${await headerText(k.page)} | ${failedLine}`);
     const fk = await floors(k.page);
     ok(`the failed screen: nothing under 12px (${fk.small.length}), nothing tapped under 44px (${fk.tiny.length}), the retry included`, fk.small.length === 0 && fk.tiny.length === 0, [...fk.small, ...fk.tiny].slice(0, 4).join(" · "));
     ok("no page errors", k.errors.length === 0 && k.refusals.length === 0, [...k.errors, ...k.refusals].join(" | "));

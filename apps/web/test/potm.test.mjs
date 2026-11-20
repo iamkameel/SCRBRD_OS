@@ -13,7 +13,8 @@
  *   node --import ./tools/register-jsx.mjs apps/web/test/potm.test.mjs
  */
 import { readFileSync } from "node:fs";
-import { potmShortName, confirmWords, standingWords, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX } from "../src/lib/potm.js";
+import { potmShortName, confirmWords, standingWords, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX,
+         SUGGESTION_WORDS, tieWords, alsoTiedWords } from "../src/lib/potm.js";
 import { POTM_WORDS, potmWords } from "../../../services/api/write/potm-api.mjs";
 
 let pass = 0, fail = 0;
@@ -26,6 +27,21 @@ ok("a middle name goes", potmShortName("Rohan  Dev Pillay") === "R Pillay");
 ok("an initial stays", potmShortName("S Naidoo") === "S Naidoo");
 ok("one name is itself", potmShortName("Cele") === "Cele");
 ok("nothing is nothing", potmShortName(null) === "");
+
+group("CRI-3.3: the suggestion card's words");
+ok("it says it is a suggestion and the choice is the reader's", /decide nothing/.test(SUGGESTION_WORDS) && /the choice is yours/.test(SUGGESTION_WORDS));
+ok("a tie is said", tieWords(92) === "Tied on 92 points" && tieWords(1) === "Tied on 1 point");
+ok("boys level past the third are named", alsoTiedWords([{ name: "Rohan Pillay", points: 30 }, { name: "Sam Naidoo", points: 30 }])
+   === "Also tied on 30 points: R Pillay, S Naidoo. Find them under Someone else.");
+ok("...one is him", /Find him under Someone else\.$/.test(alsoTiedWords([{ name: "Rohan Pillay", points: 30 }]) ?? ""));
+ok("...none, no line", alsoTiedWords([]) === null && alsoTiedWords(null) === null);
+{
+  const sheet = readFileSync(new URL("../src/views/matchcentre/potm.jsx", import.meta.url), "utf8");
+  const cap = readFileSync(new URL("../src/views/matchcentre/captainPotm.jsx", import.meta.url), "utf8");
+  ok("the coach's and the captain's sheets draw the same working line", /<PotmWorking x=\{x\} testid="mc-potm"\/>/.test(sheet)
+     && /<PotmWorking x=\{x\} testid="mc-captain-potm"\/>/.test(cap));
+  ok("...and the same notes and ties", /<PotmCardNotes /.test(cap) && /<PotmAlsoTied /.test(cap) && /<PotmCardNotes /.test(sheet) && /<PotmAlsoTied /.test(sheet));
+}
 
 group("The sheet's sentences (§7, the coach)");
 ok("the confirm sheet", confirmWords("Rohan Pillay") === "This awards Player of the Match to R Pillay and tells the side.");

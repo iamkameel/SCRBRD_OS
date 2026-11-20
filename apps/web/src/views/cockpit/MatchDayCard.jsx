@@ -23,7 +23,7 @@ import { useCockpit, useFeed } from "./useCockpit.js";
  * before.
  *
  * Each card is one line about the side and the bus, a count ("N to resolve",
- * the feed over the reads made here) with a "Could not read X" line for every
+ * the feed over the reads made here) with a "Couldn't load X" line for every
  * read that failed, and one tap into the Coach tab. It draws nothing for anyone
  * the gate does not admit, and nothing signed out. The lift reads are logged by
  * the database, so they are made only on the match day, and a card that has

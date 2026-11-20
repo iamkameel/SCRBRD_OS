@@ -3,7 +3,7 @@ import { D, textOn, themed } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { filesConduct } from "../rbac/conduct.js";
-import { Badge, Btn, Card } from "../ui/primitives.jsx";
+import { Badge, Btn, Card, EmptyState } from "../ui/primitives.jsx";
 import { DISMISSAL_LABEL } from "@scrbrd/scoring";
 
 /**
@@ -222,11 +222,9 @@ function ConductTab({ player, role }) {
           Staff only. Every read of this record is on the school's own access log.
         </div>
         {loading ? (
-          <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Loading…</div>
+          <EmptyState loading what="the record"/>
         ) : error ? (
-          <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose) }} data-testid="conduct-error">
-            Could not load the record ({error}). Nothing is shown rather than a list that may be incomplete.
-          </div>
+          <EmptyState error={error} what="the record" onRetry={() => setNonce((n) => n + 1)}/>
         ) : mine.length === 0 ? (
           <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }} data-testid="conduct-empty">
             No matters on record that you can see.
@@ -293,6 +291,7 @@ function fromBallLog(events) {
 function ReportIncident({ match, role }) {
   const [open, setOpen] = useState(false);
   const [who, setWho] = useState({ loading: false, from: null, people: [], error: null });
+  const [whoNonce, setWhoNonce] = useState(0);
   const [playerId, setPlayerId] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -320,7 +319,7 @@ function ReportIncident({ match, role }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [open, offered, match?.id]);
+  }, [open, offered, match?.id, whoNonce]);
 
   // A courtesy, not the gate: the INSERT policy's fixture anchor decides.
   if (!offered) return null;
@@ -363,11 +362,9 @@ function ReportIncident({ match, role }) {
       {open && (
         <div style={{ marginTop: "8px" }}>
           {who.loading ? (
-            <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Loading who played…</div>
+            <EmptyState loading what="who played"/>
           ) : who.error ? (
-            <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose) }}>
-              Could not load who played ({who.error}).
-            </div>
+            <EmptyState error={who.error} what="who played" onRetry={() => setWhoNonce((n) => n + 1)}/>
           ) : (
             <>
               <div style={label()}>About</div>

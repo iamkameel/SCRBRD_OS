@@ -22,7 +22,7 @@ import { useNav } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { tenantWords } from "../../lib/words.js";
 import { chooseChild, doorTo, fixturesOf, linkWords, pendingWords, recallChild, rememberChild } from "../../lib/family.js";
-import { Action, Card, ChildSwitcher, Line, NoneOr, Page, Title } from "./parts.jsx";
+import { Action, Card, ChildSwitcher, Line, NoneOr, Page, RetryBtn, Title } from "./parts.jsx";
 import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
 import { PersonalBests } from "./bests.jsx";
@@ -73,7 +73,7 @@ function LinkLines({ lines }) {
 }
 
 /** What a family screen says when there is no child to show — and why, honestly. */
-function NoChild({ loading, error, testid, onRaise = null, role = "guardian", onOpenScorer = null }) {
+function NoChild({ loading, error, testid, onRetry = null, onRaise = null, role = "guardian", onOpenScorer = null }) {
   // Her own requests to be linked (GA-I20 A1, §3.3): said as pending, and
   // never as approved. Her own rows only (`mine`); no child is named, because
   // the player row is not hers to read until the office verifies the link.
@@ -87,7 +87,7 @@ function NoChild({ loading, error, testid, onRaise = null, role = "guardian", on
       <Card label="Family" testid="family-none">
         {!signedIn() ? <Line>Sign in to see your family. The demonstration holds no family's records.</Line>
           : loading ? <Line quiet>Reading your family…</Line>
-          : error ? <Line quiet>Could not load your family just now. This is not the same as there being nobody.</Line>
+          : error ? <><Line quiet>Couldn't load your family just now. This is not the same as there being nobody.</Line>{onRetry && <RetryBtn onRetry={onRetry} testid="family-retry"/>}</>
           : <>
             {pending.map((p) => (
               <div key={p.id} data-testid="family-pending" style={{ display: "grid", gap: "2px" }}>
@@ -97,7 +97,7 @@ function NoChild({ loading, error, testid, onRaise = null, role = "guardian", on
             ))}
             <LinkLines lines={links.lines}/>
             {!said && <Line>No child is linked to your account yet. The school office verifies each link; ask them if one is missing.</Line>}
-            {links.failed && <Line quiet testid="family-links-failed">Could not read your other links just now.</Line>}
+            {links.failed && <Line quiet testid="family-links-failed">Couldn't load your other links just now.</Line>}
           </>}
       </Card>
       {/* Q15: a link still waiting for the office: the terms to read now, never to agree. */}
@@ -118,7 +118,7 @@ export function FamilyHome({ role, onNav, onOpenScorer }) {
   const nav = useNav(role);
   const [open, setOpen] = useState(null);
   const raise = onNav ? () => onNav("safeguarding") : null;
-  if (!child) return <NoChild loading={loading} error={error} testid="family-home" onRaise={raise} role={role} onOpenScorer={onOpenScorer}/>;
+  if (!child) return <NoChild loading={loading} error={error} testid="family-home" onRetry={retry} onRaise={raise} role={role} onOpenScorer={onOpenScorer}/>;
   if (open?.kind === "match") {
     return (
       <>
@@ -198,8 +198,8 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
 // ── P2 · Matches — his fixtures ────────────────────────
 
 export function FamilyMatches({ role }) {
-  const { kids, child, choose, loading, error } = useChildren(role);
-  if (!child) return <NoChild loading={loading} error={error} testid="family-matches"/>;
+  const { kids, child, choose, loading, error, retry } = useChildren(role);
+  if (!child) return <NoChild loading={loading} error={error} onRetry={retry} testid="family-matches"/>;
   return (
     <Page testid="family-matches">
       <ChildMatches key={child.id} child={child} role={role}
@@ -315,7 +315,7 @@ export function FamilyFile({ role, onNav }) {
   // The fixtures, for each child's count (GA-I20 A1): the same read the Home makes.
   const matchesRead = useLive("matches", role);
   const links = useLinkLines(kids.length > 0);
-  if (!kids.length) return <NoChild loading={loading} error={error} testid="family-file"/>;
+  if (!kids.length) return <NoChild loading={loading} error={error} onRetry={() => setNonce((n) => n + 1)} testid="family-file"/>;
   const now = Date.now();
   // His count opens his Home: the child is chosen as the switcher chooses him.
   const openHome = (c) => { rememberChild(c.id); onNav?.("children"); };
@@ -331,7 +331,7 @@ export function FamilyFile({ role, onNav }) {
       {(links.lines.length > 0 || links.failed) && (
         <Card label="Other links" testid="family-other-links">
           <LinkLines lines={links.lines}/>
-          {links.failed && <Line quiet testid="family-links-failed">Could not read your other links just now.</Line>}
+          {links.failed && <Line quiet testid="family-links-failed">Couldn't load your other links just now.</Line>}
         </Card>
       )}
     </Page>

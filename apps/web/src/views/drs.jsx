@@ -4,7 +4,7 @@ import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { useFeatures } from "../lib/features.js";
 import { holdsCapability } from "../rbac/index.js";
-import { Btn, Card } from "../ui/primitives.jsx";
+import { Btn, Card, EmptyState } from "../ui/primitives.jsx";
 
 /**
  * The DRS review panel — built, proven, switched off.
@@ -154,9 +154,9 @@ function DrsPanelBody({ matchId, role }) {
         </div>
       </div>
       {loading ? (
-        <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>Loading…</div>
+        <EmptyState loading what="reviews"/>
       ) : error ? (
-        <div style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose) }}>Could not load reviews ({error}).</div>
+        <EmptyState error={error} what="reviews" onRetry={() => setNonce((n) => n + 1)}/>
       ) : rows.length === 0 ? (
         <div style={{ fontFamily: D.body, fontSize: "12px", color: D.textMuted }}>No reviews recorded for this match.</div>
       ) : (

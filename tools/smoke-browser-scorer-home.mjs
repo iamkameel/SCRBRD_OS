@@ -329,7 +329,7 @@ try {
      && (await tid(`resume-${MINE}-pending`).innerText().catch(() => "")).startsWith(`${queued} to send`), await attr(`resume-${MINE}`, "data-pending"));
   ok("the fixture list did not answer, and says so (not 'none')",
      await until(async () => (await attr("scorer-fixtures-read", "data-state")) === "failed")
-     && /Could not read/.test(await tid("scorer-fixtures-read").innerText().catch(() => "")));
+     && /Couldn't load/.test(await tid("scorer-fixtures-read").innerText().catch(() => "")));
 
   group("D. Reloaded with no signal: the Resume card is still there, and one tap reopens the pad");
   await page.reload({ waitUntil: "domcontentloaded" });

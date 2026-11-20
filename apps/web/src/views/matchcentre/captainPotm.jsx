@@ -4,6 +4,7 @@ import { api, signedIn } from "../../lib/api.js";
 import { captainLead, mineWords, nominateConfirmWords, nominateLabel } from "../../lib/nomination.js";
 import { FALLBACK } from "../../lib/potm.js";
 import { Panel } from "./bits.jsx";
+import { PotmAlsoTied, PotmCardNotes, PotmWorking } from "./potm.jsx";
 
 /**
  * PLAYER OF THE MATCH on the Captain tab (RECOGNITION R7, D17; db/144): the
@@ -17,7 +18,9 @@ import { Panel } from "./bits.jsx";
  * no picker.
  *
  * WHAT IT DRAWS. The same suggestions the coach sees, with the figures he
- * already reads on the scorecard, never pre-selected; "Someone else…" opens
+ * already reads on the scorecard and their points' working (CRI-3.3: the
+ * coach's own PotmWorking line, ties said, never broken), never
+ * pre-selected; "Someone else…" opens
  * the rest of his side's sheet; he is not on either list. One confirm sheet,
  * then his row. No text field: a nomination is a choice, not a message
  * (SG-9).
@@ -101,6 +104,7 @@ function CaptainPotmSide({ s, basis, matchId, reload }) {
       <span style={{ display: "grid", gap: "2px", minWidth: 0 }}>
         <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{x.name}</span>
         {x.figures && <span style={{ fontSize: "13px", color: T.content.secondary }}>{x.figures}</span>}
+        <PotmWorking x={x} testid="mc-captain-potm"/>
       </span>
     </label>
   );
@@ -117,9 +121,11 @@ function CaptainPotmSide({ s, basis, matchId, reload }) {
               <span data-testid="mc-captain-potm-lead">{captainLead(s.coachName)}</span>
               {" "}<span data-testid="mc-captain-potm-basis" style={{ color: T.content.secondary }}>{basis}</span>
             </legend>
+            <PotmCardNotes rule={s.rule} unnamed={s.unnamed} testid="mc-captain-potm"/>
             {(s.suggestions ?? []).length > 0
               ? <div data-testid="mc-captain-potm-suggestions" style={{ display: "grid", gap: T.space.xs }}>{s.suggestions.map(option)}</div>
               : <p data-testid="mc-captain-potm-no-suggestion" style={small()}>No team-mate has a run or a wicket to suggest him. Choose from the sheet.</p>}
+            <PotmAlsoTied list={s.alsoTied} testid="mc-captain-potm"/>
             {rest.length > 0 && (
               <button type="button" data-testid="mc-captain-potm-more" aria-expanded={more} onClick={() => setMore((v) => !v)}
                 className="pressBtn os-state" style={{ ...btn(false), justifySelf: "start" }}>
