@@ -2558,6 +2558,31 @@ Pasted on the demo and production, 19 Nov 2026. Hash-checked:
 slice 6a. Pasted on the demo and production, 19 Nov 2026. Hash-checked:
 `sha256 6832597ef3f132195973f9748a049bfca25b99968c03751c3fd3368c77acec0b`.
 <!-- ── end db/167 ── -->
+<!-- ── db/169: "Allow his own sign-in", and the gate ── -->
+#### "Allow his own sign-in", and the gate (db/169)
+
+`db/169_pupil_signin_gate.sql` (PR #376, `claude/wip-hm-b`; SCRBRD-140 honesty
+model, Migration B, on Kameel's answers of 18 and 20 Nov). A pupil under 18
+reads his own page only while a yes is in force: a guardian's "Allow his own
+sign-in", or the office's record that the signed consent form is on file. Not
+yet pasted. Before it, on each database:
+
+1. `db/168` is pasted first (`--apply`'s predecessor check and db/169's §0
+   both refuse otherwise).
+2. Run `psql "$DATABASE_URL" -X -f tools/pupil-signin-count.sql` as the owner
+   and read every column, not only `would_close`: `no_date_of_birth`,
+   `no_consent`, `left_school`, `no_boy_named` and `also_holds_another_role`.
+   Kameel sees each account the second and third results list, by id, before
+   the paste.
+3. Paste it as one transaction, outside a match: the SQL Editor runs
+   `--apply`'s script as one implicit transaction, or `psql -1 -v
+   ON_ERROR_STOP=1`. It is safe run any other way, and a second paste
+   finishes what a stopped one left.
+4. After it, `SELECT count(*) FROM app_user u WHERE u.active AND NOT
+   pupil_signin_open(u.id);` equals step 2's `would_close`.
+
+Hash to check: `sha256 39529fd706e84b898191d04c725ef8ab9cc692d6bb0f82a8c40abde7367a89bc`.
+<!-- ── end db/169 ── -->
 
 ### 5 · Cloud Run, the first time
 
@@ -2787,7 +2812,10 @@ run twice".
    how many went. It never removes an opened account, or one a safeguarding concern names.
    **An account later enrolled as an adult** (say, a pupil who turned 18 and now coaches) is
    still treated as a pupil while its claim exists: no requests of its own, initials in
-   the audit log. Until Migration B gives the office a "withdraw this claim", the owner
+   the audit log. Migration B (db/169) gives the office two doors, neither of them this:
+   a guardian may stop the yes the school carried over for her son herself, and the
+   office's "This account is not him" takes a wrongly recognised account off a boy's
+   record (it declines the claim, which stays). So for an adult's claim the owner still
    deletes the claim by its id, once the office has confirmed that the account holds a
    non-pupil role. Do not do this for an account that is a concern's reporter: ask the
    DSO first.
