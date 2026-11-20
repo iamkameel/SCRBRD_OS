@@ -18,6 +18,18 @@
 -- organiser's, through db/114 (OFFICIAL_RESULT D3 unchanged); nothing here
 -- touches it.
 --
+--
+-- HOW TO PASTE. One transaction: the SQL editor's single run, or
+-- psql -1 -v ON_ERROR_STOP=1 -f. Statement by statement, the new functions
+-- would stand executable by PUBLIC until the grants block ran. After db/169
+-- and db/170 (the order is fixed: db/169 re-emits app_can(), whose live body
+-- §1 copies). Not while a match is being finished: between this paste and
+-- the API built with it, a scorer's Finish answers coach_confirms through the
+-- old API as an unworded 422. A match merely live is fine: the three triggers
+-- take their tables' SHARE ROW EXCLUSIVE lock until commit, so a ball write
+-- waits that long (well under a second), bounded by the 10 s lock_timeout; a
+-- refused paste is pasted again.
+--
 -- ══ 1 · THE SERVER REFUSES A SCORER'S FINISH ════════════════════════
 --   ~ match_finalise() (db/130, db/132)  db/132's body and one step, 1b,
 --       asked before anything is locked, as step 1 is: a caller who holds
@@ -32,12 +44,16 @@
 --       before the lock, the session locked, held_elsewhere asked last, the
 --       status set through the table, the one 'match_finalised' row, no
 --       database day (db/128).
---   + app_can_but_scorer()  app_can()'s body, word for word, and one line:
---       AND a.role <> 'scorer' (db/129's app_can_but_player() is the
---       pattern, and its line is the only other difference). What the
---       caller holds at a side apart from a scorer's assignment. The
---       owner's alone: match_finalise() asks it. Checked below, and in
---       db/99 §146 (copy), to be app_can()'s body bar its one line.
+--   + app_can_but_scorer()  app_can()'s body as the database holds it at
+--       the paste, and one line: AND a.role <> 'scorer', placed under its
+--       WHERE a.person_id = app_user_id() (db/129's app_can_but_player() is
+--       the pattern). Built from the catalog (pg_get_functiondef, as db/128
+--       and db/169 re-emit bodies), so it carries whatever app_can() holds
+--       then — db/169's pupil sign-in gate included — and the paste fails
+--       loudly unless the anchor is there exactly once. The owner's alone:
+--       match_finalise() asks it. Checked below, and in db/99 §146 (copy),
+--       to be app_can()'s live body bar its one line: a later file that
+--       re-emits app_can() re-emits this too.
 --   The screens ask the same rule of the role catalogue:
 --   packages/policy/src/roles.mjs roleConfirmsResult() (scoring.finalise,
 --   and not the scorer's), which apps/web's couldConfirmResult() reads, and
@@ -57,7 +73,10 @@
 --       nothing: NOTIFICATIONS D14), addressed by recipient_id, under
 --       scoring.finalise at the side, about the match. Title "U13E v
 --       Westville Boys' High 1XI is decided. Confirm the result." No child
---       is named, in the title, the body or on a lock screen.
+--       is named, in the title, the body or on a lock screen. The shape —
+--       fixture, scoring.finalise, a recipient, the match, the title's end —
+--       is this file's marker; the partial index notification_decided_subject
+--       finds them.
 --       ONCE per match and person while it stands: a notice already live
 --       (not retracted, not expired) is not written again, however often the
 --       log is re-read (a re-sent batch writes no event and asks nothing).
@@ -65,25 +84,33 @@
 --       live notice is taken back through notification_retract() (db/89) as
 --       superseded, unsaid (a fixture notice's word, D2; nothing told the
 --       coach a false thing a "withdrawn" notice would correct, and nothing
---       pages him twice). Decided again later: a new notice, since a
---       superseded one is not returned (db/113's un-retract is a correction's
---       alone).
+--       pages him twice). Decided again later: a NEW notice, so the coach is
+--       paged again — a superseded notice is not returned (db/113's
+--       un-retract is a correction's alone), unlike a milestone's D19.
 --   + When it is asked (match_decided_after_events(), statement-level on
 --       ball_event; match_decided_after_decision() on match_result_decision):
---       a batch that closes an innings (innings_end: the scorer's seal, the
---       end of every innings and of a super over), voids a ball, or an
---       organiser's decision recorded or changed. NOT every ball: the fold is
---       a full replay, and the chase's balls are the scoring hot path. A
---       chase that reaches its target is decided on the fold at that ball,
---       and the pad then asks the scorer to confirm the innings closed; the
---       notice goes with that seal, seconds later. A scorebook's commit
---       (db/63) completes its own match and is not asked.
---   + match_decided_notice_done()  AFTER UPDATE OF status on match, live to
---       complete or abandoned: the act the notice asks for is done (or there
---       is no result to confirm), so its live notices are taken back,
---       superseded and unsaid.
---   A notice never costs a ball: each is asked in its own sub-transaction,
---   and a failure is a WARNING in the server's log with its SQLSTATE.
+--       a batch with an event that can move the outcome after the balls —
+--       innings_end (the scorer's seal, the end of every innings and of a
+--       super over), revision, target, par or penalty — or a void that can
+--       un-decide it (one while a decided notice stands) or restore a ball (a
+--       void of a void); and an organiser's decision recorded or withdrawn.
+--       NOT every ball, nor every undo: the fold is a full replay (about 50 ms
+--       at a 20-over match), and the chase's balls and undos are the scoring
+--       hot path; a plain undo with no decided notice standing cannot decide a
+--       match (it takes a ball away), so it asks nothing. A chase that
+--       reaches its target is decided on the fold at that ball, and the pad
+--       then asks the scorer to confirm the innings closed; the notice goes
+--       with that seal, seconds later. A scorebook's commit (db/63) completes
+--       its own match and is not asked.
+--   + match_decided_notice_done()  AFTER UPDATE OF status on match, from live
+--       to anything else (complete, abandoned, postponed, scheduled): the act
+--       the notice asks for is done, or there is no result to confirm now, so
+--       its live notices are taken back, superseded and unsaid.
+--   A notice never fails the scorer's write: each is asked in its own
+--   sub-transaction, and an error in it is a WARNING in the server's log with
+--   its SQLSTATE. It does add one replay to the write that asks it, and a
+--   cancel (a statement_timeout, which nothing here sets) is not an error
+--   that sub-transaction catches: it cancels the write, as it would any.
 --
 -- ══ 3 · THE SCORER PUTS THE PEN DOWN FROM THE END SCREEN ══════════
 --   + scoring_release(match, device, epoch, pending) → (ok, reason, epoch)
@@ -92,31 +119,40 @@
 --       order: scoring.edit at the match (or no_capability; under a pad
 --       credential app_can() admits it at the credential's own match, db/50);
 --       the session locked; the caller is the holder — the same person, the
---       same device, the same generation, state active — or not_token_holder
---       (a lapsed lease that nobody has taken is still his to put down); the
---       pad says nothing is left to send (pending = 0) or unsynced_work, as
---       scoring_arm_handover() asks it. Then the session goes idle with the
---       epoch bumped, as scoring_force_release() leaves it: a ball still in
---       flight under the old generation is quarantined (db/33), never lost
---       and never written into the log behind the release. db/50's trigger
---       ends the pad's resume credential ('released'). One scoring_audit row,
---       event 'pen_released'.
+--       device his signed token names (app_device_id(), and the device the
+--       route passes must be that one), the same generation — or
+--       not_token_holder (a lapsed lease nobody has taken is still his to put
+--       down); a handover he armed, or one being verified, is said by its own
+--       name (handover_pending, verifying); the pad says nothing is left to
+--       send (pending = 0) or unsynced_work, as scoring_arm_handover() asks
+--       it. Then the session goes idle with the epoch bumped, as
+--       scoring_force_release() leaves it: a ball still in flight under the
+--       old generation is quarantined (db/33), never lost and never written
+--       into the log behind the release. db/50's trigger ends the pad's
+--       resume credential ('released'). One scoring_audit row, event
+--       'pen_released', with the device it let go of (detail.device).
 --       It does not end scoring: a later ball needs a claim, as any idle
 --       match does; a finished match refuses that claim (db/33).
+--   ~ second_account_notice() (db/135)  db/135's body and one step: a ball
+--       set aside from the very phone that released, while the session is
+--       idle and its last letting-go was that release, is not a "second
+--       account" (it is the releasing phone's late ball). It is set aside for
+--       review as before; nobody is told of a second phone.
 --
 -- WHO MAY CALL WHAT (every definer here pins its search_path)
 --   match_finalise(uuid), scoring_release(uuid,text,integer,integer)   scrbrd_app
 --   app_can_but_scorer(…), match_decided_notice(uuid)                 the owner's: nobody
 --   match_decided_after_events(), match_decided_after_decision(),
---   match_decided_notice_done()                                        triggers: nobody
+--   match_decided_notice_done(), second_account_notice()               triggers: nobody
 -- And none to PUBLIC, nor to a managed host's anon, authenticated or
 -- service_role.
 --
--- EXISTING ROWS. Nothing changed or deleted; no table, no column. A match
+-- EXISTING ROWS. Nothing changed or deleted; no table, no column; one
+-- partial index on notification (the decided notices: none yet). A match
 -- already decided and live when this is pasted is told at its next seal,
 -- void or decision, or never (its coach confirms it from the screens as
--- today). Safe to run twice: CREATE OR REPLACE throughout, and grants that
--- end where they began. Nothing is dropped.
+-- today). Safe to run twice: CREATE OR REPLACE throughout, CREATE INDEX IF
+-- NOT EXISTS, and grants that end where they began. Nothing is dropped.
 --
 -- SCHEMA FIRST. The API built with it calls scoring_release() and words
 -- coach_confirms; this file goes before it and is in
@@ -126,32 +162,30 @@ SET lock_timeout = '10s';
 
 -- ── 0 · What it needs, and what it replaces ────────────────────────
 DO $guard$
-DECLARE v_md5 text;
+DECLARE r record; v_src text; v_md5 text;
 BEGIN
   IF to_regprocedure('match_result_compute(uuid)') IS NULL OR to_regprocedure('match_completion_refusal(uuid)') IS NULL
      OR to_regprocedure('app_can(text,uuid,text,uuid,uuid)') IS NULL
-     OR to_regprocedure('app_can_but_player(text,uuid,text,uuid,uuid)') IS NULL
      OR to_regprocedure('app_device_id()') IS NULL OR to_regprocedure('app_pad_scoped()') IS NULL
      OR to_regprocedure('notification_retract(uuid,text,boolean)') IS NULL
      OR to_regprocedure('fixture_side_label(uuid,text)') IS NULL OR to_regprocedure('person_is_pupil(uuid)') IS NULL
-     OR to_regprocedure('sa_today()') IS NULL
+     OR to_regprocedure('sa_today()') IS NULL OR to_regprocedure('second_account_notice()') IS NULL
      OR to_regclass('scoring_session') IS NULL OR to_regclass('scoring_audit') IS NULL
      OR to_regclass('match_result_decision') IS NULL OR to_regclass('support_access') IS NULL
      OR to_regclass('duty_suspension') IS NULL THEN
-    RAISE EXCEPTION 'db/171: the finish (db/130, db/132), the fold (db/69, db/71), app_can_but_player() (db/129), the retraction (db/89), the pupil test (db/116) or the SA day (db/128) is missing; apply them first';
+    RAISE EXCEPTION 'db/171: the finish (db/130, db/132), the fold (db/69, db/71), the retraction (db/89), the pupil test (db/116), the SA day (db/128) or the second-account notice (db/135) is missing; apply them first';
   END IF;
-  SELECT md5(regexp_replace(btrim(p.prosrc), '\s+', ' ', 'g')) INTO v_md5
-    FROM pg_proc p WHERE p.oid = 'match_finalise(uuid)'::regprocedure;
-  IF v_md5 NOT IN ('03b8a550d38ea96ea67b8a38b9930f7b', '650d240295cb35bb736308b8a35339b7') THEN
-    RAISE EXCEPTION 'db/171: match_finalise() is not db/132''s or this file''s (md5 % of its folded body); look before replacing it', v_md5;
-  END IF;
-  -- The copy below is app_can_but_player()'s with its one line changed, so
-  -- that body must still be app_can()'s bar its line (db/99 §106 (copy)).
-  IF replace((SELECT prosrc FROM pg_proc WHERE oid = 'app_can_but_player(text,uuid,text,uuid,uuid)'::regprocedure),
-             chr(10) || '       AND a.role <> ''player''', '')
-     IS DISTINCT FROM (SELECT prosrc FROM pg_proc WHERE oid = 'app_can(text,uuid,text,uuid,uuid)'::regprocedure) THEN
-    RAISE EXCEPTION 'db/171: app_can() is not the body app_can_but_player() copies (db/129, db/99 §106 (copy)); this file copies the same body';
-  END IF;
+  FOR r IN SELECT * FROM (VALUES
+      ('match_finalise(uuid)',     '03b8a550d38ea96ea67b8a38b9930f7b', '650d240295cb35bb736308b8a35339b7', 'db/132'),
+      ('second_account_notice()', 'ee78b5030c3d9d641303288c44664b73',                       'bfd89d4d1b22ce382a627e3a18555940', 'db/135'))
+      AS x(fn, was, mine, src)
+  LOOP
+    SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = to_regprocedure(r.fn);
+    v_md5 := md5(regexp_replace(btrim(v_src), '\s+', ' ', 'g'));
+    IF v_md5 NOT IN (r.was, r.mine) THEN
+      RAISE EXCEPTION 'db/171: % is not %''s or this file''s (md5 % of its folded body); look before replacing it', r.fn, r.src, v_md5;
+    END IF;
+  END LOOP;
 END $guard$;
 
 
@@ -159,88 +193,26 @@ END $guard$;
 --  1 · The scorer's part ends at the last ball
 -- ══════════════════════════════════════════════════════════════════
 -- ── app_can(), over every assignment but a `scorer` one ────────────
--- db/128's app_can() body, word for word, and one line: AND a.role <>
--- 'scorer'. The owner's alone: match_finalise() asks it.
-CREATE OR REPLACE FUNCTION app_can_but_scorer(
-  p_capability text,
-  p_school     uuid DEFAULT NULL,
-  p_team       text DEFAULT NULL,
-  p_person     uuid DEFAULT NULL,
-  p_fixture    uuid DEFAULT NULL
-) RETURNS boolean AS $$
-  SELECT coalesce(NOT app_pad_scoped()
-                  OR (p_capability IN ('fixture.read', 'scoring.edit') AND p_fixture = app_pad_match()), false)
-     AND EXISTS (
-    SELECT 1
-      FROM role_assignment a
-      JOIN role_capability rc
-        ON rc.role = a.role
-       AND rc.capability = p_capability
-     WHERE a.person_id = app_user_id()
-       AND a.role <> 'scorer'
-       AND a.active
-       AND (a.valid_from  IS NULL OR a.valid_from  <= sa_today())
-       AND (a.valid_until IS NULL OR a.valid_until >  sa_today())
-       AND (a.expires_at IS NULL OR a.expires_at > now())
-       AND NOT EXISTS (SELECT 1 FROM duty_suspension s
-                        WHERE s.assignment_id = a.id AND s.lifted_at IS NULL)
-       -- institution. There is no ANY_SCOPE for school: every governed row
-       -- belongs to a tenant, and one that does not state its tenant is one
-       -- nobody should reach.
-       AND (a.school_id IS NULL OR (p_school IS NOT NULL AND a.school_id = p_school))
-       -- team
-       AND (a.team_code IS NULL OR p_team = '*'::text
-            OR (p_team IS NOT NULL AND a.team_code = p_team))
-       -- single fixture (scorers, match officials)
-       AND (a.fixture_id IS NULL OR p_fixture = '00000000-0000-0000-0000-000000000000'::uuid
-            OR (p_fixture IS NOT NULL AND a.fixture_id = p_fixture))
-       -- WHO the assignment is about. An assignment naming people reaches ONLY
-       -- those people: a guardian's children, and a pupil's own record. An
-       -- assignment naming nobody is about nobody in particular and is scoped
-       -- by school and team alone, which is how a coach reaches their squad —
-       -- EXCEPT for the roles that only make sense about a person, which are
-       -- refused outright rather than widened (SUBJECT_SCOPED_ROLES).
-       --
-       -- A LIVE link is verified, started and not ended. Verification is what
-       -- turns a claimed relationship into a permission, and 'pending' is the
-       -- column default, so nothing reaches a child until somebody at the
-       -- school put their name to the link.
-       AND CASE WHEN a.role = ANY (ARRAY['guardian', 'selfaccess', 'enquiry']::text[]) THEN
-             -- A role that only means anything ABOUT SOMEBODY. It must name a
-             -- live person, and then reaches that person and rows with no
-             -- person dimension (a fixture: which is how a parent sees when
-             -- their child is playing). Name nobody live and it reaches
-             -- nothing at all — not the school, not a fixture.
-             EXISTS (SELECT 1 FROM assignment_subject g
-                      WHERE g.assignment_id = a.id
-                        AND g.verification_state = 'verified'
-                        AND g.valid_from <= sa_today()
-                        AND (g.valid_until IS NULL OR g.valid_until > sa_today()))
-             AND (p_person = '00000000-0000-0000-0000-000000000000'::uuid
-                  OR (p_person IS NOT NULL AND EXISTS (
-                        SELECT 1 FROM assignment_subject g
-                         WHERE g.assignment_id = a.id AND g.player_id = p_person
-                           AND g.verification_state = 'verified'
-                           AND g.valid_from <= sa_today()
-                           AND (g.valid_until IS NULL OR g.valid_until > sa_today()))))
-           ELSE
-             -- Everyone else. Naming nobody means "about nobody in
-             -- particular", scoped by school and team, which is how a coach
-             -- reaches their squad. The NOT EXISTS counts EVERY row, live or
-             -- not: filtering it to live links would mean that revoking the
-             -- last link turns a person-scoped assignment into a school-wide
-             -- one, so revocation would WIDEN access.
-             NOT EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = a.id)
-             OR p_person = '00000000-0000-0000-0000-000000000000'::uuid
-             OR (p_person IS NOT NULL AND EXISTS (
-                   SELECT 1 FROM assignment_subject g
-                    WHERE g.assignment_id = a.id AND g.player_id = p_person
-                      AND g.verification_state = 'verified'
-                      AND g.valid_from <= sa_today()
-                      AND (g.valid_until IS NULL OR g.valid_until > sa_today())))
-           END
-  )
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- app_can()'s live definition, renamed, with one line under its anchor. The
+-- anchor must be there exactly once; otherwise nothing is made.
+DO $copy$
+DECLARE
+  A    constant text := '     WHERE a.person_id = app_user_id()' || chr(10);
+  v_def text;
+  n     int;
+BEGIN
+  v_def := pg_get_functiondef('app_can(text,uuid,text,uuid,uuid)'::regprocedure);
+  n := (length(v_def) - length(replace(v_def, A, ''))) / length(A);
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'db/171: app_can()''s body holds its anchor (WHERE a.person_id = app_user_id()) % times, not once; look before copying it', n;
+  END IF;
+  IF position('CREATE OR REPLACE FUNCTION public.app_can(' IN v_def) <> 1 THEN
+    RAISE EXCEPTION 'db/171: app_can()''s definition does not start as expected; look before copying it';
+  END IF;
+  v_def := 'CREATE OR REPLACE FUNCTION public.app_can_but_scorer(' || substr(v_def, length('CREATE OR REPLACE FUNCTION public.app_can(') + 1);
+  v_def := replace(v_def, A, A || '       AND a.role <> ''scorer''' || chr(10));
+  EXECUTE v_def;
+END $copy$;
 
 -- ── match_finalise(): db/132's, with step 1b (marked db/171) ───────
 CREATE OR REPLACE FUNCTION match_finalise(p_match uuid)
@@ -303,6 +275,10 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 -- ══════════════════════════════════════════════════════════════════
 --  2 · The coach is told when the log decides the match
 -- ══════════════════════════════════════════════════════════════════
+-- The decided notices of a match, found by subject (the marker's own rows).
+CREATE INDEX IF NOT EXISTS notification_decided_subject ON notification (subject_id)
+  WHERE required_capability = 'scoring.finalise' AND recipient_id IS NOT NULL;
+
 -- Returns how many notices it wrote (0 when it wrote none or took some back).
 CREATE OR REPLACE FUNCTION match_decided_notice(p_match uuid) RETURNS integer AS $$
 DECLARE
@@ -325,8 +301,9 @@ BEGIN
   IF r.outcome IS NULL OR r.outcome = 'in_progress' OR match_completion_refusal(p_match) IS NOT NULL THEN
     -- Not decided (any more): what told somebody it was is taken back, unsaid.
     FOR v_id IN SELECT n.id FROM notification n
-                 WHERE n.kind = 'fixture' AND n.subject_kind = 'match' AND n.subject_id = p_match
-                   AND n.required_capability = 'scoring.finalise' AND n.recipient_id IS NOT NULL
+                 WHERE n.subject_id = p_match AND n.required_capability = 'scoring.finalise'
+                   AND n.recipient_id IS NOT NULL AND n.kind = 'fixture' AND n.subject_kind = 'match'
+                   AND n.title LIKE '% is decided. Confirm the result.'
                    AND n.retracts_id IS NULL AND n.retracted_at IS NULL
                  ORDER BY n.published_at, n.id LOOP
       PERFORM notification_retract(v_id, 'superseded', false);
@@ -364,8 +341,9 @@ BEGIN
      ORDER BY a.person_id
   LOOP
     IF NOT EXISTS (SELECT 1 FROM notification n
-                    WHERE n.kind = 'fixture' AND n.subject_kind = 'match' AND n.subject_id = p_match
-                      AND n.required_capability = 'scoring.finalise' AND n.recipient_id = p
+                    WHERE n.subject_id = p_match AND n.required_capability = 'scoring.finalise'
+                      AND n.recipient_id = p AND n.kind = 'fixture' AND n.subject_kind = 'match'
+                      AND n.title LIKE '% is decided. Confirm the result.'
                       AND n.retracts_id IS NULL AND n.retracted_at IS NULL
                       AND (n.expires_at IS NULL OR n.expires_at > now())) THEN
       INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
@@ -378,14 +356,27 @@ BEGIN
   RETURN v_n;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- A batch that closes an innings or voids a ball: each live match in it, once.
+-- A batch that can move the outcome: each live match in it, once.
 CREATE OR REPLACE FUNCTION match_decided_after_events() RETURNS trigger AS $$
 DECLARE v_m uuid;
 BEGIN
   -- A scorebook's commit (db/63) completes its own match.
   IF coalesce(current_setting('scrbrd.scorebook_commit', true), '') <> '' THEN RETURN NULL; END IF;
-  FOR v_m IN SELECT DISTINCT n.match_id FROM match_decided_new_events n
-              WHERE n.kind IN ('innings_end', 'void') LOOP
+  FOR v_m IN
+    SELECT n.match_id FROM match_decided_new_events n
+     WHERE n.kind IN ('innings_end', 'revision', 'target', 'par', 'penalty')
+        -- An undo takes a ball away: it can un-decide a match, never decide
+        -- one, so it asks only while a decided notice stands — or when it
+        -- voids a void, which puts a ball back.
+        OR (n.kind = 'void'
+            AND (EXISTS (SELECT 1 FROM notification x
+                          WHERE x.subject_id = n.match_id AND x.required_capability = 'scoring.finalise'
+                            AND x.recipient_id IS NOT NULL AND x.title LIKE '% is decided. Confirm the result.'
+                            AND x.retracted_at IS NULL)
+                 OR EXISTS (SELECT 1 FROM ball_event t
+                             WHERE t.match_id = n.match_id AND t.idempotency_key = n.payload->>'target' AND t.kind = 'void')))
+     GROUP BY n.match_id
+  LOOP
     BEGIN
       PERFORM match_decided_notice(v_m);
     EXCEPTION WHEN OTHERS THEN
@@ -400,7 +391,7 @@ CREATE OR REPLACE TRIGGER ball_event_match_decided AFTER INSERT ON ball_event
   REFERENCING NEW TABLE AS match_decided_new_events
   FOR EACH STATEMENT EXECUTE FUNCTION match_decided_after_events();
 
--- An organiser's decision recorded or changed: the outcome moved without an event.
+-- An organiser's decision recorded or withdrawn: the outcome moved without an event.
 CREATE OR REPLACE FUNCTION match_decided_after_decision() RETURNS trigger AS $$
 BEGIN
   BEGIN
@@ -414,14 +405,16 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 CREATE OR REPLACE TRIGGER match_decided_after_decision AFTER INSERT OR UPDATE ON match_result_decision
   FOR EACH ROW EXECUTE FUNCTION match_decided_after_decision();
 
--- Finished, or called off: the notice's act is done, or there is none.
+-- No longer live (finished, called off, put off): the notice's act is done,
+-- or there is no result to confirm now.
 CREATE OR REPLACE FUNCTION match_decided_notice_done() RETURNS trigger AS $$
 DECLARE v_id uuid;
 BEGIN
   BEGIN
     FOR v_id IN SELECT n.id FROM notification n
-                 WHERE n.kind = 'fixture' AND n.subject_kind = 'match' AND n.subject_id = NEW.id
-                   AND n.required_capability = 'scoring.finalise' AND n.recipient_id IS NOT NULL
+                 WHERE n.subject_id = NEW.id AND n.required_capability = 'scoring.finalise'
+                   AND n.recipient_id IS NOT NULL AND n.kind = 'fixture' AND n.subject_kind = 'match'
+                   AND n.title LIKE '% is decided. Confirm the result.'
                    AND n.retracts_id IS NULL AND n.retracted_at IS NULL
                  ORDER BY n.published_at, n.id LOOP
       PERFORM notification_retract(v_id, 'superseded', false);
@@ -433,7 +426,7 @@ BEGIN
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 CREATE OR REPLACE TRIGGER match_decided_notice_done AFTER UPDATE OF status ON match
-  FOR EACH ROW WHEN (OLD.status = 'live' AND NEW.status IN ('complete', 'abandoned'))
+  FOR EACH ROW WHEN (OLD.status = 'live' AND NEW.status IS DISTINCT FROM 'live')
   EXECUTE FUNCTION match_decided_notice_done();
 
 
@@ -451,10 +444,17 @@ BEGIN
   END IF;
   SELECT * INTO s FROM scoring_session x WHERE x.match_id = p_match FOR UPDATE;
   IF NOT FOUND THEN RETURN QUERY SELECT false, 'not_token_holder'::text, NULL::integer; RETURN; END IF;
-  -- Only the holder: this person, on this device, at this generation.
-  IF s.state IS DISTINCT FROM 'active' OR s.holder_user_id IS DISTINCT FROM app_user_id()
-     OR p_device IS NULL OR s.holder_device IS DISTINCT FROM p_device
+  -- Only the holder: this person, on the device his token names, at this generation.
+  IF s.holder_user_id IS DISTINCT FROM app_user_id()
+     OR p_device IS NULL OR s.holder_device IS DISTINCT FROM p_device OR p_device IS DISTINCT FROM app_device_id()
      OR p_epoch IS NULL OR s.epoch IS DISTINCT FROM p_epoch THEN
+    RETURN QUERY SELECT false, 'not_token_holder'::text, s.epoch; RETURN;
+  END IF;
+  -- His own handover under way: said by its name, and the pen stays where it is.
+  IF s.state IN ('handover_pending', 'verifying') THEN
+    RETURN QUERY SELECT false, s.state::text, s.epoch; RETURN;
+  END IF;
+  IF s.state IS DISTINCT FROM 'active' THEN
     RETURN QUERY SELECT false, 'not_token_holder'::text, s.epoch; RETURN;
   END IF;
   -- Never with a ball still on the phone.
@@ -465,11 +465,83 @@ BEGIN
          lease_until = NULL, handover_code = NULL, handover_to = NULL, claimant_user_id = NULL,
          claimant_device = NULL, updated_at = now()
    WHERE x.match_id = p_match;
-  INSERT INTO scoring_audit (match_id, school_id, event, actor_id, from_user, epoch)
-  VALUES (p_match, s.school_id, 'pen_released', app_user_id(), s.holder_user_id, s.epoch + 1);
+  INSERT INTO scoring_audit (match_id, school_id, event, actor_id, from_user, epoch, detail)
+  VALUES (p_match, s.school_id, 'pen_released', app_user_id(), s.holder_user_id, s.epoch + 1,
+          jsonb_build_object('device', s.holder_device));
   RETURN QUERY SELECT true, NULL::text, s.epoch + 1;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- ── second_account_notice(): db/135's, with the releasing phone's step (marked db/171) ──
+CREATE OR REPLACE FUNCTION second_account_notice() RETURNS trigger AS $$
+DECLARE
+  m       match%ROWTYPE;
+  v_dev   text;
+  v_title text;
+  v_body  text := 'Balls from a second phone were set aside for review, not added to the scorecard.';
+  v_life  timestamptz := now() + interval '7 days';
+BEGIN
+  SELECT * INTO m FROM match x WHERE x.id = NEW.match_id;
+  -- A finished or called-off match is late_ball_notice()'s (db/132).
+  IF NOT FOUND OR m.status IN ('complete', 'abandoned') THEN RETURN NULL; END IF;
+  -- 'stale_epoch_or_lease' needs a session (without one the write path says
+  -- 'no_session'), and a second account is a device that is not the pen's.
+  SELECT s.holder_device INTO v_dev FROM scoring_session s WHERE s.match_id = NEW.match_id;
+  IF NOT FOUND OR NEW.device_id IS NOT DISTINCT FROM v_dev THEN RETURN NULL; END IF;
+  -- db/171: the phone that put the pen down (scoring_release()) is not a
+  -- second phone. While the session is idle and its last letting-go was
+  -- this person's release on this device, his late ball is set aside (as
+  -- before) and nobody is told of a second account.
+  IF v_dev IS NULL AND EXISTS (
+       SELECT 1 FROM scoring_session s WHERE s.match_id = NEW.match_id AND s.state = 'idle')
+     AND EXISTS (
+       SELECT 1 FROM (SELECT a.event, a.actor_id, a.detail FROM scoring_audit a
+                       WHERE a.match_id = NEW.match_id AND a.event IN ('pen_released', 'force_release')
+                       ORDER BY a.at DESC, a.id DESC LIMIT 1) last
+        WHERE last.event = 'pen_released' AND last.actor_id IS NOT DISTINCT FROM NEW.scorer_user_id
+          AND last.detail->>'device' IS NOT DISTINCT FROM NEW.device_id) THEN
+    RETURN NULL;
+  END IF;
+  v_title := 'Second account set aside · '
+             || coalesce(fixture_side_label(m.school_id, m.team_code), m.team_code, 'Home') || ' v '
+             || coalesce(fixture_side_label(m.away_school_id, m.away_team_code), m.opponent, 'Away');
+  BEGIN
+    -- The scorer who sent them: his alone.
+    IF NOT EXISTS (SELECT 1 FROM notification n
+                    WHERE n.subject_kind = 'match' AND n.subject_id = m.id AND n.recipient_id = NEW.scorer_user_id
+                      AND n.title = v_title AND n.retracted_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > now())) THEN
+      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                                required_capability, is_public, subject_kind, subject_id, recipient_id, expires_at)
+      VALUES (m.school_id, NULL, 'school', 'system', 'medium', v_title, v_body,
+              'news.read', false, 'match', m.id, NEW.scorer_user_id, v_life);
+    END IF;
+    -- The home office: the school, under fixture.update.
+    IF NOT EXISTS (SELECT 1 FROM notification n
+                    WHERE n.subject_kind = 'match' AND n.subject_id = m.id AND n.recipient_id IS NULL
+                      AND n.required_capability = 'fixture.update'
+                      AND n.title = v_title AND n.retracted_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > now())) THEN
+      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                                required_capability, is_public, subject_kind, subject_id, expires_at)
+      VALUES (m.school_id, NULL, 'school', 'fixture', 'medium', v_title, v_body,
+              'fixture.update', false, 'match', m.id, v_life);
+    END IF;
+    -- The approvers: the school, under scoring.amend.approve — who may decide
+    -- between the two books.
+    IF NOT EXISTS (SELECT 1 FROM notification n
+                    WHERE n.subject_kind = 'match' AND n.subject_id = m.id AND n.recipient_id IS NULL
+                      AND n.required_capability = 'scoring.amend.approve'
+                      AND n.title = v_title AND n.retracted_at IS NULL AND (n.expires_at IS NULL OR n.expires_at > now())) THEN
+      INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body,
+                                required_capability, is_public, subject_kind, subject_id, expires_at)
+      VALUES (m.school_id, NULL, 'school', 'system', 'medium', v_title, v_body,
+              'scoring.amend.approve', false, 'match', m.id, v_life);
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    -- The ball is set aside whatever happens to its notice; the server's
+    -- log says the notice was not raised.
+    RAISE WARNING 'db/135: the second-account notice for match % was not raised (SQLSTATE %)', NEW.match_id, SQLSTATE;
+  END;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- ══════════════════════════════════════════════════════════════════
 --  Who may call what
@@ -488,7 +560,7 @@ BEGIN
   END LOOP;
   FOREACH f IN ARRAY ARRAY['app_can_but_scorer(text,uuid,text,uuid,uuid)', 'match_decided_notice(uuid)',
                            'match_decided_after_events()', 'match_decided_after_decision()',
-                           'match_decided_notice_done()'] LOOP
+                           'match_decided_notice_done()', 'second_account_notice()'] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f);
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM scrbrd_app', f);
     FOREACH r IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
@@ -510,7 +582,7 @@ BEGIN
   FOREACH f IN ARRAY ARRAY['match_finalise(uuid)', 'scoring_release(uuid,text,integer,integer)',
                            'app_can_but_scorer(text,uuid,text,uuid,uuid)', 'match_decided_notice(uuid)',
                            'match_decided_after_events()', 'match_decided_after_decision()',
-                           'match_decided_notice_done()'] LOOP
+                           'match_decided_notice_done()', 'second_account_notice()'] LOOP
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = f::regprocedure) THEN
       RAISE EXCEPTION 'db/171: % is not SECURITY DEFINER', f;
     END IF;
@@ -572,15 +644,24 @@ BEGIN
      OR position('s.epoch IS DISTINCT FROM p_epoch' IN src) = 0
      OR position('''unsynced_work''' IN src) = 0
      OR position('''unsynced_work''' IN src) > position('UPDATE scoring_session' IN src)
-     OR position('epoch = s.epoch + 1' IN src) = 0 THEN
+     OR position('epoch = s.epoch + 1' IN src) = 0
+     OR position('jsonb_build_object(''device'', s.holder_device)' IN src) = 0
+     OR position('p_device IS DISTINCT FROM app_device_id()' IN src) = 0 THEN
     RAISE EXCEPTION 'db/171: scoring_release() does not ask the holder and the empty queue before it lets go, or keeps the epoch';
+  END IF;
+
+  -- The releasing phone's late ball is not a second account (S1 of the review).
+  SELECT prosrc INTO src FROM pg_proc WHERE oid = 'second_account_notice()'::regprocedure;
+  IF position('last.event = ''pen_released''' IN src) = 0 OR position('last.detail->>''device'' IS NOT DISTINCT FROM NEW.device_id' IN src) = 0 THEN
+    RAISE EXCEPTION 'db/171: second_account_notice() does not know the releasing phone';
   END IF;
 
   -- The triggers are in place.
   IF (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgenabled <> 'D'
         AND ((tgrelid = 'ball_event'::regclass AND tgname = 'ball_event_match_decided')
           OR (tgrelid = 'match_result_decision'::regclass AND tgname = 'match_decided_after_decision')
-          OR (tgrelid = 'match'::regclass AND tgname = 'match_decided_notice_done'))) <> 3 THEN
+          OR (tgrelid = 'match'::regclass AND tgname = 'match_decided_notice_done')
+          OR (tgrelid = 'ball_event_quarantine'::regclass AND tgname = 'second_account_notice'))) <> 4 THEN
     RAISE EXCEPTION 'db/171: a trigger this file relies on is missing or disabled';
   END IF;
 END $check$;

@@ -15596,11 +15596,17 @@ END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 --   MB (U11A): decided and sealed (Westville 0 chasing 7): the scorer who
 --     is also the side's coach finishes it.
 --   MP (U11A): decided and sealed: the pen, held by the scorer's phone.
+--   MA (U11A): decided and sealed: called off by the office.
+--   MF (U11A): Hilton's innings sealed: its chase sealed while the notice is broken.
+--   MU (U11C): Hilton's innings sealed and nothing after it: an organiser's
+--     decision settles it, and its withdrawal unsettles it.
 -- The people, each holding the assignments named and nothing else: a scorer
 -- of U11A (sc), the U11A coach (co), a scorer of U11A who is also its coach
--- (two), a director of sport (ds, school-wide), the U11B coach (oc), and a
--- pupil of U11A (pupil: player). Not the seed's people, and not any earlier
--- section's: each tag is this section's.
+-- (two), a director of sport (ds, school-wide), the U11B coach (oc), a pupil
+-- of U11A (pupil: player), a U11A coach whose assignment is suspended (susp,
+-- db/34), the owner's key with no school (plat: superadmin) and Westville's
+-- 1XI coach (away). Not the seed's people, and not any earlier section's:
+-- each tag is this section's.
 CREATE OR REPLACE FUNCTION _v171_person(p_tag text, p_roles text[], p_team text) RETURNS uuid AS $$
 DECLARE v_u uuid; v_r text;
 BEGIN
@@ -15622,7 +15628,7 @@ DECLARE
   WES uuid := '22222222-2222-2222-2222-222222222222';
   v_t0 timestamptz := (sa_today()::timestamp + time '09:00') AT TIME ZONE 'Africa/Johannesburg';
   ids jsonb := '{}';
-  m uuid; k text; t text;
+  m uuid; k text; t text; u uuid; d uuid;
 BEGIN
   ids := ids || jsonb_build_object(
     'sc', _v171_person('scorer', ARRAY['scorer'], 'U11A'),
@@ -15630,16 +15636,32 @@ BEGIN
     'two', _v171_person('twohats', ARRAY['scorer', 'coach'], 'U11A'),
     'ds', _v171_person('dos', ARRAY['directorofsport'], NULL),
     'oc', _v171_person('othercoach', ARRAY['coach'], 'U11B'),
-    'pupil', _v171_person('pupil', ARRAY['player'], 'U11A'));
-  FOR k, t IN SELECT * FROM (VALUES ('MD', 'U11A'), ('MB', 'U11A'), ('MP', 'U11A')) x(k, t) LOOP
+    'pupil', _v171_person('pupil', ARRAY['player'], 'U11A'),
+    'susp', _v171_person('suspended', ARRAY['coach'], 'U11A'),
+    'office', _v171_person('office', ARRAY['schooladmin'], NULL));
+  INSERT INTO app_user (school_id, email, name, role, teams)
+  VALUES (NULL, 'v171.plat@example.invalid', 'V171 Plat', 'superadmin', '{}') RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (u, 'superadmin', NULL);
+  ids := ids || jsonb_build_object('plat', u);
+  INSERT INTO app_user (school_id, email, name, role, teams)
+  VALUES (WES, 'v171.away@example.invalid', 'V171 Away', 'coach', ARRAY['1XI']) RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES (u, 'coach', WES, '1XI');
+  ids := ids || jsonb_build_object('away', u);
+  FOR k, t IN SELECT * FROM (VALUES ('MD', 'U11A'), ('MB', 'U11A'), ('MP', 'U11A'), ('MA', 'U11A'), ('MF', 'U11A'), ('MU', 'U11C')) x(k, t) LOOP
     INSERT INTO match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, sport, format, overs, status)
     VALUES (HIL, t, WES, '1XI', 'x', v_t0, 'cricket', 'T20', 1, 'live') RETURNING id INTO m;
     ids := ids || jsonb_build_object(k, m);
     PERFORM _v114_innings(m, 0::smallint, t, 'Westville 1XI', ARRAY[1, 1, 1, 1, 1, 1], NULL, (ids->>'sc')::uuid);
-    IF k <> 'MD' THEN
+    IF k NOT IN ('MD', 'MF', 'MU') THEN
       PERFORM _v114_innings(m, 1::smallint, 'Westville 1XI', t, ARRAY[0, 0, 0, 0, 0, 0], 7, (ids->>'sc')::uuid);
     END IF;
   END LOOP;
+  -- The suspended coach: his U11A assignment paused on a duty of MD's (db/34).
+  INSERT INTO match_official (match_id, school_id, duty, person_name, person_id)
+  VALUES ((ids->>'MD')::uuid, HIL, 'umpire', 'V171 Suspended', (ids->>'susp')::uuid) RETURNING id INTO d;
+  INSERT INTO duty_suspension (duty_id, assignment_id, school_id, suspended_by, reason)
+  SELECT d, a.id, HIL, (ids->>'office')::uuid, 'Verify 171: paused pending a conversation.'
+    FROM role_assignment a WHERE a.person_id = (ids->>'susp')::uuid;
   RETURN ids;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -15686,8 +15708,48 @@ CREATE OR REPLACE FUNCTION _v171_session(p_match uuid) RETURNS jsonb AS $$
   SELECT jsonb_build_object('state', s.state, 'epoch', s.epoch, 'holder', s.holder_user_id, 'device', s.holder_device,
                             'released', (SELECT count(*) FROM scoring_audit a WHERE a.match_id = p_match AND a.event = 'pen_released'),
                             'by', (SELECT a.actor_id FROM scoring_audit a WHERE a.match_id = p_match AND a.event = 'pen_released'
-                                    ORDER BY a.at DESC LIMIT 1))
+                                    ORDER BY a.at DESC LIMIT 1),
+                            'let_go', (SELECT a.detail->>'device' FROM scoring_audit a WHERE a.match_id = p_match AND a.event = 'pen_released'
+                                        ORDER BY a.at DESC LIMIT 1))
     FROM scoring_session s WHERE s.match_id = p_match
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- The notice made to fail, and mended, as the owner (the batch must stand either way).
+CREATE OR REPLACE FUNCTION _v171_break(p_broken boolean) RETURNS text AS $$
+DECLARE
+  d text := pg_get_functiondef('match_decided_notice(uuid)'::regprocedure);
+  a text := 'BEGIN' || chr(10) || '  SELECT * INTO m FROM match x WHERE x.id = p_match;';
+  b text := 'BEGIN' || chr(10) || '  RAISE EXCEPTION ''v171: the notice broken on purpose'';' || chr(10) || '  SELECT * INTO m FROM match x WHERE x.id = p_match;';
+BEGIN
+  EXECUTE CASE WHEN p_broken THEN replace(d, a, b) ELSE replace(d, b, a) END;
+  RETURN md5((SELECT prosrc FROM pg_proc WHERE oid = 'match_decided_notice(uuid)'::regprocedure));
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A match's status moved, and an organiser's decision made and withdrawn, as the owner.
+CREATE OR REPLACE FUNCTION _v171_status(p_match uuid, p_status text) RETURNS void AS $$
+  UPDATE match SET status = p_status WHERE id = p_match
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v171_decide(p_match uuid, p_by uuid) RETURNS void AS $$
+  INSERT INTO match_result_decision (match_id, kind, side, reason, decided_by)
+  VALUES (p_match, 'conceded', 'away', 'Verify 171: the visitors conceded.', p_by)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v171_withdraw(p_match uuid, p_by uuid) RETURNS void AS $$
+  UPDATE match_result_decision SET withdrawn_at = now(), withdrawn_by = p_by, withdrawn_note = 'Verify 171: entered in error.'
+   WHERE match_id = p_match AND withdrawn_at IS NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- A ball set aside (db/33), as the write path files one, and the second-account notices of a match.
+CREATE OR REPLACE FUNCTION _v171_held(p_match uuid, p_scorer uuid, p_device text, p_epoch integer) RETURNS void AS $$
+  INSERT INTO ball_event_quarantine (match_id, school_id, submitted_epoch, current_epoch, scorer_user_id, device_id,
+                                     idempotency_key, body, fingerprint)
+  VALUES (p_match, match_school(p_match), p_epoch, p_epoch + 1, p_scorer, p_device,
+          'v171-held-' || p_match || '-' || p_device, '{}'::jsonb, md5('v171-held-' || p_match || '-' || p_device))
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v171_second(p_match uuid) RETURNS integer AS $$
+  SELECT count(*)::integer FROM notification n WHERE n.subject_id = p_match AND n.title LIKE 'Second account set aside%'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v171_balls(p_match uuid, p_kind text) RETURNS integer AS $$
+  SELECT count(*)::integer FROM ball_event b WHERE b.match_id = p_match AND b.kind = p_kind
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- An ACL in words, '' when nobody but the owner holds it.
@@ -47685,6 +47747,15 @@ $m130$;
   --              no longer holds; and the coach finishes at once
   --   (pad)      under a pad credential's scope the release is the
   --              credential's own match's alone
+  --   (late)     after the release, the releasing phone's late ball is set
+  --              aside and tells nobody of a second phone; a ball from
+  --              another phone still does
+  --   (exclude)  the suspended U11A coach, the owner's key with no school and
+  --              Westville's coach are told nothing
+  --   (broken)   a notice that fails keeps the scorer's seal, and writes nothing
+  --   (decision) an organiser's concession on undecided MU tells who may
+  --              confirm; its withdrawal takes it back
+  --   (abandon)  MA called off by the office: its notices taken back, superseded
   --   (copy)     app_can_but_scorer() is app_can()'s body bar its one line
   --   (grants)   scoring_release() is the application's; the rest nobody's
   --
@@ -47697,11 +47768,18 @@ $m130$;
   --   match_decided_notice_done disabled               → (done)
   --   scoring_release() without the pending test       → (release)
   --   scoring_release() without the epoch bump         → (release)
+  --   second_account_notice() as db/135 left it          → (late)
+  --   the recipients without the suspension test       → (exclude)
+  --   match_decided_after_events() without its handler → (broken): the seal cancelled
+  --   match_decided_after_decision disabled            → (decision)
   DECLARE
     y   jsonb := _v171_stage();
     MD  uuid := (y->>'MD')::uuid;
     MB  uuid := (y->>'MB')::uuid;
     MP  uuid := (y->>'MP')::uuid;
+    MA  uuid := (y->>'MA')::uuid;
+    MF  uuid := (y->>'MF')::uuid;
+    MU  uuid := (y->>'MU')::uuid;
     SC  uuid := (y->>'sc')::uuid;
     CO  uuid := (y->>'co')::uuid;
     TWO uuid := (y->>'two')::uuid;
@@ -47729,6 +47807,9 @@ $m130$;
                     AND (j->>'scorer_only')::int = 0 AND (j->>'pupils')::int = 0 AND (j->>'named')::int = 0
                     AND (j->>'urgent')::int = 0 AND j->'titles' = jsonb_build_array(t),
       format('§146 (notice): MD''s decided notices are %s, not one each to the coach, the director and the two-hatted scorer, titled %s', j, t));
+    -- (exclude)
+    PERFORM _assert(NOT j->'live_to' ? (y->>'susp') AND NOT j->'live_to' ? (y->>'plat') AND NOT j->'live_to' ? (y->>'away'),
+      format('§146 (exclude): a suspended coach, the owner''s key or the away coach was told: %s', j->'live_to'));
     FOR who, v_n IN SELECT * FROM (VALUES ('co', 1), ('ds', 1), ('two', 1), ('sc', 0), ('oc', 0), ('pupil', 0)) x(w, n) LOOP
       PERFORM _as((y->>who)::uuid);
       PERFORM _assert((SELECT count(*) FROM my_notifications n WHERE n.subject_id = MD AND n.title = t) = v_n,
@@ -47811,6 +47892,15 @@ $m130$;
       format('§146 (release): the scorer''s release got (%s, %s, %s), the session %s', v_ok, v_reason, v_n, j));
     SELECT l.holds INTO v_ok FROM scoring_lease_check(MP, 'v171-pad', v_epoch) l;
     PERFORM _assert(NOT v_ok, '§146 (release): the released generation still holds the pen');
+    PERFORM _assert(_v171_session(MP)->>'let_go' = 'v171-pad',
+      '§146 (release): the pen_released row does not name the device it let go of');
+    -- (late)
+    PERFORM _v171_held(MP, SC, 'v171-pad', v_epoch);
+    PERFORM _assert(_v171_second(MP) = 0, format('§146 (late): the releasing phone''s late ball told %s of a second phone', _v171_second(MP)));
+    PERFORM _v171_held(MP, SC, 'v171-second-phone', v_epoch);
+    PERFORM _assert(_v171_second(MP) > 0, '§146 (late): a ball from another phone no longer tells of a second phone');
+    PERFORM _as(SC);
+    PERFORM set_config('app.device_id', 'v171-pad', true);
     PERFORM _as(CO);
     PERFORM set_config('app.device_id', 'v171-coach-phone', true);
     SELECT * INTO got FROM match_finalise(MP);
@@ -47827,6 +47917,32 @@ $m130$;
     PERFORM _assert(NOT v_ok AND v_reason = 'no_capability',
       format('§146 (pad): a credential for MB released MD''s pen: (%s, %s)', v_ok, v_reason));
     PERFORM set_config('app.user_id', '', true);
+
+    -- (broken)
+    who := _v171_break(true);
+    v_keys := _v171_chase(MF, ARRAY[1, 1, 1, 1, 1, 2], SC, true);
+    PERFORM _assert(_v171_break(false) <> who, '§146 (broken): the notice was not mended');
+    PERFORM _assert(_v171_balls(MF, 'innings_end') = 2 AND (_v171_notices(MF)->>'all')::int = 0,
+      format('§146 (broken): with the notice failing the seal is %s innings_end rows and %s notices', _v171_balls(MF, 'innings_end'), _v171_notices(MF)->>'all'));
+    PERFORM _assert(_v171_ask(MF) > 0, '§146 (broken): mended, the notice does not tell MF');
+
+    -- (decision)
+    PERFORM _assert((_v171_notices(MU)->>'all')::int = 0, '§146 (decision): MU, undecided, told somebody');
+    PERFORM _v171_decide(MU, DS);
+    j := _v171_notices(MU);
+    PERFORM _assert((j->>'live')::int > 0 AND NOT j->'live_to' ? CO::text AND j->'live_to' ? DS::text,
+      format('§146 (decision): the concession on MU (a U11C fixture) told %s, not the director and not the U11A coach', j));
+    PERFORM _v171_withdraw(MU, DS);
+    j := _v171_notices(MU);
+    PERFORM _assert((j->>'live')::int = 0 AND j->'kinds' = '["superseded"]'::jsonb,
+      format('§146 (decision): withdrawn, MU''s notices are %s', j));
+
+    -- (abandon)
+    PERFORM _assert((_v171_notices(MA)->>'live')::int > 0, '§146 (abandon): MA was never told');
+    PERFORM _v171_status(MA, 'abandoned');
+    j := _v171_notices(MA);
+    PERFORM _assert((j->>'live')::int = 0 AND j->'kinds' = '["superseded"]'::jsonb AND (j->>'said')::int = 0,
+      format('§146 (abandon): called off, MA''s notices are %s', j));
 
     -- (copy)
     PERFORM _assert(
