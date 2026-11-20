@@ -50,6 +50,7 @@ const WEB_PORT = port(4330);
 const API_PORT = port(8799);
 const API = `http://127.0.0.1:${API_PORT}`;
 const DEBUG = !!process.env.BROWSER_INNINGS_DEBUG;
+const MATCH = "77777777-0000-0000-0000-000000000002";   // 1XI v Michaelhouse: nothing scored in the seed
 const DB = ownerUrl();
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 
@@ -195,8 +196,8 @@ try {
   // the server has, and asks for one when there is none. This walk has always
   // had the home side batting first, so that is the toss it records.
   await dbq(`insert into match_toss (match_id, school_id, won_by, decision)
-             select id, school_id, 'home', 'bat' from match where id = '77777777-0000-0000-0000-000000000002'
-             on conflict (match_id) do nothing`);
+             select id, school_id, 'home', 'bat' from match where id = $1
+             on conflict (match_id) do nothing`, [MATCH]);
 
   await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
   await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
@@ -210,29 +211,29 @@ try {
   ok("a seeded scorer gets in", (await page.locator('[data-testid="os-main"]').count()) > 0);
 
   await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
-  // Wait for the fixtures read to answer, rather than a fixed 1.2 s: on a
-  // loaded runner the list had not drawn yet and the walk judged an empty
-  // screen ("the 1XI fixture offers the scorer", then every later check).
-  // The check below still finds the one card and judges it as before.
-  await page.waitForFunction(() => [...document.querySelectorAll("button")]
-    .some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")), null, { timeout: 15000 }).catch(() => {});
+  // The Match Centre's own scorer button on THIS fixture's card, drawn and
+  // visible, waited for (up to 15 s) and then judged. Not "any button that
+  // says Start scoring anywhere in the document": the Today page has one of
+  // its own (the scorer's home, fixture-<id>-open), and while the Matches
+  // chunk loads, Suspense keeps the Today page in the DOM, hidden. That
+  // hidden button answered the old wait at once. Here the judgment then ran
+  // on it and climbed to <html>, which names Michaelhouse, and clicked it:
+  // a pass that never looked at the list. On a slower runner (CI, 18 and
+  // 19 Nov) the Match Centre had mounted by then, its fixtures read still
+  // out ("Loading matches…"), so nothing was found and every later check
+  // failed with it.
+  const scoreBtn = page.locator(`[data-testid="mc-score-${MATCH}"]`);
+  await scoreBtn.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
 
   const highWaterRow = (await dbq(`select coalesce(max(id), 0) as high from ball_event`))[0];
   const highWater = highWaterRow.high;
 
-  const opened = await page.evaluate(() => {
-    const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
-    const btns = [...document.querySelectorAll("button")].filter(isBtn);
-    for (const b of btns) {
-      let card = b;
-      while (card.parentElement &&
-             [...card.parentElement.querySelectorAll("button")].filter(isBtn).length === 1) {
-        card = card.parentElement;
-      }
-      if (/Michaelhouse/i.test(card.textContent || "")) { b.click(); return true; }
-    }
-    return false;
-  });
+  const card = page.locator(`[data-testid="match-card-${MATCH}"]`);
+  const opened = (await scoreBtn.isVisible())
+    && /Start Scoring|Open Live Scorer/i.test(await scoreBtn.innerText())
+    && /Michaelhouse/i.test(await card.innerText().catch(() => ""))
+    && (await card.locator(`[data-testid="mc-score-${MATCH}"]`).count()) === 1
+    && await scoreBtn.click({ timeout: 3000 }).then(() => true, () => false);
   ok("the 1XI fixture offers the scorer", opened);
   await page.waitForTimeout(2500);
   await clearBlockers();
