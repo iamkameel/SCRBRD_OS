@@ -136,7 +136,7 @@ async function openPad(name, dev) {
   await mc.tap({ timeout: 6000 }).catch(() => mc.click({ timeout: 4000 }));
   await afterReads(page, 1200);
   const opened = await page.evaluate(() => {
-    const isBtn = (b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
+    const isBtn = (b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
       let card = b;
       while (card.parentElement && [...card.parentElement.querySelectorAll("button")].filter(isBtn).length === 1) card = card.parentElement;

@@ -987,9 +987,13 @@ try {
   }
   await tid(p, "mc-back").click(); await p.waitForTimeout(600);
   ok("All matches goes back to the list", await tid(p, "match-view").count() === 0 && await tid(p, `match-card-${fx.live}`).count() === 1);
-  // CRI-1.2: the card's sentence is the same function's, from the list's own read (no log): the toss it carries.
+  // CRI-1.2, slice 1: the row's sentence is the same function's, from the match's own log folded as Today folds it.
   const cardSays = await tid(p, `mc-card-status-${fx.live}`).innerText().catch(() => "");
-  ok(`...its card says where it stands, from the list's read ("${cardSays}")`, cardSays === "Hilton College 1XI won the toss and chose to bat", cardSays);
+  const rowInns = deriveMatch(fx.events[fx.live]).innings;
+  const needs = (rowInns[0]?.runs ?? 0) + 1 - (rowInns[1]?.runs ?? 0);
+  ok(`...its row says where it stands, from the log ("${cardSays}")`, new RegExp(`need ${needs} runs? off \\d+ balls?$`).test(cardSays), cardSays);
+  const rowScores = await tid(p, `match-card-${fx.live}`).locator('[data-part="score"]').allInnerTexts().catch(() => []);
+  ok(`...with both sides' scores ("${rowScores.join(" | ")}")`, rowScores.length === 2 && rowScores.every((t) => /^\d+\/\d+ · [\d.]+ overs?$/.test(t.trim())), rowScores);
 
   group("The innings break: the break card on Summary");
   ok("the second fixture opens", await openMatch(p, fx.brk));

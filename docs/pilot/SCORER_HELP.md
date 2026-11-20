@@ -8,7 +8,7 @@ Open `scrbrd.onrender.com/app`. Tap **Continue with Google**, or type your email
 
 ## Open the match
 
-Tap **Matches** (the menu, or a phone's bottom bar). On the fixture tap **Open live scorer →** if live, **Start scoring →** if not. Answer the sheets: **The toss** (winner, then **Bat** or **Bowl**), openers, **Opening bowler**. If a bar says **Can't score yet**, tap its button.
+Tap **Matches** (the menu, or a phone's bottom bar). On the fixture tap **Resume scoring** if live, **Start scoring** if not. Answer the sheets: **The toss** (winner, then **Bat** or **Bowl**), openers, **Opening bowler**. If a bar says **Can't score yet**, tap its button.
 
 ## Score a ball
 

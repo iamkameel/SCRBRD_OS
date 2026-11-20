@@ -116,7 +116,9 @@ group("the page offers nothing else that enters scoring");
   ok("the Match Centre's one gate is the fixture's own when signed in",
      /const scoresHere = \(m\) => \(signedIn\(\) \? mayEnterScoring\(profile\(\)\?\.assignments, m\)/.test(mc));
   ok("...the match page passes it", /const enters = scoresHere\(fresh\);/.test(mc) && /canScoreIt=\{enters\}/.test(mc));
-  ok("...and every fixture card's scorer button in the list asks it, and nothing else", /\(isLive\|\|m\.status==="upcoming"\)&&scoresHere\(m\)&&<Btn/.test(mc)
+  // Slice 1: the list's row is the match card, whose one action is the scorer's where scoresHere() offers it.
+  ok("...and every fixture card's scorer button in the list asks it, and nothing else",
+     /\(isLive\|\|m\.status==="upcoming"\)&&scoresHere\(m\)\s*\?\s*\{ label: isLive \? "Resume scoring" : "Start scoring", testid: `mc-score-\$\{m\.id\}`/.test(mc)
      && !/canScore\(role\)&&<Btn/.test(mc));
 }
 

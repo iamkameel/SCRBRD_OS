@@ -137,7 +137,8 @@ const PIN = new Map([
   ["Log in", { in: ["home/sections/Header.jsx"] }],
   ["Match Centre", { in: ["design/roles.js"] }],              // the nav label for "matches"
   ["More", { in: ["shell/MobileNav.jsx"] }],
-  ["Open match", { in: ["views/MatchCentreView.jsx"] }],
+  // The match card's action (redesign slice 1), named for the other side: "Open v Westville Boys' High 1XI".
+  ["Open v", { in: ["lib/matchCard.js"], part: "`Open v \\$\\{" }],
   ["Scorecard", { in: ["views/matchcentre/MatchView.jsx"] }], // a tab of the fixture's own screen
   // The publication panel and the ground display.
   ["Publish", { in: ["views/publication.jsx"] }],
@@ -183,7 +184,7 @@ const PIN = new Map([
   ["Home", { in: ["design/roles.js"] }],                      // the parent's bar
   ["Matches", { in: ["design/roles.js"] }],
   ["Family", { in: ["design/roles.js"] }],
-  ["Live", { in: ["views/family/cards.jsx"] }],               // the Home card's label
+  ["Live", { in: ["lib/matchCard.js"] }],                     // the match card's state line (slice 1), on the Home's live card
   ["Follow the match", { in: ["views/family/cards.jsx"] }],
   ["Live now", { in: ["views/family/matches.jsx"] }],
   ["Played", { in: ["views/family/matches.jsx"] }],
