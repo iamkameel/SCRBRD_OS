@@ -219,8 +219,10 @@ group("Q2  The scorer's part ends at the last ball; the coach confirms the resul
      RESULT_CONFIRMING_ROLES.join());
   ok("every confirming role holds scoring.finalise", RESULT_CONFIRMING_ROLES.every((r) => caps(r).includes("scoring.finalise")));
   const sql = readFileSync(join(ROOT, "db", "171_slice4_followups.sql"), "utf8");
-  const body = sql.slice(sql.indexOf("CREATE OR REPLACE FUNCTION app_can_but_scorer("), sql.indexOf("$$ LANGUAGE sql", sql.indexOf("CREATE OR REPLACE FUNCTION app_can_but_scorer(")));
-  const excluded = [...body.matchAll(/AND a\.role <> '([a-z]+)'/g)].map((m) => m[1]);
+  // db/171 builds app_can_but_scorer() from app_can()'s live body at the paste
+  // (the $copy$ block): the line it adds is the excluded roles.
+  const body = sql.slice(sql.indexOf("DO $copy$"), sql.indexOf("END $copy$;"));
+  const excluded = [...body.matchAll(/AND a\.role <> ''([a-z]+)''/g)].map((m) => m[1]);
   ok("db/171's app_can_but_scorer() excludes exactly these roles", excluded.sort().join() === [...RESULT_CONFIRM_EXCLUDED_ROLES].sort().join(),
      `${excluded.join()} vs ${RESULT_CONFIRM_EXCLUDED_ROLES.join()}`);
   ok("...and match_finalise() asks it, refusing coach_confirms",
