@@ -6580,10 +6580,13 @@ CREATE OR REPLACE FUNCTION _v112_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
     WHEN 'all_assignments' THEN (SELECT md5(string_agg(concat_ws('|', id, person_id, role, team_code, active, revoked_at), ';' ORDER BY id))
                                    FROM role_assignment)
     -- db/128 moved its day to sa_today(); read back on db/92's clock. db/169
-    -- stamps his own link by pupil_signin_stamp(); read back as db/92 wrote it.
-    WHEN 'grant_md5' THEN (SELECT md5(replace(replace(replace(prosrc, 'sa_today()', 'current_date'),
+    -- stamps his own link by pupil_signin_stamp(), under pupil_signin_terms_version(),
+    -- and (20 Nov, A) asks `player` for a boy too; read back as db/92 wrote it.
+    WHEN 'grant_md5' THEN (SELECT md5(replace(replace(replace(replace(prosrc, 'sa_today()', 'current_date'),
+          'IF r.role IN (''guardian'', ''selfaccess'', ''enquiry'', ''player'') AND v_player IS NULL THEN',
+          'IF r.role IN (''guardian'', ''selfaccess'', ''enquiry'') AND v_player IS NULL THEN'),
           '''self'', ''verified'', p_decider, now(), pupil_signin_stamp(v_player), '
-       || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN ''popia-2026-01'' END, '
+       || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN pupil_signin_terms_version() END, '
        || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN now() END, p_decider);',
           '''self'', ''verified'', p_decider, now(), ''granted'', ''popia-2026-01'', now(), p_decider);'),
           '  -- db/108: a pupil is a pupil OF A SIDE (role_assignment_player_team_scoped).' || chr(10)
