@@ -48872,14 +48872,16 @@ $m130$;
   --      longer adds it: (address) now holds db/168's arm beside the gate)
   --   Falsified again on 20 Nov, on the red-team's fixes (each a change to
   --   db/169 made as the owner inside a run of the section alone, red at its
-  --   own assertion, 25 changes):
+  --   own assertion, 26 changes):
   --   the gate without its no-boy arm            → (noboy) red: open
   --   the grant door without `player` in player_required
   --                                         → (noboy) red: granted
   --   yes_stands() without B's arm; the guardian's door not offering the
   --   carried-over stop                        → (carry) red at each
   --   the carry-over without its adult skip    → (carry) red: carried
-  --   the account trigger dropped              → (lapse) red
+  --   the account trigger dropped              → (lapse) red: the roster link
+  --   a disable counted as an end again (the branch and the trigger's
+  --   `active` column put back)                 → (lapse) red: it lapsed
   --   yes_stands() without pupil_signin_stayed() → (left) red
   --   the office's door not checking a signer given → (form) red (at the
   --                                           column's own CHECK)
