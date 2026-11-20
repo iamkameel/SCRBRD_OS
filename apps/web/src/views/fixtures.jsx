@@ -478,26 +478,36 @@ function RescheduleFixture({ match, grounds, onChanged }) {
  */
 const PRO_MODE_REFUSAL = {
   not_permitted: "Only this side's coach or the sports office can change how this fixture is scored.",
-  scoring_started: "Scoring has started, so the scorer chooses this on the pad now.",
+  scoring_started: "The toss is in, so the scorer chooses this on the pad now.",
   capture_profile_unknown: "That is not a way the pad can score.",
 };
 
+/** What the control says the fixture asks, by its stored profile (review N3). */
+const PRO_MODE_STATE = {
+  full: "The scorer's pad asks the shot and where it went on every ball. The scorer can still change this before the first ball.",
+  // Never set by this control: the route asks only full or nothing. Said as
+  // itself if the database ever holds it, never as "Off".
+  standard: "This fixture asks the pad for the shot and the zone it went to (Standard). Tick for every shot and exactly where it went, or untick for one tap a ball.",
+  off: "Off: the scorer's pad scores one tap a ball, runs, extras and wickets.",
+};
+
 function ProModeControl({ match, onChanged }) {
-  const [on, setOn] = useState(match.captureProfile === "full");
+  const [asked, setAsked] = useState(match.captureProfile === "full" || match.captureProfile === "standard" ? match.captureProfile : "off");
+  const on = asked === "full";
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
   const change = async (want) => {
     setSaid(""); setBusy(true);
     try {
       await api(`/api/fixtures/${match.id}/capture-profile`, { method: "POST", body: { captureProfile: want ? "full" : null } });
-      setOn(want);
+      setAsked(want ? "full" : "off");
       onChanged?.();
     } catch (e) {
       setSaid(PRO_MODE_REFUSAL[e?.code] ?? "That could not be saved. Try again.");
     } finally { setBusy(false); }
   };
   return (
-    <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="fixture-pro-mode" data-on={on ? "true" : "false"}>
+    <Card sx={{padding:"14px",marginBottom:"12px"}} data-testid="fixture-pro-mode" data-on={on ? "true" : "false"} data-asked={asked}>
       <label style={{display:"flex",gap:"10px",alignItems:"flex-start",minHeight:"44px",cursor:busy?"wait":"pointer"}}>
         <input type="checkbox" checked={on} disabled={busy} onChange={(e)=>change(e.target.checked)}
           data-testid="fixture-pro-mode-toggle" aria-describedby={`pro-mode-hint-${match.id}`}
@@ -505,9 +515,7 @@ function ProModeControl({ match, onChanged }) {
         <span style={{display:"grid",gap:"4px"}}>
           <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Record every shot (Pro mode)</span>
           <span id={`pro-mode-hint-${match.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>
-            {on
-              ? "The scorer's pad asks the shot and where it went on every ball. The scorer can still change this before the first ball."
-              : "Off: the scorer's pad scores one tap a ball, runs, extras and wickets."}
+            {PRO_MODE_STATE[asked]}
           </span>
         </span>
       </label>

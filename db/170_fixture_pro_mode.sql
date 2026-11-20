@@ -30,30 +30,46 @@
 --     door: the fixture's coach does not hold fixture.update (db/130, db/165
 --     say so), so match_update refuses him the column. In order:
 --       1. signed in, and at the HOME side (match_school, match_team) holds
---          team.select (the coach and the team manager who pick its side)
+--          team.select (the coach and the team manager who pick its side;
+--          Kameel, 20 Nov: the team manager too)
 --          or fixture.update (the office: director of sport, sports admin);
 --          else not_permitted. An unknown fixture says the same. The away
 --          school's coach, a scorer, a parent, a coach of another side: no.
 --          A pad credential's app_can() admits neither (db/50).
 --       2. a profile outside the vocabulary: capture_profile_unknown.
---       3. the fixture has a log (any ball_event row: the toss's
---          innings_start is where the pad declares): scoring_started.
+--       3. the toss is in (a match_toss row) or the fixture has a log (any
+--          ball_event row: the toss's innings_start is where the pad
+--          declares): scoring_started.
 --       4. the same as stored: (true, unchanged), nothing written.
 --       Then the one column, by an UPDATE of the table: (true, set).
 --   function match_capture_profile_frozen(), trigger
 --     match_capture_profile_frozen BEFORE UPDATE OF capture_profile ON match:
---     new; a pinned definer, executable by scrbrd_app alone. Once the
---     fixture has a log, its capture profile is not changed by anybody (the
---     office's plain UPDATE, a definer, the owner): the pad has declared, and
---     a request after it would say something the innings does not. Refused
---     as check_violation, constraint match_capture_profile_scored.
+--     new; a pinned definer, executable by scrbrd_app alone. Once the toss
+--     is in or the fixture has a log, its capture profile is not changed by
+--     anybody (the office's plain UPDATE, a definer, the owner): the pad
+--     reads the request fresh as it declares at the toss (engine.jsx), and a
+--     request after it would say something the innings does not. Refused
+--     as check_violation, constraint match_capture_profile_scored. Only a
+--     change of capture_profile is asked; every other column of a scored
+--     fixture moves as it did.
+--   The column is what was ASKED, never what was declared: the log's
+--   innings_start is the declaration, and the scorer may change it on the
+--   openers sheet before the first ball.
+--   No audit row: like a reschedule (fixtures.amend), a request is not
+--   audited; the declaration the pad writes is in the log, with its scorer.
 -- No table, policy, capability or role; no shipped function body is
 -- re-emitted; packages/policy is unchanged. A second paste changes nothing.
 --
+-- PASTE WITH NO MATCH LIVE. ADD COLUMN and ADD CONSTRAINT take ACCESS
+-- EXCLUSIVE on match until the paste commits; while it waits (lock_timeout,
+-- ten seconds) every read of match queues behind it, and a live pad's sync
+-- stalls for up to ten seconds and then retries. Between matches.
+
 -- Its proof is db/99 §145; the walks are smoke-browser-padfeel (a fixture
 -- with Pro mode opens asking the shot and the field; one without opens on
 -- one tap) and smoke-browser-fixture-create.
--- Must follow db/169 (Migration B) in services/api/expected-migrations.json.
+-- Does not depend on db/169 (Migration B); only its place in
+-- services/api/expected-migrations.json follows 169's.
 
 DO $guard$
 BEGIN
@@ -62,9 +78,9 @@ BEGIN
      OR to_regprocedure('match_school(uuid)') IS NULL OR to_regprocedure('match_team(uuid)') IS NULL THEN
     RAISE EXCEPTION 'db/170 needs app_can(), app_user_id(), match_school() and match_team() (db/02, db/09): paste them first';
   END IF;
-  IF to_regclass('public.ball_event') IS NULL
+  IF to_regclass('public.ball_event') IS NULL OR to_regclass('public.match_toss') IS NULL
      OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ball_event_capture_profile') THEN
-    RAISE EXCEPTION 'db/170 needs ball_event and its capture profile (db/07): paste it first';
+    RAISE EXCEPTION 'db/170 needs ball_event and its capture profile (db/07) and match_toss (db/02): paste them first';
   END IF;
   IF to_regprocedure('api_role_reach(name)') IS NULL THEN
     RAISE EXCEPTION 'db/170 needs db/157 (api_role_reach): paste it first';
@@ -83,21 +99,23 @@ ALTER TABLE match DROP CONSTRAINT IF EXISTS match_capture_profile;
 ALTER TABLE match ADD CONSTRAINT match_capture_profile
   CHECK (capture_profile IS NULL OR capture_profile IN ('full', 'standard', 'quick'));
 COMMENT ON COLUMN match.capture_profile IS
-  'The capture profile the fixture asks the pad to declare at the toss (db/170): full is Pro mode, NULL asks nothing (the pad declares quick).';
+  'What the fixture ASKED the pad to declare at the toss (db/170): full is Pro mode, NULL asks nothing (the pad declares quick). Never what was declared: that is the innings_start in ball_event.';
 
 
 -- ══════════════════════════════════════════════════════════════════
--- §2 · Fixed once the pad has declared
+-- §2 · Fixed from the toss
 -- ══════════════════════════════════════════════════════════════════
 /**
- * A fixture with a log keeps the capture profile it had: the pad declared
- * it on the first innings_start, and a later request would say something the
- * innings does not. For every caller, the owner and a definer included.
+ * A fixture whose toss is in, or with a log, keeps the capture profile it
+ * had: the pad declares it on the first innings_start, from the request as it
+ * reads it at the toss, and a later request would say something the innings
+ * does not. For every caller, the owner and a definer included.
  */
 CREATE OR REPLACE FUNCTION match_capture_profile_frozen() RETURNS trigger AS $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
-    RAISE EXCEPTION 'Scoring has started on this fixture, so how it is scored is the scorer''s now: the innings has declared it.'
+  IF EXISTS (SELECT 1 FROM match_toss t WHERE t.match_id = NEW.id)
+     OR EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = NEW.id) THEN
+    RAISE EXCEPTION 'The toss is in on this fixture, so how it is scored is the scorer''s now: the innings declares it.'
       USING ERRCODE = 'check_violation', CONSTRAINT = 'match_capture_profile_scored';
   END IF;
   RETURN NEW;
@@ -124,6 +142,8 @@ DECLARE
 BEGIN
   -- 1. Who, asked before anything is locked or read: a caller who may not
   --    ask learns nothing, not even that the fixture exists.
+  --    team.select, so the side's team manager asks as its coach does
+  --    (Kameel, 20 Nov: the team manager too); fixture.update, the office.
   IF app_user_id() IS NULL OR p_match IS NULL
      OR NOT (coalesce(app_can('team.select', match_school(p_match), match_team(p_match), NULL, p_match), false)
              OR coalesce(app_can('fixture.update', match_school(p_match), match_team(p_match), NULL, p_match), false)) THEN
@@ -135,8 +155,10 @@ BEGIN
   END IF;
   SELECT * INTO m FROM match x WHERE x.id = p_match FOR UPDATE;
   IF NOT FOUND THEN RETURN QUERY SELECT false, 'not_permitted'::text; RETURN; END IF;
-  -- 3. The pad has declared (the trigger refuses it too; said here as a code).
-  IF EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = p_match) THEN
+  -- 3. The toss is in, or the pad has declared (the trigger refuses it too;
+  --    said here as a code).
+  IF EXISTS (SELECT 1 FROM match_toss t WHERE t.match_id = p_match)
+     OR EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = p_match) THEN
     RETURN QUERY SELECT false, 'scoring_started'::text; RETURN;
   END IF;
   -- 4. Asked already.
@@ -201,6 +223,11 @@ BEGIN
   END LOOP;
   IF EXISTS (SELECT 1 FROM api_role_reach('public') x WHERE x ~ 'match_capture_(request|profile_frozen)\(') THEN
     RAISE EXCEPTION 'db/170: PUBLIC reaches one of db/170''s functions';
+  END IF;
+  -- Fixed from the toss as well as the log, in the trigger and the door.
+  IF position('match_toss' IN (SELECT prosrc FROM pg_proc WHERE oid = 'match_capture_profile_frozen()'::regprocedure)) = 0
+     OR position('match_toss' IN (SELECT prosrc FROM pg_proc WHERE oid = 'match_capture_request(uuid,text)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'db/170: the request is not fixed from the toss';
   END IF;
   -- The door asks at the home side, both capabilities, before it locks.
   SELECT prosrc INTO v FROM pg_proc WHERE oid = 'match_capture_request(uuid,text)'::regprocedure;

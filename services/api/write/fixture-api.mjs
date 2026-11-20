@@ -46,9 +46,9 @@ const STATUS = ["scheduled", "live", "complete", "abandoned"];
 // status_transition below in its own words.
 const AMEND_STATUS = [...STATUS, "postponed"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// What a fixture may ask the pad to declare (db/170): ball_event's own
-// vocabulary (db/07), from the scoring package so the two never part.
-const CAPTURE_PROFILES = Object.values(CAPTURE_PROFILE);
+// What a coach may ask the pad to declare (db/170): Pro mode, the full
+// profile (db/07's vocabulary, from the scoring package so the two never part).
+const PRO_MODE = CAPTURE_PROFILE.FULL;
 
 /**
  * A refusal as the route answers it: 23514 is one of the fixture's own rules
@@ -251,6 +251,7 @@ export function fixtureRoutes({ pool, secret }) {
     }),
 
     // POST /api/fixtures/:id/capture-profile { captureProfile: "full" | null }
+    //   (anything else, or a body that is not an object: 400)
     //   → { id, captureProfile, state: set | unchanged }
     //
     // Pro mode (db/170; the redesign's question 1): the fixture's coach, or
@@ -262,10 +263,14 @@ export function fixtureRoutes({ pool, secret }) {
     //   refusals: capture_profile_unknown (400), not_permitted (403),
     //             scoring_started (409)
     captureProfile: handle(async (req) => {
-      const b = req.body || {};
-      if (!("captureProfile" in b)) throw err("capture_profile_required");
+      const b = req.body;
+      // A body that is not an object (a bare number or string) is a 400, never
+      // a TypeError's 500 (review N4).
+      if (b == null || typeof b !== "object" || Array.isArray(b) || !("captureProfile" in b)) throw err("capture_profile_required");
       const profile = b.captureProfile ?? null;
-      if (profile !== null && !CAPTURE_PROFILES.includes(profile)) throw err("capture_profile_unknown");
+      // Pro mode or nothing: the coach's control is two-state (review N3).
+      // The column takes the log's whole vocabulary; the route asks only full.
+      if (profile !== null && profile !== PRO_MODE) throw err("capture_profile_unknown");
       if (!UUID.test(String(req.params.id ?? ""))) throw err("not_permitted", 403);
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const r = (await client.query(`select * from match_capture_request($1, $2)`, [req.params.id, profile])).rows[0];
