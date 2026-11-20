@@ -2581,7 +2581,7 @@ yet pasted. Before it, on each database:
 4. After it, `SELECT count(*) FROM app_user u WHERE u.active AND NOT
    pupil_signin_open(u.id);` equals step 2's `would_close`.
 
-Hash to check: `sha256 39529fd706e84b898191d04c725ef8ab9cc692d6bb0f82a8c40abde7367a89bc`.
+Hash to check: `sha256 3b3d01eb557820bbb26718ddaa73753d28ef7212c8d146791dfe704796084e24`.
 <!-- ── end db/169 ── -->
 
 ### 5 · Cloud Run, the first time

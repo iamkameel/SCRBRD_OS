@@ -121,7 +121,7 @@
 --       version roll is not a no (F). The gate does not depend on it: a
 --       link not live closes at once.
 --   + pupil_signin_account_ended (trigger on app_user): his own account
---       ending (shut, removed, or its roster link moved) is recorded as the
+--       ending (removed, or its roster link moved) is recorded as the
 --       school's yes lapsing (C).
 --   ~ app_can(), app_holds(), app_enrolled()  db/50's and db/81's bodies as
 --       db/128 left them (sa_today()), with one line each:
@@ -1048,8 +1048,9 @@ CREATE OR REPLACE TRIGGER pupil_signin_link_no
   FOR EACH ROW EXECUTE FUNCTION pupil_signin_link_no();
 
 -- His account (C). AFTER UPDATE or DELETE of an account that answered as a
--- boy: shut (active true to false: db/85's disable, db/168's removal),
--- deleted, or its roster link moved or cleared. Recorded as the school's
+-- boy: deleted, or its roster link moved or cleared. Disabling it is not
+-- its end (Kameel, on the review's S-2; ACCOUNT_LIFECYCLE D1: "Disabling
+-- stops sign-in and keeps everything else"). Recorded as the school's
 -- yes lapsing ('lapsed'), where one stands for that boy, so opening an
 -- account for him again needs a new tick or a guardian's tap.
 CREATE OR REPLACE FUNCTION pupil_signin_account_ended() RETURNS trigger AS $$
@@ -1057,14 +1058,6 @@ DECLARE v_boys uuid[];
 BEGIN
   IF TG_OP = 'DELETE' THEN
     v_boys := ARRAY[OLD.player_id];
-  -- S-2 (for Kameel): an account shut (db/85's disable) counts as ended.
-  -- If he decides it does not (ACCOUNT_LIFECYCLE D1), remove this branch
-  -- and `active, ` from the trigger's column list below; nothing else.
-  ELSIF OLD.active AND NOT NEW.active THEN
-    -- Shut: the boy of its roster link, and of its own links.
-    v_boys := ARRAY[OLD.player_id] || ARRAY(
-      SELECT g.player_id FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
-       WHERE a.person_id = OLD.id AND a.active AND g.relationship = 'self');
   ELSIF NEW.player_id IS DISTINCT FROM OLD.player_id THEN
     -- Its roster link moved or cleared: the boy it answered as.
     v_boys := ARRAY[OLD.player_id];
@@ -1084,7 +1077,7 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 REVOKE ALL ON FUNCTION pupil_signin_account_ended() FROM PUBLIC;
 
 CREATE OR REPLACE TRIGGER pupil_signin_account_ended
-  AFTER UPDATE OF active, player_id OR DELETE ON app_user
+  AFTER UPDATE OF player_id OR DELETE ON app_user
   FOR EACH ROW EXECUTE FUNCTION pupil_signin_account_ended();
 
 

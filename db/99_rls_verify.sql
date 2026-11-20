@@ -16514,16 +16514,19 @@ BEGIN
 
   ELSIF p_case = 'lapse' THEN
     -- (lapse) C: the school's yes lapses when his own account ends. The form
-    -- opens him; his account shut and opened again (db/85's disable): closed,
-    -- the lapse on record, until a new tick. His roster link cleared and set
-    -- again: the same. A guardian's yes is hers, and does not lapse with it.
+    -- opens him; his account disabled and enabled again (db/85; Kameel, on
+    -- the review's S-2: ACCOUNT_LIFECYCLE D1, not an end): still open, nothing
+    -- recorded. His roster link cleared and set again: closed, the lapse on
+    -- record. A guardian's yes is hers, and does not lapse with it.
     K := _v169_pupil('lapse', 15); B := _v169_boy(K);
     PERFORM _as(REG);
     PERFORM pupil_signin_office_set(B, true, 'V164 Signer', sa_today() - 7);
     PERFORM _assert(_v169_open(K), '§142 (lapse): the form did not open him (the setup)');
     PERFORM _v169_shut(K, false); PERFORM _v169_shut(K, true);
-    PERFORM _assert(NOT _v169_open(K) AND NOT _v169_in_force(B) AND _v169_record(B) ~ 'no/lapsed/',
-                    format('§142 (lapse): his account shut and opened again kept the school''s yes (%s)', _v169_record(B)));
+    PERFORM _assert(_v169_open(K) AND _v169_record(B) !~ 'no/lapsed/',
+                    format('§142 (lapse): disabled and enabled again, the school''s yes lapsed (%s)', _v169_record(B)));
+    PERFORM _v169_roster_link(K, NULL); PERFORM _v169_roster_link(K, B);
+    PERFORM _assert(NOT _v169_open(K) AND _v169_record(B) ~ 'no/lapsed/', format('§142 (lapse): his roster link moved off him kept the school''s yes (%s)', _v169_record(B)));
     PERFORM _as(K);
     PERFORM _assert(_v168_sweep() = _v169_own_rows(app_user_id()) AND NOT app_enrolled(), '§142 (lapse): after his account ended, he reads');
     PERFORM _as(REG);
@@ -48791,8 +48794,9 @@ $m130$;
   --               day, when given, are checked and kept; a refusal records
   --               nothing; without them the tick is recorded; the office
   --               reads the signer, his guardian only the day
-  --   (lapse)     C: his account shut and opened again, or its roster link
-  --               moved off him: the school's yes lapses; a guardian's does not
+  --   (lapse)     C: its roster link moved off him: the school's yes lapses;
+  --               disabled and enabled again (D1): it does not; a guardian's
+  --               does not lapse
   --   (left)      C: he left the school since the yes (back or not), or left
   --               today: the school's yes lapses; a side move does not
   --   (transfer)  C (the review's S-1): moved to another school's roster, the
