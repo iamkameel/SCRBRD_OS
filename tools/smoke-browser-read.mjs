@@ -2015,6 +2015,10 @@ try {
   // except the one branch that checked for "ok". A person whose request
   // failed saw a button that had stopped doing anything, with no way to
   // tell why, and nothing stopped them submitting it again.
+  //
+  // The request is a coach's: since Q10 (db/168) "I just want to follow
+  // matches" follows the school at once and sends no request, so the
+  // follower's own failed POST (/api/follows) is walked after it, below.
   group("A failed submission is named on screen, and the form still works after");
   {
     const fa = await stranger("F Ailer");
@@ -2025,7 +2029,9 @@ try {
       return route.continue();
     });
     await signInNew(s.page, fa.email);
-    await joinAs(s.page, "follower");
+    await joinAs(s.page, "staff");
+    await s.page.locator('[data-testid="join-staff-role"]').waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+    await s.page.locator('[data-testid="join-staff-role"]').selectOption("coach").catch(() => {});
     await s.page.locator('[data-testid="join-send"]').click({ timeout: 4000 }).catch(() => {});
     await s.page.locator('[data-testid="join-problem"]').waitFor({ state: "visible", timeout: 6000 }).catch(() => {});
     ok("the refusal is named on the form, not left silent",
@@ -2039,6 +2045,30 @@ try {
     ok("the retry actually reaches the server this time",
        await s.page.locator('[data-testid="join-sent"]').count() === 1);
     await s.ctx.close();
+
+    // The follower's Follow (Q10): a failed follow is named too, and Follow works again.
+    const ff = await stranger("F Ollow");
+    const f = await open();
+    let failFollow = true;
+    await f.page.route("**/api/follows", (route) => {
+      if (route.request().method() === "POST" && failFollow) { failFollow = false; return route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"try_again"}' }); }
+      return route.continue();
+    });
+    await signInNew(f.page, ff.email);
+    await joinAs(f.page, "follower");
+    await f.page.locator('[data-testid="join-follow"]').click({ timeout: 4000 }).catch(() => {});
+    await f.page.locator('[data-testid="join-problem"]').waitFor({ state: "visible", timeout: 6000 }).catch(() => {});
+    ok("a follow that failed is named on the form, not left silent",
+       await f.page.locator('[data-testid="join-problem"]').isVisible());
+    ok("...and the form has not moved on to You follow",
+       await f.page.locator('[data-testid="join-followed"]').count() === 0);
+    ok("Follow works again — this was not a dead end",
+       await f.page.locator('[data-testid="join-follow"]').isEnabled().catch(() => false)
+       && await f.page.locator('[data-testid="join-follow"]').click({ timeout: 4000 }).then(() => true, () => false));
+    await f.page.locator('[data-testid="join-followed"]').waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+    ok("the second Follow reaches the server, and he follows the school",
+       await f.page.locator('[data-testid="join-followed"]').count() === 1);
+    await f.ctx.close();
     await owner1.end().catch(() => {});
   }
 
