@@ -231,10 +231,17 @@ try {
   // ball_log_repin() recorded: read only by ball_log_pinned() (SECURITY
   // DEFINER), written only by ball_log_repin(); no application privilege
   // and no policy, by design.
+  // pupil_claim (db/168, SCRBRD-140 Migration A) is a pupil's "I am a pupil
+  // here": RLS on, nothing granted to scrbrd_app, read and written only
+  // through db/168's SECURITY DEFINER functions (pupil_claim_send(),
+  // my_pupil_state(), the office's pupil_claims() and its decisions, the
+  // purge), which decide who sees a row.
+  // No policy, by design, like pending_claim and school_register.
   const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
                                           "auth_identity", "pending_claim", "auth_epoch", "auth_session",
                                           "school_register", "request_cooldown", "passport_union_read",
-                                          "milestone_family_notice", "recognition_audit", "ball_log_pin"]);
+                                          "milestone_family_notice", "recognition_audit", "ball_log_pin",
+                                          "pupil_claim"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

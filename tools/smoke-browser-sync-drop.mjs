@@ -232,10 +232,10 @@ const onPad = async () => {
 const openFixture = async () => {
   await page.locator("nav button", { hasText: /Match Centre|^\s*Matches/ }).first().click({ timeout: 6000 });
   await afterReads(page, 1200);
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "")),
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "")),
     null, { timeout: 10000 }).catch(() => {});
   const opened = await page.evaluate(() => {
-    const isBtn = (/** @type {Element} */ b) => /Start Scoring|Open Live Scorer/i.test(b.textContent || "");
+    const isBtn = (/** @type {Element} */ b) => /Start Scoring|Open Live Scorer|Resume Scoring/i.test(b.textContent || "");
     for (const b of [...document.querySelectorAll("button")].filter(isBtn)) {
       let card = /** @type {Element} */ (b);
       while (card.parentElement && [...card.parentElement.querySelectorAll("button")].filter(isBtn).length === 1) card = card.parentElement;

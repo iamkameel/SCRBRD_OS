@@ -1,7 +1,7 @@
 /**
  * The parent's action list, phase A0 (docs/design/GA-I20_parent_action_list.md
  * §2, §4, §6, §7): R1 (an answer is owed) and R2 (answer again), the row, the
- * fourteen-day fold and the count line with its "Could not read …". Hand-built
+ * fourteen-day fold and the count line with its "Couldn't load …". Hand-built
  * fixtures, no DOM, no database, no clock (the clock is passed in).
  *
  * The browser walk (tools/smoke-browser-read.mjs, the parent's list) holds the
@@ -121,7 +121,7 @@ group("A read that failed is a row; an empty read is not (I08)");
 {
   const matches = [SAT, SUN];
   const failed = todoOf({ child: ROHAN, matches, answers: { sat: null, sun: [row("p-rohan", null)] }, now: NOW });
-  ok("a null read gives a 'Could not read …' row in its own place, naming the fixture", failed.rows.some((r) => r.state === "could_not_read" && r.fact === "Could not read the answers for Sat v Kearsney College 1st XI"), failed.rows);
+  ok("a null read gives a 'Couldn't load …' row in its own place, naming the fixture", failed.rows.some((r) => r.state === "could_not_read" && r.fact === "Couldn't load the answers for Sat v Kearsney College 1st XI"), failed.rows);
   ok("...with the one door of trying again", failed.rows.find((r) => r.state === "could_not_read").door.kind === "retry");
   ok("...the count keeps the rows that answered and says so: '1 to do · 1 read failed'", failed.open === 1 && failed.unread === 1 && failed.line === "1 to do · 1 read failed", failed.line);
   ok("...and it is not the same as clear", !failed.clear);
@@ -133,7 +133,7 @@ group("A read that failed is a row; an empty read is not (I08)");
   ok("an empty read (no roster rows at all) gives no row", empty.rows.length === 0 && empty.unread === 0);
   ok("...it is a read that answered: 'Nothing to do for R Pillay'", empty.line === "Nothing to do for R Pillay" && empty.clear, empty.line);
   const gone = todoOf({ child: ROHAN, matches: null, answers: {}, now: NOW });
-  ok("the fixture list itself failing is a row, and never 'Nothing to do'", gone.rows.length === 1 && gone.rows[0].fact === "Could not read the fixtures" && gone.line === "0 to do · 1 read failed" && !gone.clear, gone.line);
+  ok("the fixture list itself failing is a row, and never 'Nothing to do'", gone.rows.length === 1 && gone.rows[0].fact === "Couldn't load the fixtures" && gone.line === "0 to do · 1 read failed" && !gone.clear, gone.line);
   ok("...it has no door to try again here (the Home's own list is read once)", gone.rows[0].door === null);
   const reading = todoOf({ child: ROHAN, matches, answers: { sat: [row("p-rohan", null)] }, now: NOW });
   ok("a read not answered yet: 'Reading…', with the rows that have arrived, and never 'Nothing to do'", reading.line === "Reading…" && reading.reading && reading.rows.length === 1 && !reading.clear, reading.line);
@@ -251,7 +251,7 @@ group("R3: a seat to confirm again, his and nobody else's");
   }
   ok("the other parent's reconfirm clears it: the read says confirmed, and the row is gone", todoOf(quiet({ lifts: { sat: [offer({ mySeats: [seat("p-rohan", "confirmed")] })] } })).clear);
   ok("a lifts read that failed is a row with a retry, in the fixture's place", rulesOf(todoOf(quiet({ lifts: { sat: null } }))) === "unread:lifts:sat"
-     && todoOf(quiet({ lifts: { sat: null } })).rows[0].fact === "Could not read the lifts for Sat v Kearsney College 1st XI");
+     && todoOf(quiet({ lifts: { sat: null } })).rows[0].fact === "Couldn't load the lifts for Sat v Kearsney College 1st XI");
   ok("a lifts read not answered yet: 'Reading…'", todoOf(quiet({ lifts: {} })).line === "Reading…");
 }
 
@@ -385,7 +385,7 @@ group("What you have agreed: the version, the time and the giver, in the server'
   const off = recordOf({ child: ROHAN_G, now: NOW, consents: [{ kind: "health", playerId: "p-rohan", relation: "guardian", moduleOn: false, state: "not_answered" }], publicName: OFF });
   ok("the module off: no health monitoring line at all (switched off is hidden); no public-name line where the read is not hers",
      off.lines.map((l) => `${l.label}: ${l.words}`).join("|") === "The school's terms: agreed", off.lines);
-  ok("a read failing is said as one", recordOf({ child: ROHAN_G, now: NOW, consents: null, publicName: null }).lines.filter((l) => /^Could not read/.test(l.words)).length === 2);
+  ok("a read failing is said as one", recordOf({ child: ROHAN_G, now: NOW, consents: null, publicName: null }).lines.filter((l) => /^Couldn't load/.test(l.words)).length === 2);
   const ending = recordOf({ child: { ...ROHAN_G, until: "2026-10-30" }, now: NOW, consents: [{ kind: "health", playerId: "p-rohan", relation: "guardian", adult: true, moduleOn: true, state: "given" }] });
   ok("the link ending within thirty days, and an adult's consents his own: two information lines, no row",
      ending.info.join("|") === "Rohan is eighteen: these consents are Rohan's to give. You may still say no.|Your link to Rohan ends on 30 Oct 2026. After that the record is Rohan's own.", ending.info);

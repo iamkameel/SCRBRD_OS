@@ -25,9 +25,14 @@ import { confirmFollow, dismissFollow } from "../lib/follow.js";
  *   followed  useFollowed()'s answer
  *   lead      drawn as the screen's first block (a followed school is live,
  *             or a link's question waits)
+ *   onAskView Q10 (db/168): "Ask the school for its signed-in view" on each
+ *             school's row, which sends the spectator request the join form
+ *             used to (the no-school home's; never a pupil's basic view,
+ *             which asks for nothing). Omitted, no such button.
+ *   viewAsk   its answer: { id, ok, words } for the school last asked
  */
-export function FollowedSchools({ followed, lead = false }) {
-  const { loading, failed, schools, data, note, ask, unfollow } = followed;
+export function FollowedSchools({ followed, lead = false, onAskView = null, viewAsk = null }) {
+  const { loading, failed, schools, data, note, ask, unfollow, reload } = followed;
   const [busy, setBusy] = useState(/** @type {string | null} */ (null));
   const [problem, setProblem] = useState("");
   const [answering, setAnswering] = useState(false);
@@ -73,7 +78,13 @@ export function FollowedSchools({ followed, lead = false }) {
       ) : (
         <>
           {data?.fixtures === null && !failed && <p data-testid="followed-off" style={{ ...T.role.body, margin: "0 0 12px", color: T.content.secondary }}>Match pages are switched off on SCRBRD just now.</p>}
-          {failed && !data && <p role="status" data-testid="followed-failed" style={{ ...T.role.body, margin: "0 0 12px", color: T.content.secondary }}>Could not load today's matches. They show here when the connection is back.</p>}
+          {failed && !data && (
+            <div role="status" data-testid="followed-failed" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: T.space.md, margin: "0 0 12px" }}>
+              <p style={{ ...T.role.body, margin: 0, color: T.content.secondary }}>Couldn't load today's matches. They show here when the connection is back.</p>
+              {reload && <button type="button" onClick={reload} data-testid="followed-retry" className="pressBtn" style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill,
+                border: `1px solid ${T.line.normal}`, background: "transparent", color: T.content.primary, fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, cursor: "pointer" }}>Retry</button>}
+            </div>
+          )}
           {data?.fixtures && list.length === 0 && (
             <p data-testid="followed-quiet" style={{ ...T.role.body, margin: "0 0 12px", color: T.content.secondary }}>No matches listed today for the schools you follow.</p>
           )}
@@ -86,13 +97,27 @@ export function FollowedSchools({ followed, lead = false }) {
             {schools.map((s) => (
               <li key={s.id} data-testid={`followed-school-${s.code}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
                 <span style={{ ...T.role.body, color: T.content.primary, fontWeight: 600, minWidth: 0, overflowWrap: "anywhere" }}>{s.name}</span>
-                <button type="button" className="pressBtn" data-testid={`unfollow-${s.code}`} disabled={busy === s.id} onClick={() => stop(s.id, s.name)}
-                  aria-label={`Stop following ${s.name}`}
-                  style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
-                    color: T.content.secondary, cursor: busy === s.id ? "not-allowed" : "pointer", opacity: busy === s.id ? 0.5 : 1,
-                    fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
-                  {busy === s.id ? "Stopping…" : "Stop following"}
-                </button>
+                <span style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {onAskView && !(viewAsk?.id === s.id && viewAsk.ok) && (
+                    <button type="button" className="pressBtn" data-testid={`ask-view-${s.code}`} onClick={() => onAskView(s)}
+                      aria-label={`Ask ${s.name} for its signed-in view`}
+                      style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
+                        color: T.content.secondary, cursor: "pointer", fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
+                      Ask the school for its signed-in view
+                    </button>
+                  )}
+                  <button type="button" className="pressBtn" data-testid={`unfollow-${s.code}`} disabled={busy === s.id} onClick={() => stop(s.id, s.name)}
+                    aria-label={`Stop following ${s.name}`}
+                    style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
+                      color: T.content.secondary, cursor: busy === s.id ? "not-allowed" : "pointer", opacity: busy === s.id ? 0.5 : 1,
+                      fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
+                    {busy === s.id ? "Stopping…" : "Stop following"}
+                  </button>
+                </span>
+                {viewAsk?.id === s.id && (
+                  <span role={viewAsk.ok ? "status" : "alert"} data-testid={`ask-view-said-${s.code}`}
+                    style={{ ...T.role.body, flexBasis: "100%", fontSize: "13px", color: viewAsk.ok ? T.content.secondary : T.semantic.criticalText }}>{viewAsk.words}</span>
+                )}
               </li>
             ))}
           </ul>

@@ -65,7 +65,7 @@ function ProfilesView({ role, profileTarget, onClearTarget, addressed = null, on
   // form, filtered per player where the career tab draws it. No mock
   // fallback exists for this resource (see up48): a signed-out session gets
   // an honest "sign in" line rather than an invented figure.
-  const DISMISSAL_BREAKDOWN = useLive("dismissal_breakdown", role);
+  const DISMISSAL_BREAKDOWN = useLive("dismissal_breakdown", role, nonce);
   const [cat,     setCat]     = useState("players");   // players | coaches | staff
   const [selId,   setSelId]   = useState(profileTarget || null);
   const [tab,     setTab]     = useState("overview");
@@ -321,7 +321,7 @@ function ProfilesView({ role, profileTarget, onClearTarget, addressed = null, on
                     second gate drawn here. */}
                 <DismissalMethodCard
                   title="DISMISSALS BY METHOD" testId="dismissal-breakdown-batting" color={D.rose}
-                  live={DISMISSAL_BREAKDOWN} playerId={p.id} side="batting"
+                  live={DISMISSAL_BREAKDOWN} onRetry={retry} playerId={p.id} side="batting"
                   emptyMessage="No dismissals yet."/>
                 {p.wkts>0&&(
                   <Card sx={{padding:"14px"}}>
@@ -357,7 +357,7 @@ function ProfilesView({ role, profileTarget, onClearTarget, addressed = null, on
                 {p.wkts>0&&(
                   <DismissalMethodCard
                     title="WICKETS BY METHOD" testId="dismissal-breakdown-bowling" color={D.violet}
-                    live={DISMISSAL_BREAKDOWN} playerId={p.id} side="bowling"
+                    live={DISMISSAL_BREAKDOWN} onRetry={retry} playerId={p.id} side="bowling"
                     emptyMessage="No wickets yet."/>
                 )}
               </div>
@@ -776,7 +776,8 @@ const FAMILY_TONE = themed(() => ({ honour:D.amber, cap:D.sky, milestone:D.emera
  * would drift the first time either was touched.
  */
 function CareerWagonWheel({ player, role }) {
-  const { rows, loading, error } = useLive("player_shot_points", role, 0, { playerId: player?.id });
+  const [shotNonce, setShotNonce] = useState(0);
+  const { rows, loading, error } = useLive("player_shot_points", role, shotNonce, { playerId: player?.id });
   // The bowlers this boy has actually faced, and their names — a read this
   // panel needs only for the filter's labels, since player_shot_points itself
   // carries bowlerId but no name (SCRBRD-102). batterId narrows it to rows
@@ -813,8 +814,8 @@ function CareerWagonWheel({ player, role }) {
       window: dateWindow(rows.map((b) => b.startsAt)),
       denominator: { n: rows.length, unit: "shot with a position", plural: "shots with a position" } } : null}>
       <div data-testid="career-wagon-wheel">
-        {loading ? <EmptyState loading/>
-         : error ? <EmptyState error/>
+        {loading ? <EmptyState loading what="the shots"/>
+         : error ? <EmptyState error={error} what="the shots" onRetry={() => setShotNonce((n) => n + 1)}/>
          : <ShotWheel inn={inn} playerId={player.id} title="Where he scores — every innings"/>}
       </div>
       {/* The same fetch, drawn twice more: as a surface, so forty spokes read
@@ -965,7 +966,7 @@ const dismissalMethodLabel = (m) => m == null ? "Method not recorded" : (DISMISS
  * lib/live.js). CONVENTION: no mock fallback for a derived match statistic —
  * signed out, this says so rather than drawing an invented bar.
  */
-function DismissalMethodCard({ title, testId, color, live, playerId, side, emptyMessage }) {
+function DismissalMethodCard({ title, testId, color, live, playerId, side, emptyMessage, onRetry }) {
   if (!signedIn()) {
     return (
       <Card sx={{padding:"14px"}} data-testid={testId}>
@@ -985,8 +986,8 @@ function DismissalMethodCard({ title, testId, color, live, playerId, side, empty
   return (
     <Card sx={{padding:"14px"}} data-testid={testId}>
       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",marginBottom:"12px"}}>{title}</div>
-      {loading ? <EmptyState loading/>
-       : error ? <EmptyState error/>
+      {loading ? <EmptyState loading what="dismissals"/>
+       : error ? <EmptyState error={error} what="dismissals" onRetry={onRetry}/>
        : !sorted.length ? <EmptyState message={emptyMessage}/>
        : <>{sorted.map((r)=>{
           const pct = total>0 ? Math.round((r.count/total)*100) : 0;

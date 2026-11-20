@@ -10,7 +10,7 @@
  *
  * Held here:
  *
- *   - every state, each with its one sentence, "Reading …" / "Could not read …"
+ *   - every state, each with its one sentence, "Reading …" / "Couldn't load …"
  *     / "No … on record", never "done", "ready" or a percentage, never a name
  *   - forbidden, failed and disabled told apart by status and code
  *   - "not assessed yet" is not "none on record", and is not a zero
@@ -105,7 +105,7 @@ group("Forbidden, disabled and failed are three different things");
 
   const failed = state({ error: "unreachable", status: null, live: false });
   ok("unreachable is failed", failed.state === "failed", failed);
-  ok("...Could not read …", failed.sentence === "Could not read skills assessments.", failed.sentence);
+  ok("...Couldn't load …", failed.sentence === "Couldn't load skills assessments.", failed.sentence);
   ok("...and retry is offered: a second read could answer", failed.retry === true);
   ok("a 500 is failed, not forbidden", state({ error: "boom", status: 500 }).state === "failed");
   ok("a 502, 503 and 504 are failed", [502, 503, 504].every((s) => state({ error: "bad_gateway", status: s }).state === "failed"));
@@ -145,7 +145,7 @@ group("Partial: some of several reads failed");
   const parts = (p, c) => [{ what: "players", read: p }, { what: "career figures", read: c }];
   const r = combineReads(parts(players, careerFailed));
   ok("players arrived, career did not: partial", r.state === "partial", r);
-  ok("...says which, in the reader's words", r.sentence === "Could not read career figures, so what is shown is incomplete.", r.sentence);
+  ok("...says which, in the reader's words", r.sentence === "Couldn't load career figures, so what is shown is incomplete.", r.sentence);
   ok("...lists what failed", JSON.stringify(r.failed) === JSON.stringify(["career figures"]));
   ok("...retry is offered", r.retry === true);
   ok("...is not 'ok' and not 'empty': the players with blank figures are not players who have not played", r.state !== "ok" && r.state !== "empty");
@@ -195,14 +195,14 @@ group("The sentences: the reader's words, no name, no 'done', no percentage");
   ok("none says done or ready", all.every((s) => !/\b(done|ready|complete|completed)\b/i.test(s)), all.find((s) => /\b(done|ready)\b/i.test(s)));
   ok("none prints a percentage", all.every((s) => !/%|percent/i.test(s)));
   ok("each is one sentence (no second full stop inside)", all.every((s) => (s.match(/[.…]/g) ?? []).length <= 1 || /;/.test(s)), all.filter((s) => (s.match(/\./g) ?? []).length > 1));
-  ok("loading begins Reading, failure begins Could not read, empty begins No … on record",
-    sentenceFor("loading", "x") === "Reading x…" && sentenceFor("failed", "x") === "Could not read x." && sentenceFor("empty", "x") === "No x on record.");
+  ok("loading begins Reading, failure begins Couldn't load, empty begins No … on record",
+    sentenceFor("loading", "x") === "Reading x…" && sentenceFor("failed", "x") === "Couldn't load x." && sentenceFor("empty", "x") === "No x on record.");
   const withNames = [state({ rows: ROWS }), state({}), readStateFor(read(), []), state({ error: "unreachable" }), combineReads([{ what: "players", read: read({ rows: ROWS }) }, { what: "career figures", read: read({ error: "x" }) }])];
   ok("a child's name in the rows never reaches a sentence", withNames.every((r) => !/Bekker|Naidoo/.test(JSON.stringify(r))));
-  ok("an article is kept for 'Could not read the fixtures' but dropped for 'No fixtures on record'",
-    sentenceFor("failed", "the fixtures") === "Could not read the fixtures." && sentenceFor("empty", "the fixtures") === "No fixtures on record."
+  ok("an article is kept for 'Couldn't load the fixtures' but dropped for 'No fixtures on record'",
+    sentenceFor("failed", "the fixtures") === "Couldn't load the fixtures." && sentenceFor("empty", "the fixtures") === "No fixtures on record."
     && sentenceFor("empty", "your notices") === "No notices on record." && sentenceFor("loading", "the fixtures") === "Reading the fixtures…");
-  ok("without a name for the thing, the sentences still read", sentenceFor("loading") === "Reading…" && sentenceFor("failed") === "Could not read this." && sentenceFor("empty") === "Nothing on record.");
+  ok("without a name for the thing, the sentences still read", sentenceFor("loading") === "Reading…" && sentenceFor("failed") === "Couldn't load this." && sentenceFor("empty") === "Nothing on record.");
 }
 
 group("Pure: no React, no DOM, no clock of its own");
@@ -313,10 +313,10 @@ group("The hooks keep their state (audit R15)");
 // ═════════════════════════════════════════════════════
 group("The UI piece: ReadState, and EmptyState on top of it");
 {
-  const html = (el) => renderToStaticMarkup(el);
+  const html = (el) => renderToStaticMarkup(el).replace(/&#x27;/g, "'");
   const failed = readState(read({ error: "unreachable" }), { what: WHAT });
   const m = html(h(ReadState, { read: failed, onRetry: () => {} }));
-  ok("a failed read draws its sentence and says it is an alert", m.includes("Could not read skills assessments.") && /role="alert"/.test(m) && /data-state="failed"/.test(m));
+  ok("a failed read draws its sentence and says it is an alert", m.includes("Couldn't load skills assessments.") && /role="alert"/.test(m) && /data-state="failed"/.test(m));
   ok("...with a Retry button at least 44px tall", /<button[^>]*data-testid="read-state-retry"[^>]*>Retry<\/button>/.test(m) && /min-height:44px/.test(m));
   ok("no Retry without somewhere to retry to", !/<button/.test(html(h(ReadState, { read: failed }))));
   const forbidden = readState(read({ error: "not_permitted", status: 403 }), { what: WHAT });
@@ -347,14 +347,14 @@ group("The UI piece: ReadState, and EmptyState on top of it");
   ok("no motion: nothing to hold to prefers-reduced-motion", !/animation|transition|@keyframes/i.test(block));
 
   // EmptyState, which 69 call sites already use, speaks the same vocabulary.
-  ok("EmptyState: error now says Could not read, not the old 'server did not answer'",
-    /Could not read this\./.test(html(h(EmptyState, { error: "unreachable" }))) && !/did not answer/.test(html(h(EmptyState, { error: "unreachable" }))));
+  ok("EmptyState: error now says Couldn't load, not the old 'server did not answer'",
+    /Couldn't load this\./.test(html(h(EmptyState, { error: "unreachable" }))) && !/did not answer/.test(html(h(EmptyState, { error: "unreachable" }))));
   ok("EmptyState: a 403 is forbidden, not a failure", /Your role may not read this\./.test(html(h(EmptyState, { error: "not_permitted", status: 403 }))));
   ok("EmptyState: a switched-off module is said as that", /switched this off/.test(html(h(EmptyState, { disabled: "analytics" }))));
   ok("EmptyState: loading says Reading", /Reading…/.test(html(h(EmptyState, { loading: true }))) && !/Loading…/.test(html(h(EmptyState, { loading: true }))));
   ok("EmptyState: empty still draws the caller's own message", /No players are in scope for you\./.test(html(h(EmptyState, { message: "No players are in scope for you." }))));
   ok("EmptyState: a failure with `what` and `onRetry` names it and offers Retry",
-    (() => { const x = html(h(EmptyState, { error: true, what: "the injury list", onRetry: () => {} })); return /Could not read the injury list\./.test(x) && /Retry<\/button>/.test(x); })());
+    (() => { const x = html(h(EmptyState, { error: true, what: "the injury list", onRetry: () => {} })); return /Couldn't load the injury list\./.test(x) && /Retry<\/button>/.test(x); })());
   ok("EmptyState: no Retry on a failure unless the screen gives one", !/<button/.test(html(h(EmptyState, { error: "unreachable" }))));
 }
 
@@ -398,12 +398,12 @@ group("The screens draw it");
 
 group("One wording for the list modules: todo.js and queue.js take it from here");
 {
-  ok("couldNotRead is the failed sentence without its full stop", couldNotRead("the fixtures") === "Could not read the fixtures" && sentenceFor("failed", "the fixtures") === `${couldNotRead("the fixtures")}.`);
+  ok("couldNotRead is the failed sentence without its full stop", couldNotRead("the fixtures") === "Couldn't load the fixtures" && sentenceFor("failed", "the fixtures") === `${couldNotRead("the fixtures")}.`);
   ok("readsFailed counts in the To-do card's words", readsFailed(1) === "1 read failed" && readsFailed(2) === "2 reads failed");
   const todo = src("../src/lib/todo.js"), queue = src("../src/lib/queue.js");
   ok("todo.js builds its failed row and its '· N read failed' with them", /fact: couldNotRead\(label\)/.test(todo) && /readsFailed\(unread\)/.test(todo) && /from "\.\/readState\.js"/.test(todo));
-  ok("queue.js builds its 'Could not read X' with it", /text: couldNotRead\(r\.label\)/.test(queue) && /from "\.\/readState\.js"/.test(queue));
-  ok("...and neither keeps a private copy of the sentence", !/`Could not read \$\{/.test(todo) && !/`Could not read \$\{/.test(queue));
+  ok("queue.js builds its 'Couldn't load X' with it", /text: couldNotRead\(r\.label\)/.test(queue) && /from "\.\/readState\.js"/.test(queue));
+  ok("...and neither keeps a private copy of the sentence", !/`Couldn't load \$\{/.test(todo) && !/`Couldn't load \$\{/.test(queue));
 }
 
 group("The roster read as one statement, and the screens that were still claiming 'none'");

@@ -163,6 +163,7 @@ const SUITES = [
   // CRI-1.2: where a fixture stands, in one sentence per state — the list's
   // card and the match's header ask the one function (statusSentence).
   ["status-sentence",   "apps/web/test/status-sentence.test.mjs"],
+  ["match-card",        "apps/web/test/match-card.test.mjs"],
   // CRI-1.3: on a phone Summary, Scorecard and Commentary, the rest under More;
   // one address per tab, signed in and public, read back both ways.
   ["match-tabs",        "apps/web/test/match-tabs.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
@@ -313,12 +314,12 @@ const SUITES = [
   ["skills-history", "apps/web/test/skillsHistory.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The match-day queue, phase A0 (GA-I09–I11): the chooser that gives the
   // coach's card one card per admitted fixture, one assignment each, and the
-  // per-fixture count: "N to resolve" and "Could not read X", a failed read
+  // per-fixture count: "N to resolve" and "Couldn't load X", a failed read
   // never the same as nothing.
   ["queue", "apps/web/test/queue.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The parent's action list, phase A0 (GA-I20): R1 an answer owed and R2
   // answer again, over a side's worth of rows narrowed to his own; the
-  // fourteen-day fold; "N to do" and "Could not read X", a failed read never
+  // fourteen-day fold; "N to do" and "Couldn't load X", a failed read never
   // the same as nothing; no reason, no note, no "done".
   ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
@@ -492,6 +493,9 @@ const SUITES = [
   // EXPERIENCE_PASS Q8 (db/160): the follow list's routes, as the caller and
   // nobody else; its Today is the public list kept to his schools.
   ["follow-api", "services/api/write/follow-api.test.mjs"],
+  // db/168: a typed date of birth is dropped before the database; a kept
+  // account's Remove answers as any non-claim does.
+  ["pupil-claim-api", "services/api/write/pupil-claim-api.test.mjs"],
   // Notifications S1 (D1, D2, D5, D17, D18): the lists and the per-kind
   // contract agree with db/89's CHECKs and functions; opening a notice and
   // "Mark all read" write the reader's own receipt and nothing else; one
@@ -543,6 +547,9 @@ const SUITES = [
   ["schema-guard", "services/api/schema-guard.test.mjs"],
   // Which commit /api/health says the process was built from (GA I14).
   ["revision", "services/api/revision.test.mjs"],
+  // The owner's key off the read path (PLATFORM_CONTROLS slice 6a, db/167):
+  // what each answer offers the log, and every GET route decided.
+  ["platform-reads", "services/api/read/platform-reads.test.mjs"],
   ["imports",  "tools/check-imports.test.mjs"],
   ["guard",    "tools/hooks/guard.test.mjs"],
   // The Claude Code usage report and status line: each reply counted once, in

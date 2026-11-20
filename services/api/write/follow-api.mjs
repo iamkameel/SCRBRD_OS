@@ -19,7 +19,7 @@
  * Routes (all signed in; a pad's resume credential reaches nothing here,
  * db/160's doors and the table's pad guards refuse it):
  *   GET    /api/follows            { schools: [{ id, code, name, since }] }
- *   POST   /api/follows { code }   follow: { ok, reason?, school?: { id, name } }
+ *   POST   /api/follows { code } | { schoolId }   follow: { ok, reason?, school?: { id, name } }
  *   DELETE /api/follows/:id        stop following: { removed }
  *   GET    /api/follows/today      { asOf, fixtures, schools }, or { fixtures: null } while the public pages are off
  */
@@ -65,10 +65,16 @@ export function followRoutes({ pool, secret, today }) {
     list: handle((req) => as(req, async (c) => ({ schools: await list(c) }))),
 
     follow: handle((req) => {
+      // { code } from a match's link, or { schoolId } from the join form's
+      // "I just want to follow matches" (Q10, db/168's follow_school_by_id():
+      // the join list names schools by id). The same door either way.
+      const schoolId = typeof req.body?.schoolId === "string" ? req.body.schoolId.trim() : "";
       const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
-      if (!CODE.test(code)) throw err("no_such_school", 404);
+      if (schoolId ? !UUID.test(schoolId) : !CODE.test(code)) throw err("no_such_school", 404);
       return as(req, async (c) => {
-        const { rows } = await c.query(`select ok, reason, school_id, school_name from follow_school($1, true)`, [code]);
+        const { rows } = schoolId
+          ? await c.query(`select ok, reason, school_id, school_name from follow_school_by_id($1)`, [schoolId])
+          : await c.query(`select ok, reason, school_id, school_name from follow_school($1, true)`, [code]);
         const r = rows[0];
         if (!r?.ok) throw err(r?.reason ?? "refused", FOLLOW_STATUS[r?.reason] ?? 409);
         return { ok: true, school: { id: String(r.school_id), name: String(r.school_name) } };

@@ -2546,6 +2546,18 @@ Pasted on both databases, 15 Nov 2026. Hash-checked:
 `sha256 57ea0012552facfc54be26bdc6672ce893a1a17b6ac8235a604481cfb29bc6ef`,
 from commit 114d2803.
 <!-- ── end db/157 ── -->
+#### Officials hidden from signed-in readers while Officials is off (db/166)
+
+`db/166_officials_signed_in_reads.sql` (PR #348, merge 3cdcbc9c; SCRBRD-144).
+Pasted on the demo and production, 19 Nov 2026. Hash-checked:
+`sha256 571b79833a5434ddf3365ab548e79c440be605569cec41ca5a8203aabe6927de`.
+<!-- ── end db/166 ── -->
+#### The platform key's reads are logged for the school (db/167)
+
+`db/167_owner_key_logged.sql` (PR #362, merge 118e9841): platform controls
+slice 6a. Pasted on the demo and production, 19 Nov 2026. Hash-checked:
+`sha256 6832597ef3f132195973f9748a049bfca25b99968c03751c3fd3368c77acec0b`.
+<!-- ── end db/167 ── -->
 
 ### 5 · Cloud Run, the first time
 
@@ -2770,6 +2782,25 @@ run twice".
 5. **Each month** (once `db/158` is pasted; as the owner, in the SQL Editor,
    `SELECT school_add_request_purge();` answers how many rows went):
    The lead runs `school_add_request_purge()` monthly, with the paste routine, and logs each run on the Build Board (Kameel, 15 Nov).
+6. **Pupil claims** (once `db/168` is pasted). Run `SELECT pupil_claim_purge();` with the
+   monthly purge, as the owner. It removes claim accounts past their 30 days and answers
+   how many went. It never removes an opened account, or one a safeguarding concern names.
+   **An account later enrolled as an adult** (say, a pupil who turned 18 and now coaches) is
+   still treated as a pupil while its claim exists: no requests of its own, initials in
+   the audit log. Until Migration B gives the office a "withdraw this claim", the owner
+   deletes the claim by its id, once the office has confirmed that the account holds a
+   non-pupil role. Do not do this for an account that is a concern's reporter: ask the
+   DSO first.
+   ```sql
+   -- First check: the account holds a role, and no concern names it.
+   SELECT c.id, c.user_id,
+          EXISTS (SELECT 1 FROM role_assignment a WHERE a.person_id = c.user_id AND a.active) AS holds_a_role,
+          EXISTS (SELECT 1 FROM safeguarding_concern_reporter r WHERE r.reporter_id = c.user_id) AS a_reporter
+     FROM pupil_claim c WHERE c.id = '<claim id>';
+   DELETE FROM pupil_claim WHERE id = '<claim id>';   -- one row, by id, never by a wider filter
+   ```
+   db/168 resets `lock_timeout` with its last statement, so a pooled SQL Editor
+   connection is handed back as it came.
 
 ### The API refuses to run ahead of its schema
 

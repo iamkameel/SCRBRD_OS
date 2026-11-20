@@ -12,7 +12,7 @@
  *                     is missing (§4.2 rule 6).
  *   countOf()         the card's per-fixture count: "N to resolve", from the
  *                     feed's cards that this reader has not marked seen, and
- *                     a "Could not read X" for every read that was asked for
+ *                     a "Couldn't load X" for every read that was asked for
  *                     and did not answer. A read that failed is `null`; a
  *                     read that answered with nothing is `[]` and says
  *                     nothing (I08): "0 to resolve" with a failed read and

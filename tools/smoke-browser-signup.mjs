@@ -289,10 +289,10 @@ try {
 
     await tid(P, `join-school-${HIL}`).click();
     ok("choosing a school offers the kinds", (await tid(P, "join-kind-parent").count()) === 1);
-    // Pupil under 18: told, sends nothing.
+    // Pupil under 18: offered his claim (db/168), which smoke-browser-under18 sends; nothing is sent here.
     await tid(P, "join-kind-pupil").click();
     await tid(P, "join-pupil-minor").click();
-    ok("a pupil under 18 is sent to the office, with no Send button", (await tid(P, "join-pupil-under18").count()) === 1 && (await tid(P, "join-send").count()) === 0 && /sign-in code/.test(await tid(P, "join-pupil-under18").innerText()));
+    ok("a pupil under 18 is offered his claim (db/168), not a request: no Send button, and the office's code for under 13", (await tid(P, "join-pupil-under18").count()) === 1 && (await tid(P, "join-send").count()) === 0 && /sign-in code/.test(await tid(P, "join-pupil-under18").innerText()));
 
     // The parent, with a child who IS on the school's list: the seed's invented one.
     await tid(P, "join-kind-parent").click();

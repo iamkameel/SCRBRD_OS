@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { D, themed } from "../design/tokens.js";
-import { Badge, Btn, Card, Input, Modal, Pill, SectionHeader } from "../ui/primitives.jsx";
+import { Badge, Btn, Card, EmptyState, Input, Modal, Pill, SectionHeader } from "../ui/primitives.jsx";
 import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { schoolsWhere } from "../lib/session.js";
@@ -51,7 +51,7 @@ function ModulesView({ role }) {
 
   // Both reads are about ONE school, and the server requires it
   // (read-api.mjs: req(q, "schoolId")). Sent without it they were refused
-  // with a 400 and the screen said "Could not load the switches" to every
+  // with a 400 and the screen said "Couldn't load the switches" to every
   // principal. Signed in with no school to be about (a platform account),
   // nothing is asked: the resource name is withheld, so useLive reads
   // nothing, and the screen says why below. Signed out, the demo's rows.
@@ -253,18 +253,8 @@ function ModulesView({ role }) {
           </span>
         </Card>
       )}
-      {!noSchool && settings.loading && (
-        <Card style={{ padding: "28px", textAlign: "center" }}>
-          <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>Loading switches…</span>
-        </Card>
-      )}
-      {!noSchool && !settings.loading && settings.error && (
-        <Card style={{ padding: "28px", textAlign: "center" }}>
-          <span style={{ color: D.textMuted, fontFamily: D.body, fontSize: "13px" }}>
-            Could not load the switches ({settings.error}).
-          </span>
-        </Card>
-      )}
+      {!noSchool && settings.loading && <Card><EmptyState loading what="the switches"/></Card>}
+      {!noSchool && !settings.loading && settings.error && <Card><EmptyState error={settings.error} what="the switches" onRetry={() => bump((n) => n + 1)}/></Card>}
 
       {!noSchool && !settings.loading && !settings.error && (
         <>

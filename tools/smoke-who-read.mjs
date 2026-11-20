@@ -24,6 +24,13 @@
  *      fixture's availability and readiness) is on the same list: a row for
  *      each, naming him, under Hilton, as the key, marked platform-wide
  *      (Kameel, 5 Nov 2026, the guardian's terms Q6; db/139)
+ *  10. off the read path too (PLATFORM_CONTROLS slice 6a, db/167): the key
+ *      opening his public name and his guardians' answers, the team sheet,
+ *      his own account and a notice about him is on the same list, and every
+ *      read the key made reads "SCRBRD platform", never a person's name; a
+ *      school reader's same reads write nothing new
+ *  11. a read whose row cannot be written is refused, 503 not_logged, for the
+ *      key alone; the office reading the same page is answered (review S1)
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-who-read.mjs
@@ -101,16 +108,35 @@ try {
   }
   const [ownerRow] = await q(`select id from app_user where lower(email) = 'owner@example.invalid'`);
 
+  group("The owner's key opens his record off the read path (slice 6a, db/167)");
+  const PUPIL = "88888888-0000-0000-0000-000000000009";   // his own account (self-access to him)
+  const OFF_PATH = [[`/api/players/${P_INJURED}/public-name`, "public_name"], [`/api/matches/${MATCH}/sheet`, "fixture_sheet"],
+                    [`/api/auth/users/${PUPIL}/preview`, "account_preview"], ["/api/read/notifications", "notifications"]];
+  for (const [path] of OFF_PATH) {
+    const r = await api(path, { token: owner });
+    ok(`the key opens ${path.replace(/[0-9a-f-]{36}/g, ":id")}`, r.status === 200 && r.body != null, r.status);
+  }
+  // A school reader's same reads off the read path are not logged (unchanged).
+  const [{ n: before }] = await q(`select count(*)::int n from access_log`);
+  const offOwn = await api(`/api/players/${P_INJURED}/public-name`, { token: office });
+  const sheetOwn = await api(`/api/matches/${MATCH}/sheet`, { token: office });
+  const [{ n: after }] = await q(`select count(*)::int n from access_log`);
+  ok("the office's own reads of the same pages write nothing", offOwn.status === 200 && sheetOwn.status === 200 && after === before,
+     { before, after, a: offOwn.status, b: sheetOwn.status });
+  const coachSheet = await api(`/api/matches/${MATCH}/sheet`, { token: coach });
+  ok("...and a coach reading the sheet is answered, never refused for the log", coachSheet.status === 200, coachSheet);
+  // The key's rows, as the database holds them: the answer below must carry
+  // each of them with no person's id or name on it.
+  const keyRowIds = new Set((await q(`select id from access_log where person_id = $1`, [ownerRow.id])).map((r) => r.id));
+  const isKey = (/** @type {any} */ r) => keyRowIds.has(r.id);
+
   group("The office asks about ONE child");
   const ans = await aboutChild(office, P_INJURED);
   const rows = ans.body?.rows ?? [];
   ok("the office gets an answer", ans.status === 200 && rows.length > 0, ans.body);
   ok("...every read on it names this child", rows.every((r) => (r.record_ids ?? []).includes(P_INJURED)), rows.map((r) => r.record_ids));
-  // A platform account belongs to no school, so the office cannot look its
-  // name up (app_user's own rule, unchanged): the row names him by id and
-  // says Platform, which is what the screen shows.
   ok("...each names the reader, or says it was the platform",
-     rows.every((r) => r.person_name || (r.person_id && r.platform_wide === true)), rows.map((r) => r.person_name));
+     rows.every((r) => r.person_name || r.platform_wide === true), rows.map((r) => r.person_name));
   ok("...with the time, the resource and how the reader arrived",
      rows.every((r) => r.occurred_at && r.resource && typeof r.platform_wide === "boolean"), rows[0]);
   ok("...newest first", rows.every((r, i) => i === 0 || rows[i - 1].occurred_at >= r.occurred_at));
@@ -121,13 +147,28 @@ try {
 
   for (const path of OWNER_READS) {
     const res = path.split("?")[0];
-    const theirs = rows.filter((r) => r.resource === res && r.person_id === ownerRow.id);
+    const theirs = rows.filter((r) => r.resource === res && isKey(r));
     ok(`the key's read of ${res} is on his list, as the key, platform-wide`,
        theirs.length === 1 && theirs[0].platform_wide === true && theirs[0].support_access_id == null
          && theirs[0].school_id === HIL,
        theirs);
   }
   ok("...and the medic's read is still logged as a school reader's", mine?.platform_wide === false, mine);
+  for (const [, res] of OFF_PATH) {
+    const theirs = rows.filter((r) => r.resource === res && isKey(r));
+    ok(`the key's ${res} read is on his list at Hilton, platform-wide`,
+       theirs.length === 1 && theirs[0].platform_wide === true && theirs[0].school_id === HIL, theirs);
+  }
+  const theKey = rows.filter(isKey);
+  ok(`every read the key made (${theKey.length}) reads "SCRBRD platform", the platform as the reader, with no person's id`,
+     theKey.length >= OWNER_READS.length + OFF_PATH.length
+       && theKey.every((r) => r.person_name === "SCRBRD platform" && r.reader_role === "SCRBRD platform" && r.person_id == null),
+     theKey.map((r) => [r.person_name, r.person_id]));
+  const [ownerName] = await q(`select name, email from app_user where id = $1`, [ownerRow.id]);
+  ok("...and his name, email and id are nowhere in the answer",
+     !JSON.stringify(rows).includes(ownerName.name) && !JSON.stringify(rows).toLowerCase().includes(ownerName.email.toLowerCase())
+       && !JSON.stringify(rows).includes(ownerRow.id));
+  ok("...while the medic is named as herself, not the platform", mine?.person_name && mine.person_name !== "SCRBRD platform" && mine.reader_role == null, mine);
 
   group("What it never shows");
   ok("no safeguarding read, though one names him", rows.every((r) => !String(r.resource).startsWith("safeguarding")), rows.map((r) => r.resource));
@@ -147,6 +188,27 @@ try {
                           where l.resource = 'access_log' and lower(u.email) = 'registrar@example.invalid'
                             and l.record_ids @> array[$1::uuid]`, [P_INJURED]);
   ok("the office's question names the child in the log", asked[0].n >= 1, asked);
+
+  group("A read the record cannot take is not sent (review S1, db/167's strict writer)");
+  // Rows of the key's public-name read made unwritable for a moment, as the
+  // owner, then put back: the key is refused with nothing of the child in the
+  // answer, and the office reading the same page is answered as before.
+  await q(`create or replace function _who_read_refuse() returns trigger language plpgsql as
+           $f$ begin raise exception 'who-read: this row cannot be written'; end $f$`);
+  await q(`create trigger access_log_who_read_refuse before insert on access_log
+           for each row when (new.resource = 'public_name') execute function _who_read_refuse()`);
+  try {
+    const refused = await api(`/api/players/${P_INJURED}/public-name`, { token: owner });
+    ok("the key's read whose row cannot be written is refused: 503 not_logged, and nothing of the child",
+       refused.status === 503 && refused.body?.error === "not_logged" && !JSON.stringify(refused.body).includes(P_INJURED), refused);
+    const still = await api(`/api/players/${P_INJURED}/public-name`, { token: office });
+    ok("...while the office, a school reader, is answered", still.status === 200 && still.body?.playerId === P_INJURED, still.status);
+  } finally {
+    await q(`drop trigger if exists access_log_who_read_refuse on access_log`);
+    await q(`drop function if exists _who_read_refuse()`);
+  }
+  const again = await api(`/api/players/${P_INJURED}/public-name`, { token: owner });
+  ok("...and with the row writable again the key is answered", again.status === 200, again.status);
 
   group("Five minutes");
   const took = Date.now() - started;

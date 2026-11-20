@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
-import { confirmWords, potmShortName, reviewWords, standingWords, STOOD_WORDS, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX, FALLBACK } from "../../lib/potm.js";
+import { confirmWords, potmShortName, reviewWords, standingWords, STOOD_WORDS, WITHDRAW_KINDS, POTM_REASON_MIN, POTM_REASON_MAX, FALLBACK,
+         SUGGESTION_WORDS, tieWords, alsoTiedWords } from "../../lib/potm.js";
 import { NO_AWARD_DONE, NO_AWARD_WORDS, staffLine } from "../../lib/nomination.js";
 import { Icon } from "../../ui/icons.jsx";
 import { CardHead, Panel } from "./bits.jsx";
@@ -31,6 +32,14 @@ import { CardHead, Panel } from "./bits.jsx";
  *               (§7), and either withdraws it (the kind already "after a
  *               scorecard correction") or lets it stand, one tap. The award
  *               stands until he does; nothing is said to the side meanwhile.
+ *
+ *   CRI-3.3     The points (Kameel, 19 Nov 2026): each suggestion, and each
+ *               boy under "Someone else", carries its working, "42 runs + 2
+ *               wickets (40) + 1 catch (10) = 92", a tie said as "Tied on 92
+ *               points", never broken; boys level past the third are named;
+ *               the rule, and a dismissal that named no fielder, said in a
+ *               line. It is a suggestion and says so: nothing is chosen for
+ *               him. The server sends all of it only on a side he decides.
  *
  * Floors: 12px text and up, 44px targets (56px for the one tap), the state of
  * a choice is a radio and words, never colour alone; nothing moves, so
@@ -92,6 +101,40 @@ const row = (/** @type {boolean} */ disabled) => ({
 });
 const small = () => ({ ...T.role.body, fontSize: "13px", color: T.content.secondary, margin: 0 });
 
+/**
+ * CRI-3.3: a boy's working under his figures, and a tie said in words. The
+ * coach's sheet and the captain's draw the same line.
+ * @param {{x: any, testid: string}} p
+ */
+export function PotmWorking({ x, testid }) {
+  if (!x?.working || !(x.points > 0)) return null;
+  return (
+    <span data-testid={`${testid}-working-${x.playerId}`} style={{ fontSize: "13px", color: T.content.secondary, overflowWrap: "anywhere" }}>
+      {x.working}{x.tied ? <> · <strong data-testid={`${testid}-tied-${x.playerId}`} style={{ fontWeight: 600, color: T.content.primary }}>{tieWords(x.points)}</strong></> : null}
+    </span>
+  );
+}
+
+/**
+ * CRI-3.3: what the suggestions are, how points are counted, and a
+ * dismissal that named no fielder, above the list.
+ * @param {{rule?: string | null, unnamed?: string | null, testid: string}} p
+ */
+export function PotmCardNotes({ rule, unnamed, testid }) {
+  return (
+    <>
+      <p data-testid={`${testid}-rule`} style={small()}>{SUGGESTION_WORDS}{rule ? ` ${rule}` : ""}</p>
+      {unnamed && <p data-testid={`${testid}-unnamed`} style={small()}>{unnamed}</p>}
+    </>
+  );
+}
+
+/** CRI-3.3: boys level with the last suggestion, named. @param {{list: any[] | undefined, testid: string}} p */
+export function PotmAlsoTied({ list, testid }) {
+  const words = alsoTiedWords(list);
+  return words ? <p data-testid={`${testid}-also-tied`} style={small()}>{words}</p> : null;
+}
+
 /** @param {{potm: ReturnType<typeof usePotm>}} p */
 export function PotmPanel({ potm }) {
   const sides = potm.data?.sides ?? [];
@@ -101,7 +144,7 @@ export function PotmPanel({ potm }) {
       <CardHead icon="award">Player of the Match</CardHead>
       <div style={{ padding: T.space.md, display: "grid", gap: T.space.lg }}>
         {sides.map((/** @type {any} */ s) => (
-          <PotmSide key={s.side} s={s} basis={potm.data.basis} two={sides.length > 1} potm={potm}
+          <PotmSide key={s.side} s={s} basis={potm.data.basis} rule={potm.data.rule} unnamed={potm.data.unnamed} two={sides.length > 1} potm={potm}
             nom={(potm.data.nominations ?? []).find((/** @type {any} */ x) => x.side === s.side) ?? null}/>
         ))}
       </div>
@@ -109,8 +152,8 @@ export function PotmPanel({ potm }) {
   );
 }
 
-/** @param {{s: any, basis: string, two: boolean, potm: ReturnType<typeof usePotm>, nom: any}} p */
-function PotmSide({ s, basis, two, potm, nom }) {
+/** @param {{s: any, basis: string, rule?: string | null, unnamed?: string | null, two: boolean, potm: ReturnType<typeof usePotm>, nom: any}} p */
+function PotmSide({ s, basis, rule, unnamed, two, potm, nom }) {
   const [chosen, setChosen] = useState(/** @type {string | null} */ (null));
   const [more, setMore] = useState(false);
   const [step, setStep] = useState(/** @type {null | "confirm" | "withdraw" | "nominee" | "no_award"} */ (null));
@@ -168,6 +211,7 @@ function PotmSide({ s, basis, two, potm, nom }) {
       <span style={{ display: "grid", gap: "2px", minWidth: 0 }}>
         <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{x.name}</span>
         <span style={{ fontSize: "13px", color: T.content.secondary }}>{x.conflict ? x.conflictWords : x.figures}</span>
+        {!x.conflict && <PotmWorking x={x} testid="mc-potm"/>}
       </span>
     </label>
   );
@@ -300,9 +344,11 @@ function PotmSide({ s, basis, two, potm, nom }) {
           <legend style={{ ...small(), padding: 0, marginBottom: T.space.xs }}>
             Choose one boy from the side. <span data-testid="mc-potm-basis">{basis}</span>
           </legend>
+          <PotmCardNotes rule={rule} unnamed={unnamed} testid="mc-potm"/>
           {(s.suggestions ?? []).length > 0
             ? <div data-testid="mc-potm-suggestions" style={{ display: "grid", gap: T.space.xs }}>{s.suggestions.map(option)}</div>
             : <p data-testid="mc-potm-no-suggestion" style={small()}>No one on the side has a run or a wicket to suggest him. Choose from the sheet.</p>}
+          <PotmAlsoTied list={s.alsoTied} testid="mc-potm"/>
           {rest.length > 0 && (
             <button type="button" data-testid="mc-potm-more" aria-expanded={more} onClick={() => setMore((v) => !v)}
               className="pressBtn os-state" style={{ ...btn(false), justifySelf: "start" }}>

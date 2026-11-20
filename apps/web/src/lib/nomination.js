@@ -127,7 +127,7 @@ export const NO_AWARD_DONE = "No award recorded on the captain's nomination.";
 export function nominationRows({ rows, now, error = null }) {
   if (rows == null) {
     return { rows: [], unread: [{ id: "potm:read", rule: "read", state: /** @type {const} */ ("could_not_read"), read: "potm",
-      fact: "Could not read the nominations to decide", count: 0, source: null, owner: null, deadline: null, age: null,
+      fact: "Couldn't load the nominations to decide", count: 0, source: null, owner: null, deadline: null, age: null,
       action: { kind: "retry", label: "Try again" }, error }], open: 0, failed: 1 };
   }
   const out = rows.map((r) => {

@@ -325,7 +325,7 @@ function KitRegister({ role }) {
   const canKeep = schoolsWhere("team.manage").length > 0;
   // Nothing invented in its place: signed out there is no register to show,
   // and a school that has entered no kit has none to list.
-  // Signed in, a register that did not come is said as that (Could not read…,
+  // Signed in, a register that did not come is said as that (Couldn't load…,
   // with Retry); only a signed-out screen is told to sign in (GA-I08).
   const kitSaid = readState(kitRead, { what: "the kit register" });
   if (!live || KIT.length === 0) return (

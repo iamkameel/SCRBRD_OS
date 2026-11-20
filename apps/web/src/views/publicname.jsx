@@ -97,7 +97,7 @@ export function PublicNameSwitch({ child }) {
   const [said, setSaid] = useState("");
   if (!signedIn()) return null;
   if (loading) return <p style={tLine(true)}>Reading your answer…</p>;
-  if (error) return <p style={tLine(true)}>Could not read your answer just now. Nothing has changed.</p>;
+  if (error) return <p style={tLine(true)}>Couldn't load your answer just now. Nothing has changed.</p>;
   const mine = data?.mine;
   if (!mine) return null;
   const on = mine.state === "given";

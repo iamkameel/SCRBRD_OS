@@ -190,8 +190,8 @@ function DlsTablesLive() {
         <div style={{ ...SUB(), marginTop: "3px", marginBottom: "8px" }}>
           Provenance only. A published table never changes; a withdrawn one keeps its rows for the matches fixed under it.
         </div>
-        {list.loading ? <EmptyState loading/>
-          : list.error ? <div role="alert" style={{ ...SUB(), color: textOn(D.rose) }}>{list.error}</div>
+        {list.loading ? <EmptyState loading what="the tables"/>
+          : list.error ? <EmptyState error={list.error} what="the tables" onRetry={again}/>
           : list.rows.length === 0 ? <EmptyState icon="cloud-rain" message="No DLS table is loaded. The pad asks the umpires for every figure."/>
           : list.rows.map((t) => (
             <div key={t.id} data-testid={`dls-table-${t.version}`} style={{ padding: "10px 0", borderTop: `1px solid ${D.border}`, display: "grid", gap: "4px" }}>

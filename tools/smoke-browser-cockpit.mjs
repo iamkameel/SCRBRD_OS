@@ -34,7 +34,7 @@
  *   6b. THE MATCH-DAY QUEUE, PHASE A0 (docs/design/GA-I09-I11_match_day_queue.md
  *      §3.1, §7, §8): a coach with one fixture in the week sees one card as
  *      before; with two, two cards in order, each saying which, a failed read
- *      said as "Could not read X" (never "Nothing to resolve"), and a tap on
+ *      said as "Couldn't load X" (never "Nothing to resolve"), and a tap on
  *      the second opens THAT fixture's Coach tab; past the first few, the rest
  *      fold under "Later" and make no read until opened. A Readiness row is a
  *      44px tap that opens its fixture's duties.
@@ -722,10 +722,12 @@ try {
   await d.page.waitForFunction(() => document.querySelector('[data-testid="matchday-count"]'), null, { timeout: 12000 }).catch(() => {});
   const cardText = await inner(d.page, "day-matchday");
   dbg("CARD", cardText);
-  ok("the coach's Dashboard carries the card for the fixture today", await tid(d.page, "day-matchday").count() === 1 && /v Verify Cockpit XI/.test(cardText), cardText);
+  ok("the coach's Dashboard carries the card for the fixture today", await tid(d.page, "day-matchday").count() === 1 && /Verify Cockpit XI/.test(cardText), cardText);
   ok("...one card is exactly one card: titled Match day, no 'n of m', named 'v the opponent' as it always was, nothing folded under Later",
-     /^MATCH DAY\s/i.test(cardText) && !/\d of \d/.test(cardText) && (await inner(d.page, "matchday-line")).trim() === "v Verify Cockpit XI" && await tid(d.page, "matchday-later").count() === 0, cardText);
-  ok("...the count is 'N to resolve' and every read the card asked for answered, so no 'Could not read'",
+     // Folded into the next fixture's card it is still "v the opponent"; on its own (slice 1) it is the match card,
+     // both sides named in full, his first.
+     /^MATCH DAY\s/i.test(cardText) && !/\d of \d/.test(cardText) && /(^v |\n)Verify Cockpit XI\b/.test(await inner(d.page, "matchday-line")) && await tid(d.page, "matchday-later").count() === 0, cardText);
+  ok("...the count is 'N to resolve' and every read the card asked for answered, so no 'Couldn't load'",
      /^\d+ to resolve$/.test((await inner(d.page, "matchday-count")).trim()) && await tid(d.page, "matchday-unread").count() === 0, `${await inner(d.page, "matchday-count")} | ${await tid(d.page, "matchday-unread").count()}`);
   const cardCount = Number((await inner(d.page, "matchday-count")).match(/\d+/)?.[0]);
   ok("...the side in a line: ten named, five to chase, two restricted", /10 named/.test(await inner(d.page, "matchday-side")) && /2 restricted/.test(await inner(d.page, "matchday-side")), await inner(d.page, "matchday-side"));
@@ -752,17 +754,18 @@ try {
     dbg("CARDS", on.map((x) => x.text).join("\n=====\n"));
     ok("a coach with two fixtures within the week sees two cards", on.length === 2, on.map((x) => x.match));
     ok("...tonight's first, then Michaelhouse: starts_at order, today's first", on[0]?.match === DAY && on[1]?.match === MICH, on.map((x) => x.match));
-    ok("...each says which of two it is, and which side of his plays whom", /1 of 2/i.test(on[0]?.text ?? "") && /2 of 2/i.test(on[1]?.text ?? "") && /v Verify Cockpit XI/.test(on[0]?.text ?? "") && /v .*Michaelhouse/.test(on[1]?.text ?? ""), on.map((x) => x.text.slice(0, 80)));
+    ok("...each says which of two it is, and which side of his plays whom", /1 of 2/i.test(on[0]?.text ?? "") && /2 of 2/i.test(on[1]?.text ?? "") && /Verify Cockpit XI/.test(on[0]?.text ?? "") && /Michaelhouse/.test(on[1]?.text ?? ""), on.map((x) => x.text.slice(0, 80)));
     ok("...two are within the first few: nothing folded under Later", await tid(l.page, "matchday-later").count() === 0);
     const c2 = l.page.locator(`[data-testid="day-matchday"][data-match="${MICH}"]`);
     const c2count = (await c2.locator('[data-testid="matchday-count"]').innerText({ timeout: 3000 }).catch(() => "")).trim();
     const c2unread = await c2.locator('[data-testid="matchday-unread"]').allInnerTexts();
-    ok("a failed read is said, one line each: 'Could not read who has answered' on the second card", c2unread.join("|") === "Could not read who has answered", c2unread);
+    ok("a failed read is said, one line each: 'Couldn't load who has answered' on the second card", c2unread.join("|") === "Couldn't load who has answered", c2unread);
     ok("...and the count beside it is a number, never 'Nothing to resolve'", /^\d+ to resolve$/.test(c2count), c2count);
     const c1 = l.page.locator(`[data-testid="day-matchday"][data-match="${DAY}"]`);
-    ok("...the first card read everything: no 'Could not read' there, and its own count", await c1.locator('[data-testid="matchday-unread"]').count() === 0 && /^\d+ to resolve$/.test((await c1.locator('[data-testid="matchday-count"]').innerText()).trim()));
+    ok("...the first card read everything: no 'Couldn't load' there, and its own count", await c1.locator('[data-testid="matchday-unread"]').count() === 0 && /^\d+ to resolve$/.test((await c1.locator('[data-testid="matchday-count"]').innerText()).trim()));
     ok("every card's two buttons are named for its fixture, the visible words first",
-       await c2.locator('[data-testid="matchday-open"]').getAttribute("aria-label") === `Open the Coach tab · ${(await c2.locator('[data-testid="matchday-line"]').innerText()).trim()}`);
+       /^Open the Coach tab · .+ v .*Michaelhouse/.test(await c2.locator('[data-testid="matchday-open"]').getAttribute("aria-label") ?? "")
+       && /^See the signals · .+ v .*Michaelhouse/.test(await c2.locator('[data-testid="matchday-signals"]').getAttribute("aria-label") ?? ""));
     const f6 = await floors(l.page, '[data-testid="day-matchday"], [data-testid="matchday-later"]');
     ok(`two cards: nothing under 12px (${f6.small.length}), nothing tapped under 44px (${f6.tiny.length})`, f6.small.length === 0 && f6.tiny.length === 0, [...f6.small, ...f6.tiny].slice(0, 4).join(" · "));
     await c2.locator('[data-testid="matchday-open"]').click({ timeout: 4000 });
