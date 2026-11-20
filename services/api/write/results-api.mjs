@@ -29,7 +29,8 @@
  * Finishing the match (db/130; Kameel, 4 Nov 2026, option A):
  *   POST /api/matches/:id/finalise                      scoring.finalise at the home side, from the
  *                                                       pad's result screen: status complete, or
- *                                                       already_complete; refusals in FINALISE_WORDS
+ *                                                       already_complete; refusals in FINALISE_WORDS.
+ *                                                       Not as the scorer (db/171): coach_confirms, 403
  *   Each write tells the public cache once committed (onChange, I36 N2's
  *   hook; polling, no hub), and db/114's trigger tells every other instance.
  *
@@ -59,7 +60,13 @@ export const FINALISE_WORDS = Object.freeze({
   match_abandoned: "This match was called off, so there is no result to finish.",
   // db/132 (Kameel, 4 Nov 2026): another phone holds the pen, its lease live.
   held_elsewhere: "Another phone is scoring this match. Finish it from that phone, or once it has sent its last ball and put the pen down.",
+  // db/171 (Kameel, 20 Nov 2026, DESIGN_DIRECTION Q2 (a)): scoring.finalise held
+  // only as the scorer. His part ends at the last ball; the coach confirms.
+  coach_confirms: "Your part is done. The home side's coach, director of sport or sports administrator confirms the result.",
 });
+
+/** The refusals of a finish that are about who is asking (403); the rest are about the match (422). */
+const FINALISE_FORBIDDEN = new Set(["not_permitted", "coach_confirms"]);
 
 /** A definer function's (ok, reason, detail) row: the row when ok, else a refusal. @param {any} r */
 function answer(r) {
@@ -422,14 +429,15 @@ export function resultsRoutes({ pool, secret, onChange }) {
     //   at the home side finishes a match the log has decided; a second call
     //   is a no-op. refusals: not_permitted (403), not_decided, super_over_pending,
     //   match_abandoned, held_elsewhere (db/132: another phone's lease is
-    //   live) — each with its words (FINALISE_WORDS).
+    //   live), coach_confirms (403, db/171: scoring.finalise held only as the
+    //   scorer) — each with its words (FINALISE_WORDS).
     finalise: handle(async (req) => {
       const id = idOf(req);
       const r = await runAsPrincipal(pool, secret, as(req), async (client) =>
         (await client.query(`select * from match_finalise($1)`, [id])).rows[0]);
       if (!r) throw err("no_result", 500);
       if (!r.ok) {
-        throw err(r.reason ?? "refused", r.reason === "not_permitted" ? 403 : 422,
+        throw err(r.reason ?? "refused", FINALISE_FORBIDDEN.has(r.reason) ? 403 : 422,
                   FINALISE_WORDS[/** @type {keyof typeof FINALISE_WORDS} */ (r.reason)] ?? undefined);
       }
       if (r.reason === "finished") changed(id);

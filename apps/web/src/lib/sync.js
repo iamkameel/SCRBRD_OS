@@ -229,6 +229,8 @@ export class PadSync {
     this.hbTimer = null;
     /** A heartbeat in flight. */
     this.beating = false;
+    /** This device put the pen down from the end screen (db/171, release()). */
+    this.released = false;
     /** The screen wake lock while attached (navigator.wakeLock), and a request in flight. */
     this.wakeLock = null;
     this.waking = false;
@@ -918,6 +920,34 @@ export class PadSync {
     return this.minting;
   }
 
+  /**
+   * Put the pen down (db/171, redesign slice 4): the match is over on this
+   * pad and everything it recorded is the server's, so the coach's "Confirm
+   * the result" need not wait out this device's 90 s lease. Only while
+   * attached, with nothing queued, held, unsent or on its way; the server
+   * asks the same of the holder (this person, this device, this generation,
+   * `pending` 0) and moves the generation on, so anything still in flight is
+   * set aside, never lost. A Pilot Match has no such route: its lease lapses
+   * as before. Resolves whether the pen is down.
+   * @returns {Promise<boolean>}
+   */
+  async release() {
+    const e = this.engine;
+    if (this.stopped || this.pilot || this.released || !e?.attached || e.epoch == null) return false;
+    if (e.pendingCount || e.heldCount || e.toss || e.syncing) return false;
+    let r;
+    try {
+      r = await this.call(`${this.base}/session/release`, { method: "POST", body: { epoch: e.epoch, pending: e.pendingCount } });
+    } catch { return false; }
+    if (!r?.ok || this.stopped) return false;
+    this.released = true;
+    this.reason = "released";
+    e.detach("released");
+    this.releaseWake();
+    this.status();
+    return true;
+  }
+
   /** This device handed the match over: it sends nothing more. */
   handedOver() {
     this.halted = true;
@@ -931,6 +961,15 @@ export class PadSync {
   status() {
     if (this.stopped) return;
     const e = this.engine;
+    // Something recorded after the pen was put down (an undo, a late ball):
+    // the pad takes the pen again, as a plain claim of an idle match, and
+    // sends it. Never as "restore": the generation moved because this device
+    // moved it.
+    if (this.released && e && (e.pendingCount || e.toss) && !e.attached && !this.attaching) {
+      this.released = false;
+      this.reason = null;
+      this.attach("open");
+    }
     if (e?.attached) this.holdWake(); else this.releaseWake();
     this.hooks.onStatus({
       pilot: !!this.pilot,
@@ -966,6 +1005,7 @@ export class PadSync {
       conflict: this.conflict,
       reconcile: this.lastAttach?.reconcile ?? null,
       cleared: !!e?.cleared,
+      released: this.released,
       // B1/P4: the server's last ball, a take-over a person may confirm, and
       // the incoming scorer's note.
       serverLast: this.serverLast,

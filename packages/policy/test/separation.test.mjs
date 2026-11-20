@@ -42,7 +42,8 @@
  *
  *   node packages/policy/test/separation.test.mjs
  */
-import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, SUPERADMIN_RECOGNITION_CARVE, boundaries, mayGrantRole } from "../src/roles.mjs";
+import { ROLES, ROLE_CAPABILITIES, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, SUPERADMIN_RECOGNITION_CARVE, boundaries, mayGrantRole,
+         RESULT_CONFIRM_EXCLUDED_ROLES, RESULT_CONFIRMING_ROLES, roleConfirmsResult } from "../src/roles.mjs";
 import { ALL_CAPABILITIES, LEVEL, SENSITIVE, PLATFORM_ONLY } from "../src/capabilities.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -203,6 +204,29 @@ group("§11.2  The scorer records, the umpire officiates, a third party approves
 }
 
 // ── D5 The confirmer is never a hand on the log (OFFICIAL_RESULT, db/114) ──
+// ── Redesign slice 4 (DESIGN_DIRECTION Q2 (a), db/171): the hand that scored
+// does not confirm. The scorer keeps scoring.finalise (it also closes an
+// innings, db/01); the finish refuses it held only as the scorer, and the
+// screens offer "Confirm the result" by the same rule. Falsified by taking
+// 'scorer' out of RESULT_CONFIRM_EXCLUDED_ROLES, and by writing db/171's line
+// as 'player': each went red here.
+group("Q2  The scorer's part ends at the last ball; the coach confirms the result");
+{
+  ok("the scorer still holds scoring.finalise: it closes his innings", caps("scorer").includes("scoring.finalise"));
+  ok("...and does not confirm a result", !roleConfirmsResult("scorer"));
+  ok("the coach, the director of sport, the sports administrator and the owner's key confirm, and nobody else",
+     [...RESULT_CONFIRMING_ROLES].sort().join() === "coach,directorofsport,sportsadmin,superadmin",
+     RESULT_CONFIRMING_ROLES.join());
+  ok("every confirming role holds scoring.finalise", RESULT_CONFIRMING_ROLES.every((r) => caps(r).includes("scoring.finalise")));
+  const sql = readFileSync(join(ROOT, "db", "171_slice4_followups.sql"), "utf8");
+  const body = sql.slice(sql.indexOf("CREATE OR REPLACE FUNCTION app_can_but_scorer("), sql.indexOf("$$ LANGUAGE sql", sql.indexOf("CREATE OR REPLACE FUNCTION app_can_but_scorer(")));
+  const excluded = [...body.matchAll(/AND a\.role <> '([a-z]+)'/g)].map((m) => m[1]);
+  ok("db/171's app_can_but_scorer() excludes exactly these roles", excluded.sort().join() === [...RESULT_CONFIRM_EXCLUDED_ROLES].sort().join(),
+     `${excluded.join()} vs ${RESULT_CONFIRM_EXCLUDED_ROLES.join()}`);
+  ok("...and match_finalise() asks it, refusing coach_confirms",
+     /IF NOT coalesce\(app_can_but_scorer\('scoring\.finalise', match_school\(p_match\), match_team\(p_match\), NULL, p_match\), false\) THEN\s+RETURN QUERY SELECT false, 'coach_confirms'/.test(sql));
+}
+
 group("D5  Whoever makes a result official files no correction to it");
 {
   // OFFICIAL_RESULT §5: the two sets that must stay disjoint, as the two

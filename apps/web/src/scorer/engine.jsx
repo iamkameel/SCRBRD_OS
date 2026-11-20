@@ -270,6 +270,9 @@ function SyncPill({ sync, storage, onOpenHeld }) {
     waiting: { dot: D.amber, label: `No signal · ${sync.pending} to send`, title: "No connection — balls are saved and will send when there is one" },
     local:   sync.reason === "handed_over"
       ? { dot: D.sky, label: "Handed over", title: "You gave the scoring token to someone else" }
+      // db/171: the scorer's end screen put the pen down, everything sent.
+      : sync.reason === "released"
+      ? { dot: D.sky, label: "All sent · pen down", title: "Everything is sent. The coach can confirm the result now." }
       : sync.reason === "handover_pending" || sync.reason === "verifying"
       ? { dot: D.amber, label: "Handover pending", title: "Someone has armed a handover — use Take over to claim it" }
       // db/33 (SCRBRD-034): the result is declared and the database refuses
@@ -1065,6 +1068,24 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     })();
     return () => { cancelled = true; };
   }, [padStatus, matchOver]);
+
+  // ── The scorer puts the pen down (db/171, redesign slice 4) ──
+  // On the scorer's end screen ("Your part is done", FinishGate: not the
+  // coach's Confirm), once the match is over here and its outbox cleared —
+  // everything this phone recorded is the server's, nothing queued, held or
+  // on its way — the pad lets go of the lease, so the coach's "Confirm the
+  // result" works at once instead of after the 90 s lapse (held_elsewhere).
+  // The server asks the same of the holder and refuses anything else; a
+  // refusal or no signal leaves the lease to lapse as before. Something
+  // recorded afterwards (an undo) takes the pen again (PadSync.status()).
+  const scorersEnd = screen === "result" && fixtureLive && !practiceMode && matchOver && offer.state !== "available"
+    && finishOffer(match?.schoolId, match?.teamCode) !== "finish";
+  useEffect(() => {
+    const ps = syncRef.current, st = padStatus;
+    if (!scorersEnd || !ps || !st || !st.attached || !st.cleared || st.released) return;
+    if (st.pending || st.held || st.tossPending || st.syncing) return;
+    ps.release().catch(() => {});
+  }, [padStatus, scorersEnd]);
 
   const startMatch=cfg=>{
     setMatch(cfg);
@@ -2708,7 +2729,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
                left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
                attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
             :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}
-               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}/>)}
+               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}
+               released={!!padStatus?.released}/>)}
           {/* A tied match: the button where a super over may start, the
               engine's words where it may not (the tie stands). */}
           {offer.state!=="none"&&<div style={{marginBottom:"28px"}}><SuperOverOffer offer={offer} onStart={()=>setModal("superOver")}/></div>}
