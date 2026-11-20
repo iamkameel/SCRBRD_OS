@@ -7,7 +7,7 @@
  *   node apps/web/test/match-card.test.mjs
  */
 import { inningsStart, batters, bowler, ball, deriveInnings } from "@scrbrd/scoring";
-import { cardModel, demoScore, openWords, oversWords, resultSaidOf, scoreWords, scoresOf, startsIn, stateOf } from "../src/lib/matchCard.js";
+import { cardModel, demoScore, openWords, oversWords, paceWords, resultSaidOf, scoreWords, scoresOf, startsIn, stateOf } from "../src/lib/matchCard.js";
 import { statusSentence } from "../src/lib/matchCentre.js";
 
 let pass = 0, fail = 0;
@@ -109,6 +109,11 @@ group("A result is said only where the data says it (the lead, 19 Nov)");
 group("The action is named for the match");
 ok("from the home side", openWords(M) === "Open v Westville Boys' High 1XI");
 ok("from the away side", openWords({ ...M, mySide: "away" }) === "Open v Hilton College 1XI");
+
+// Slice 2, Q14 (Kameel: "Updates every 15 seconds"): the pace in words, from the pace the page reads at.
+ok("15 s is \"Updates every 15 seconds\"", paceWords(15000) === "Updates every 15 seconds");
+ok("...a minute, and minutes", paceWords(60000) === "Updates every minute" && paceWords(120000) === "Updates every 2 minutes");
+ok("...one second, singular; nothing for no pace", paceWords(1000) === "Updates every 1 second" && paceWords(0) === null && paceWords(NaN) === null);
 
 console.log(`\n${"─".repeat(52)}\nMATCH CARD (slice 1): ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

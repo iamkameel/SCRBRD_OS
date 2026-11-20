@@ -228,3 +228,18 @@ export function openWords(match, ownEnd = null) {
   const mine = ownEnd ?? (match?.mySide === "away" ? "away" : "home");
   return `Open v ${mine === "away" ? names.home.full : names.away.full}`;
 }
+
+/**
+ * How often a page asks for the score, as its reader is told it (Kameel's
+ * answer to Q14, 19 Nov 2026: "Updates every 15 seconds"): from the pace the
+ * page actually reads at, never a promise it does not keep.
+ * @param {number} ms
+ * @returns {string | null}
+ */
+export function paceWords(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `Updates every ${s} ${s === 1 ? "second" : "seconds"}`;
+  const m = Math.round(s / 60);
+  return m === 1 ? "Updates every minute" : `Updates every ${m} minutes`;
+}

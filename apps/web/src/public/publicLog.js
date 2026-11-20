@@ -26,6 +26,18 @@
  */
 import { saClock, saDate } from "../lib/saTime.js";
 
+/**
+ * The 18 Nov names (PUBLIC_DATA, after D4): the six dots the server puts after
+ * a boy's initial when he is not named ("R ••••••"). The rule is the server's
+ * (packages/policy/src/public.mjs NAME_DOTS, which
+ * apps/web/test/public-page.test.mjs holds this to); the page only notices
+ * that the server sent them, to say so in its note. Nothing here makes one.
+ */
+export const NAME_DOTS = "\u2022\u2022\u2022\u2022\u2022\u2022";
+
+/** Did the server send any boy as his initial and the dots? @param {Record<string, string> | null | undefined} people */
+export const dottedNames = (people) => Object.values(people ?? {}).some((n) => typeof n === "string" && n.endsWith(` ${NAME_DOTS}`));
+
 /** Where a reference sits on an event, and the word for it there. */
 const REFS = Object.freeze({
   striker: "Batter", nonStriker: "Batter", batter: "Batter", dismissed: "Batter",
