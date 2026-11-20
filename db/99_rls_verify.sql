@@ -2685,7 +2685,9 @@ CREATE OR REPLACE FUNCTION _sides_72(p_match uuid) RETURNS text AS $$
     FROM match m WHERE m.id = p_match
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _notices_72(p_match uuid) RETURNS integer AS $$
+  -- Not db/171's "is decided. Confirm the result." to who may confirm (under scoring.finalise; §146).
   SELECT count(*)::integer FROM notification n WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.kind = 'fixture'
+     AND n.required_capability <> 'scoring.finalise'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A row, as the owner reads it.
 CREATE OR REPLACE FUNCTION _row_72(p_match uuid, p_side text) RETURNS match_progression AS $$
@@ -6906,8 +6908,10 @@ CREATE OR REPLACE FUNCTION _v114_notes(p_match uuid) RETURNS jsonb AS $$
                             ORDER BY n.published_at, n.id), '[]'::jsonb)
     FROM notification n WHERE n.subject_kind = 'match' AND n.subject_id = p_match AND n.kind = 'fixture'
      -- The result's notices only: a ball held after the finish raises its own
-     -- (db/132), which §111 (late) proves.
+     -- (db/132), which §111 (late) proves; and the log deciding a live match
+     -- tells who may confirm it (db/171, under scoring.finalise), which §146 proves.
      AND n.title NOT LIKE 'Late ball set aside%'
+     AND n.required_capability <> 'scoring.finalise'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- Is this person a hand on the match's log (D5), as the owner asks it?
 CREATE OR REPLACE FUNCTION _v114_hand(p_match uuid, p_user uuid) RETURNS text AS $$
