@@ -2567,6 +2567,33 @@ Hash-checked:
 `sha256 7c80311d0d67f811b3717c0d70024a7e19993b746a52262170482fc15abcebd2`.
 Recorded in `db/SHIPPED.sha256` by #371 (df071d36).
 <!-- ── end db/168 ── -->
+<!-- ── db/170: Pro mode per fixture ── -->
+#### Pro mode per fixture (db/170)
+
+`db/170_fixture_pro_mode.sql` (PR #377, branch claude/wip-promode): the
+redesign's question 1. It adds `match.capture_profile`, the fixture's request to
+the pad (`full` is Pro mode; NULL asks nothing, and the pad scores one tap a
+ball), and `match_capture_request()`, the coach's or the office's door. The
+request is fixed once the toss is in. Its proof is db/99 §145.
+
+To paste:
+
+- **Between matches, with no match live.** `ADD COLUMN` and `ADD CONSTRAINT`
+  take ACCESS EXCLUSIVE on `match` until the paste commits. While the paste
+  waits for that lock (up to its own `lock_timeout`, ten seconds), every read of
+  `match` queues behind it, and a live pad's sync stalls for up to ten seconds
+  and then retries.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  170, and the API refuses to start on a database without it.
+- **It can be pasted again.** A second paste changes nothing (the dump is
+  identical), so a paste that timed out on its lock is simply run again.
+- **It doesn't depend on db/169.** Its guard asks for db/02, db/07, db/09 and
+  db/157 only. Only its place in `expected-migrations.json` follows 169's.
+- It resets `lock_timeout` with its last statement, so a pooled SQL Editor
+  connection is handed back as it came.
+
+Not pasted yet.
+<!-- ── end db/170 ── -->
 
 ### 5 · Cloud Run, the first time
 
