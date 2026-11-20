@@ -10863,6 +10863,8 @@ BEGIN
   INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
   VALUES (HIL, '1XI', 'V141 Mate', 43, 'batter', make_date(extract(year FROM sa_today())::int - 16, 7, 1))
   RETURNING id INTO v_m;
+  -- On his side all season, as the side's other boys (db/129 dates a pupil's reach by it).
+  UPDATE team_membership SET joined_on = make_date(extract(year FROM sa_today())::int, 1, 1) WHERE player_id = v_m;
   UPDATE app_user SET player_id = v_m WHERE id = (ids->>'mate')::uuid;
   INSERT INTO pupil_signin_consent (player_id, answer, how, given_by_name) VALUES (v_m, 'yes', 'enrolled', 'db/99 fixture');
   -- Who each subject-scoped assignment is about.
@@ -11178,7 +11180,7 @@ DECLARE
   HIL uuid := '11111111-1111-1111-1111-111111111111';
   WES uuid := '22222222-2222-2222-2222-222222222222';
   OFFICE uuid := '88888888-0000-0000-0000-00000000000c';
-  ids jsonb; v_e uuid; v_n uuid; v_m uuid; v_d uuid; v_l uuid; m uuid; k text; a uuid;
+  ids jsonb; v_e uuid; v_n uuid; v_m uuid; v_d uuid; v_l uuid; m uuid; k text; a uuid; v_mb uuid;
   sq jsonb := (SELECT jsonb_agg(jsonb_build_object('id', 'v143-' || g, 'name', 'V143 ' || g)) FROM generate_series(1, 11) g);
   six text[];
 BEGIN
@@ -11214,6 +11216,15 @@ BEGIN
     ARRAY['woffice', 'schooladmin',     WES::text, '',     '']]);
   -- The boy, as every pupil, is a player on his side as well as his own record.
   INSERT INTO role_assignment (person_id, role, school_id, team_code) VALUES ((ids->>'self')::uuid, 'player', HIL, 'U15A');
+  -- db/169 (Kameel, 20 Nov, A): a `player` names the boy it is, or the gate
+  -- closes it. The team-mate is his own U15A boy (no figures), enrolled as a
+  -- school's pupils were before db/169: the school's yes on record.
+  INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born)
+  VALUES (HIL, 'U15A', 'V143 Mate', 1435, 'batter', make_date(extract(year FROM sa_today())::int - 15, 9, 1)) RETURNING id INTO v_mb;
+  -- On his side all season, as the side's other boys (db/129 dates a pupil's reach by it).
+  UPDATE team_membership SET joined_on = make_date(extract(year FROM sa_today())::int, 1, 1) WHERE player_id = v_mb;
+  UPDATE app_user SET player_id = v_mb WHERE id = (ids->>'mate')::uuid;
+  INSERT INTO pupil_signin_consent (player_id, answer, how, given_by_name) VALUES (v_mb, 'yes', 'enrolled', 'db/99 fixture');
   FOR k, a IN SELECT x.k, x.p FROM (VALUES ('self', v_e), ('guard', v_e), ('guard2', v_n)) x(k, p) LOOP
     INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
                                     consent_state, consent_version, consent_at, created_by)
