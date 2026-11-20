@@ -2559,6 +2559,14 @@ Pasted on the demo and production, 19 Nov 2026. Hash-checked:
 slice 6a. Pasted on the demo and production, 19 Nov 2026. Hash-checked:
 `sha256 6832597ef3f132195973f9748a049bfca25b99968c03751c3fd3368c77acec0b`.
 <!-- ── end db/167 ── -->
+#### A pupil's claim and the under-18 basic view (db/168)
+
+`db/168_pupil_claim_basic_view.sql` (PR #364, merge a5a2f173): SCRBRD-140
+Migration A. Pasted on the demo and production, 20 Nov 2026, from 5954f838.
+Hash-checked:
+`sha256 7c80311d0d67f811b3717c0d70024a7e19993b746a52262170482fc15abcebd2`.
+Recorded in `db/SHIPPED.sha256` by #371 (df071d36).
+<!-- ── end db/168 ── -->
 
 ### 5 · Cloud Run, the first time
 
