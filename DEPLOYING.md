@@ -323,6 +323,7 @@ In Secret Manager, on the project:
 | `GUARDIAN_APP_URL` | The Guardian's app, CSA's anonymous-reporting partner, linked from Safeguarding (db/57). https only; unset, the screen says the link has not been set. Not a secret, but set here with the rest |
 | `PUBLIC_PAGES` | **leave unset** until the information officer has confirmed `docs/policy/PUBLIC_DATA.md` in writing (filed in `docs/policy/`). Unset (or anything but `on`), every public path — `/api/public/*`, `/live/*`, `/scorecard/*`, `/table/*`, `/fixtures/*` — answers the one 404. `on` serves the signed-out pages (SCRBRD-083, see below) |
 | `PUBLIC_PSEUDONYM_SECRET` | required when `PUBLIC_PAGES=on`: 32+ random bytes (`openssl rand -hex 32`), **not** the `SESSION_SECRET`. Keys the per-match HMAC pseudonyms that stand in for every player id on a public page; it is never in the code or the database, so a database dump cannot turn a pseudonym back into a boy. The API refuses to start without it, or with the session secret reused. Rotating it changes every pseudonym (harmless: they are per-match and nothing stores them) |
+| `PUBLIC_NAME_INITIALS` | **leave unset in production.** The 18 Nov names (Kameel, 18 Nov 2026; `docs/policy/PUBLIC_DATA.md`, the notes after D4): `on` shows a boy without public consent as his initial and six dots, "R ••••••", on every public page, the ground display and the big screen, never-public boys alike, where his side is published; a name the scorer typed and an unpublished side stay positions. Decided, not built for production: "production after counsel". So it is honoured only with `NODE_ENV=development` (the demo service, `docs/pilot/DEMO_COPY.md`); with `NODE_ENV=production` it is ignored, with one line at start, and every public page keeps its positions ("Batter"). When Kameel says counsel has read the rule, `services/api/server.mjs` drops the `DEV &&` from `PUBLIC_INITIALS` and production sets it |
 | `SUPABASE_URL` | where scorebook photos are stored (SCRBRD-120, db/63): the Supabase project's URL, `https://<project-ref>.supabase.co` — the project that holds the database, so the photos sit in its region. Not a secret. See "The scorebook importer's photos" below |
 | `SUPABASE_SERVICE_ROLE_KEY` | the same project's **service-role** key (Project Settings → API). A secret: it reads and writes every bucket, and never leaves the API — no photo is ever signed for a browser. Unset with `NODE_ENV=production`, photo uploads answer 503 `store_unconfigured` and nothing is written to the server's disk |
 | `SCOREBOOK_BUCKET` | optional, default `scorebook-pages`: the private bucket's name |
@@ -2558,6 +2559,14 @@ Pasted on the demo and production, 19 Nov 2026. Hash-checked:
 slice 6a. Pasted on the demo and production, 19 Nov 2026. Hash-checked:
 `sha256 6832597ef3f132195973f9748a049bfca25b99968c03751c3fd3368c77acec0b`.
 <!-- ── end db/167 ── -->
+#### A pupil's claim and the under-18 basic view (db/168)
+
+`db/168_pupil_claim_basic_view.sql` (PR #364, merge a5a2f173): SCRBRD-140
+Migration A. Pasted on the demo and production, 20 Nov 2026, from 5954f838.
+Hash-checked:
+`sha256 7c80311d0d67f811b3717c0d70024a7e19993b746a52262170482fc15abcebd2`.
+Recorded in `db/SHIPPED.sha256` by #371 (df071d36).
+<!-- ── end db/168 ── -->
 
 ### 5 · Cloud Run, the first time
 

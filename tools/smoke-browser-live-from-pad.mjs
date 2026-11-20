@@ -231,7 +231,9 @@ try {
   group("2. A spectator, signed out, opens the public page before play");
   const pu = await open("public", { path: `/live/${MATCH}` });
   await pu.page.waitForSelector('[data-testid="public-match"]', { timeout: 8000 }).catch(() => {});
-  ok(`the page draws the fixture, as a fixture ("${await word(pu.page, "mc-status")}")`, await has(pu.page, "public-match") && (await word(pu.page, "mc-status")) === "Fixture",
+  // Redesign slice 2: the match card's state line, a fixture to come being its day and time ("Sat 21 Nov · 17:25").
+  ok(`the page draws the fixture, as a fixture ("${await word(pu.page, "mc-status")}")`, await has(pu.page, "public-match")
+     && (await tid(pu.page, "mc-status").first().getAttribute("data-kind").catch(() => null)) === "upcoming" && /\d\d:\d\d$/.test(await word(pu.page, "mc-status")),
     (await text(pu.page)).slice(0, 300));
 
   // ── 3 ──────────────────────────────────────────────────────────
