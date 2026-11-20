@@ -177,6 +177,22 @@ export function stateOf(match, sentence, official = null) {
 }
 
 /**
+ * Is this a live fixture whose log already decides it: a result on the pad,
+ * not yet confirmed (redesign slice 4; DESIGN_DIRECTION Q2)? The card's own
+ * rule (stateOf()'s "Provisional"), asked by a screen that must also stop
+ * offering the pad or a take-over for it. False without a fold: a screen that
+ * did not read the log claims nothing.
+ * @param {any} match  @param {{innings?: any[], result?: any, conditions?: any} | null | undefined} fold
+ */
+export function decidedOn(match, fold) {
+  if (match?.status !== "live" || !fold?.innings?.length) return false;
+  // A tie whose conditions provide a super over is not decided until it is played (MatchView's `settled`).
+  const r = fold.result;
+  if (r?.outcome === "tie" && r.decidedBy == null && fold.conditions?.["result.tie_break"] === "super_over") return false;
+  return statusSentence(match, fold).state === "result";
+}
+
+/**
  * Everything the card says, in order.
  *
  * @param {{

@@ -2676,6 +2676,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     // second innings nobody batted.
     const said=res?.text??(pilotMode&&callOffNow?"No result: the match was called off":null);
     const pairs=superOversOf(innings);
+    // Redesign slice 4 (Flow D): on a fixture, the scorer's end or the coach's
+    // Confirm the result. Worked out once, so the one primary is the panel's.
+    const fixtureEnd=live&&matchId&&!practiceMode&&offer.state!=="available";
+    const finishAs=fixtureEnd?finishOffer(match?.schoolId,match?.teamCode):null;
+    const gateBack=finishAs&&finishAs!=="finish"&&onExit?onExit:null;
+    // The balls that stand on this pad's log (a ball taken back by undo is voided, not counted).
+    const voided=new Set(events.flat().filter(e=>e?.kind==="void").map(e=>e.target));
+    const ballsHere=events.flat().filter(e=>e?.kind==="ball"&&!voided.has(e.id)).length;
     return (
       <div style={{minHeight:"100vh",background:D.base,padding:"24px",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <GS/>
@@ -2688,7 +2696,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               {offer.state==="available"?"Not yet decided":"Match Complete"}
             </div>
             {said
-              ?<div data-testid="pad-result" style={{fontFamily:D.mono,fontSize:"clamp(22px,4vw,34px)",fontWeight:500,lineHeight:1.25,color:D.textPrimary,marginBottom:"6px"}}>{said}</div>
+              ?<div data-testid="pad-result" style={{fontFamily:D.body,fontSize:"clamp(22px,4vw,34px)",fontWeight:700,lineHeight:1.25,color:D.textPrimary,marginBottom:"6px",overflowWrap:"anywhere"}}>{said}</div>
               :<>
                 <div style={{fontFamily:D.mono,fontSize:"clamp(28px,5vw,48px)",fontWeight:500,background:D.grad,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text",marginBottom:"6px"}}>{winner}</div>
                 {!tie&&<div style={{color:D.emerald,fontSize:"16px",fontFamily:D.body,fontWeight:500}}>{margin}</div>}
@@ -2698,7 +2706,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               engine's words where it may not (the tie stands). */}
           {offer.state!=="none"&&<div style={{marginBottom:"28px"}}><SuperOverOffer offer={offer} onStart={()=>setModal("superOver")}/></div>}
           {suspensions.length>0&&<ReportOffer count={suspensions.length} onOpen={()=>setModal("suspendReport")}/>}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px",marginBottom:"28px"}}>
+          {/* One column at a phone's width (the scorer review: the result screen scrolled sideways at 390). */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,340px),1fr))",gap:"20px",marginBottom:"28px",minWidth:0}}>
             {[0,1].map(ii=>innings[ii]&&<ErrorBoundary key={ii} name="scorecard"><ScorecardPanel innings={innings} idx={ii}/></ErrorBoundary>)}
           </div>
           {/* Each super over under the match's innings, never mixed into them. */}
@@ -2734,14 +2743,12 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
               or the sign-in that returns here, or who may finish it. It was
               hidden in silence after any reload, which drops the token and,
               before this, the home school. */}
-          {live&&matchId&&!practiceMode&&offer.state!=="available"&&(()=>{
-            const finishAs=finishOffer(match?.schoolId,match?.teamCode);
-            return finishAs==="finish"
-              ?<FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
-                 left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
-                 attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
-              :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}/>;
-          })()}
+          {fixtureEnd&&(finishAs==="finish"
+            ?<FinishMatch matchId={matchId} engine={()=>syncRef.current?.engine??null}
+               left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
+               attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
+            :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}
+               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}/>)}
           {/* §2.5 step 6: at the result of a Practice or Pilot Match, an
               account with no school is asked once; never during play. */}
           {practiceMode&&onJoinSchool&&offer.state!=="available"&&(
@@ -2756,9 +2763,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
                 Save the scorecard
               </Btn>
             )}
-            <Btn variant="primary" size="lg" onClick={()=>{if(homeOnly){onExit?.();return;}setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setPractice(null);setSelSeg(null);}}>
+            {/* One primary: where the scorer's end has "Back to Today", this is not drawn. */}
+            {!gateBack&&<Btn variant="primary" size="lg" onClick={()=>{if(homeOnly){onExit?.();return;}setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setPractice(null);setSelSeg(null);}}>
               {homeOnly?"Back home":practiceMode?"Back to the start":"New Match"}
-            </Btn>
+            </Btn>}
           </div>
         </div>
       </div>

@@ -190,6 +190,26 @@ export function couldFinalise(schoolId, teamCode) {
 }
 
 /**
+ * May this person confirm the result of this fixture (redesign slice 4;
+ * DESIGN_DIRECTION Q2, Kameel, 20 Nov 2026: "the coach confirms the result")?
+ * Confirming is db/130's finish: scoring.finalise at the home side. The coach,
+ * the director of sport and the sports administrator hold it by their own
+ * role; a scorer, pupil or adult, holds it as the scorer, and the scorer's
+ * part ends at the last ball: "Your part is done. The coach confirms the
+ * result." So an assignment as `scorer` is not counted here. Like
+ * couldFinalise(), what to OFFER, never whether: match_finalise() decides,
+ * and it still admits the scorer role (the lead's migration, if it is to
+ * refuse him too).
+ */
+export function couldConfirmResult(schoolId, teamCode) {
+  return (_profile?.assignments ?? []).some((a) =>
+    a.role !== "scorer" &&
+    roleGrants(a.role, "scoring.finalise") &&
+    (a.school == null || a.school === schoolId) &&
+    (a.team == null || a.team === teamCode));
+}
+
+/**
  * Is this build talking to a real backend?
  *
  * The answer drives what the UI says out loud. A demo running on mock data

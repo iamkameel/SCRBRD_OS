@@ -21,6 +21,8 @@ import { ReadState } from "../ui/primitives.jsx";
 import { Bento, BentoCard } from "../ui/surfaces.jsx";
 import { Board } from "../ui/board.jsx";
 import { MatchCard } from "../ui/matchCard.jsx";
+import { decidedOn } from "../lib/matchCard.js";
+import { useLiveFolds, useResultsSaid } from "../lib/liveFolds.js";
 import { Icon } from "../ui/icons.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
 
@@ -176,6 +178,14 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
     window.addEventListener("online", back);
     return () => window.removeEventListener("online", back);
   }, []);
+  // The phone's own word on its signal, for the sync words (slice 4): "No signal · 2 to send".
+  const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine !== false);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
   // The clock, ticking, so "last observed 3 minutes ago" and a lease's end move without a read.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30e3); return () => clearInterval(t); }, []);
@@ -198,8 +208,18 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
   const { coverage, loading: coverageLoading } = useDutyCoverage(ids, role, nonce);
   const [observedAt, setObservedAt] = useState(null);
   useEffect(() => { if (!coverageLoading) setObservedAt(Date.now()); }, [coverage, coverageLoading]);
-  const list = useMemo(() => scorerFixtures({ matches: matchesRead.rows, assignments, officials: officialsRead.rows, userId, coverage, now }),
-    [matchesRead.rows, assignments, officialsRead.rows, userId, coverage, now]);
+  // Slice 4: each live fixture's log, folded, so a match the pad has decided reads "Provisional" and offers no
+  // pad or take-over: the scorer's part is done, and the coach confirms the result (DESIGN_DIRECTION Q2).
+  const liveIds = base.items.filter((i) => i.match.status === "live").map((i) => i.match.id);
+  const folds = useLiveFolds(liveIds, nonce);
+  const foldOf = (/** @type {any} */ m) => (m?.status === "live" && folds[m.id]?.innings?.length ? folds[m.id] : null);
+  const decided = useMemo(() => new Set(liveIds.filter((id) => decidedOn(base.items.find((i) => i.match.id === id)?.match, folds[id]))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [liveIds.join(","), folds]);
+  const list = useMemo(() => scorerFixtures({ matches: matchesRead.rows, assignments, officials: officialsRead.rows, userId, coverage, decided, now }),
+    [matchesRead.rows, assignments, officialsRead.rows, userId, coverage, decided, now]);
+  // A fixture the coach has confirmed today reads as the result, from the result read (slice 4).
+  const said = useResultsSaid(list.items.filter((i) => i.match.status === "complete" && !i.match.calledOff).map((i) => i.match.id), nonce);
 
   // ── the phone's own state, first ──
   const phone = usePhone(nonce);
@@ -314,12 +334,16 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                 {/* His side's live fixture, not on this phone: its sentence, and the pad (whose take-over is the route where another device holds it). */}
                 {liveElsewhere.map(({ match: m, state }) => {
                   const w = STATE_WORDS[state];
+                  // Decided on the pad (slice 4): provisional, the coach confirms, and no pad or take-over is offered.
+                  const act = w?.action
+                    ? { label: "Open the pad", aria: `Open the pad: ${sidesOf(m)}`, testid: `now-live-${m.id}-open`, onClick: () => open(m) }
+                    : { label: "Match Centre", aria: `Match Centre: ${sidesOf(m)}`, testid: `now-live-${m.id}-centre`, onClick: () => onNav && onNav("matches") };
                   return (
                     // The match card (slice 1): both sides, where it stands, who holds it, and the pad.
                     <div key={`live-${m.id}`} data-testid={`now-live-${m.id}`} data-state={state}>
-                      <MatchCard size="card" match={m} now={now} statusTestid={`now-live-${m.id}-sentence`}
+                      <MatchCard size="card" match={m} fold={foldOf(m)} now={now} statusTestid={`now-live-${m.id}-sentence`}
                         line={w?.label ? `${w.label}${w.note ? `. ${w.note}` : ""}` : null} lineTestid={`now-live-${m.id}-state`}
-                        action={{ label: "Open the pad", aria: `Open the pad: ${sidesOf(m)}`, testid: `now-live-${m.id}-open`, onClick: () => open(m) }}/>
+                        action={act}/>
                     </div>
                   );
                 })}
@@ -334,7 +358,7 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                     : <p style={line()} data-testid={`resume-${it.matchId}-noboard`}>No ball on the board yet.</p>;
                   const pending = (
                     <>
-                      {it.kind === "practice" ? "Kept on this phone only: nothing is sent" : pendingWords(it.pending)}
+                      {it.kind === "practice" ? "Kept on this phone only: nothing is sent" : pendingWords(it.pending, online)}
                       {it.savedAt ? ` · saved ${savedAtWords(it.savedAt, now)}` : ""}
                     </>
                   );
@@ -349,7 +373,7 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                       {it.kind === "fixture" && it.match ? (
                         // A fixture of his side's (slice 1): the match card at its board size, the board under both sides,
                         // the sentence, what is still to send, and one button.
-                        <MatchCard size="board" match={it.match} now={now} board={shown} line={pending} lineTestid={`resume-${it.matchId}-pending`}
+                        <MatchCard size="board" match={it.match} fold={foldOf(it.match)} now={now} board={shown} line={pending} lineTestid={`resume-${it.matchId}-pending`}
                           action={it.openable ? resumeAct : null}>{!it.openable && closed}</MatchCard>
                       ) : (
                         // A Pilot or Practice Match is this phone's own sandbox, not a fixture: it has no status to say
@@ -440,7 +464,8 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                     return (
                       // The match card's row (slice 1): the day, both sides, where it stands, then his part in it.
                       <li key={m.id} data-testid={`fixture-${m.id}`} data-group={group} data-state={state}>
-                        <MatchCard size="row" last={n === week.length - 1} match={m} now={now} statusTestid={`fixture-${m.id}-sentence`}
+                        <MatchCard size="row" last={n === week.length - 1} match={m} fold={foldOf(m)} now={now} statusTestid={`fixture-${m.id}-sentence`}
+                          innings={said[m.id]?.innings ?? null} resultSaid={said[m.id]?.text ?? null}
                           aside={a ? (
                             <span data-testid={`fixture-${m.id}-appointed`} style={{ ...T.role.label, color: T.brand.accentText }}>
                               Appointed to score{a.appointedAt ? ` · named ${humanDate(a.appointedAt)}` : ""}

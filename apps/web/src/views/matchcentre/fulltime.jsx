@@ -206,3 +206,66 @@ export function ConfirmScorecardPrompt({ match, role, commentary, innings, onFil
     </Panel>
   );
 }
+
+// ── Slice 4: the coach confirms the result (DESIGN_DIRECTION Q2) ──
+
+/** Each answer of POST /api/matches/:id/finalise, as the coach reads it (the pad's words, scorer/finishMatch.jsx). */
+export const CONFIRM_RESULT_WORDS = Object.freeze({
+  finished: "Confirmed. The match is finished.",
+  already_complete: "This result is already confirmed.",
+  not_permitted: "You may not confirm this result. The home side's coach or director of sport can.",
+  not_decided: "The match is not decided yet.",
+  super_over_pending: "The match is tied and its conditions provide a super over: it is played, or the organiser decides, first.",
+  match_abandoned: "This match was called off, so there is no result to confirm.",
+  held_elsewhere: "The scorer's phone still holds the match. It lets go about a minute and a half after the scorer leaves the pad; then confirm again.",
+});
+
+/**
+ * A live fixture whose log decides it (Kameel, 20 Nov 2026, Q2 (a)): "the
+ * coach confirms the result", and until then the score reads provisional to
+ * everyone. Drawn for a reader who may confirm (session.js
+ * couldConfirmResult(): scoring.finalise at the home side, held other than as
+ * the scorer); everybody else sees the Provisional word and nothing to press.
+ * The act is db/130's finish (POST /api/matches/:id/finalise), which decides;
+ * every answer is said here in words. It is not the official result
+ * (OFFICIAL_RESULT D11): that stays the director of sport's or the
+ * organiser's, after it.
+ * @param {{ match: any, result: string | null, onConfirmed?: (() => void) | null }} props
+ */
+export function ConfirmResultPanel({ match, result, onConfirmed = null }) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState(/** @type {{ok: boolean, text: string} | null} */ (null));
+  const done = said?.ok === true;
+  const confirm = async () => {
+    setBusy(true); setSaid(null);
+    try {
+      const r = await api(`/api/matches/${match.id}/finalise`, { method: "POST" });
+      setSaid({ ok: true, text: CONFIRM_RESULT_WORDS[/** @type {keyof typeof CONFIRM_RESULT_WORDS} */ (r?.state)] ?? CONFIRM_RESULT_WORDS.finished });
+      onConfirmed?.();
+    } catch (/** @type {any} */ e) {
+      setSaid({ ok: false, text: CONFIRM_RESULT_WORDS[/** @type {keyof typeof CONFIRM_RESULT_WORDS} */ (e?.code)] ?? "Couldn't reach SCRBRD; the result is not confirmed. Try again." });
+    } finally { setBusy(false); }
+  };
+  return (
+    <Panel testid="mc-confirm-result-panel">
+      <CardHead icon="circle-check">Result to confirm</CardHead>
+      <div style={{ padding: T.space.md, display: "grid", gap: T.space.sm }}>
+        {result && <p data-testid="mc-confirm-result-said" style={{ ...T.role.title.md, color: T.content.primary, margin: 0, overflowWrap: "anywhere" }}>{result}</p>}
+        <p style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>
+          The scorer's part is done. Check the scorecard, then confirm the result: until you do, it reads provisional to everyone.
+        </p>
+        {!done && (
+          <button type="button" data-testid="mc-finish" onClick={confirm} disabled={busy} aria-describedby="mc-finish-said"
+            className="pressBtn os-state" style={{ ...linkStyle(), justifySelf: "start", background: T.brand.green, color: T.surface.canvas,
+              border: "none", fontWeight: 600, opacity: busy ? 0.6 : 1, cursor: busy ? "progress" : "pointer" }}>
+            <Icon name="circle-check"/> {busy ? "Confirming…" : "Confirm the result"}
+          </button>
+        )}
+        <p id="mc-finish-said" role="status" aria-live="polite" data-testid="mc-finish-said"
+          style={{ ...T.role.body, fontSize: "14px", margin: 0, color: said && !said.ok ? T.semantic.criticalText : T.content.secondary }}>
+          {said?.text ?? ""}
+        </p>
+      </div>
+    </Panel>
+  );
+}

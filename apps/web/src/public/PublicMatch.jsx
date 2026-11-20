@@ -338,6 +338,9 @@ export function PublicMatch({ matchId, view }) {
 
   const sides = sidesOf(match);
   const isLive = match.status === "live";
+  // Slice 4 (DESIGN_DIRECTION Q2): decided on the pad and not yet confirmed by the coach, the result reads
+  // "Provisional" here as on every signed-in card: never Live, never a bare Result.
+  const provisional = isLive && !!folded?.result && !liveSO;
   // CRI-1.2: the status sentence says where the match stands; the line under it does not say it again.
   const line = matchLine({ match, competition: null, weather: null });
   const st = statusSentence(match, folded ? { innings: played, result: folded.result, conditions: data.fold?.conditions } : null, { result });
@@ -374,7 +377,7 @@ export function PublicMatch({ matchId, view }) {
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !(folded?.result && !liveSO) ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
             {isLive && !(folded?.result && !liveSO) && <span className="live-dot" aria-hidden="true"/>}
-            {(folded?.result && !liveSO) || (match.result && match.result.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {provisional ? "Provisional" : (folded?.result && !liveSO) || (match.result && match.result.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           <h1 data-testid="mc-title" style={{ ...T.role.title.md, fontSize: phone ? "18px" : "22px", color: T.content.primary, margin: 0 }}>
             {sides.home.full} <span style={{ color: T.content.tertiary, fontWeight: 400 }}>v</span> {sides.away.full}
@@ -387,7 +390,7 @@ export function PublicMatch({ matchId, view }) {
               time only, never who, never a reason, and never "Under review" (the server says a disputed
               result is not official). Announced when a poll changes it. */}
           <div role="status" aria-live="polite" data-testid="public-official">
-            {(() => { const w = publicOfficial(match.result, match.status); return w ? <StateLabel kind={w.kind} why={w.why} compact/> : null; })()}
+            {(() => { const w = provisional ? { kind: "provisional", why: null } : publicOfficial(match.result, match.status); return w ? <StateLabel kind={w.kind} why={w.why} compact/> : null; })()}
           </div>
           {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
           {/* Q18: the page's own link, the sides and the sentence, never a boy. Q19: the ground display, which the
