@@ -41,6 +41,12 @@
 
 20 Nov 2026: six merges recorded. #364 (merge a5a2f173, db/168): SCRBRD-140 Migration A, a pupil's claim and the under-18 basic view (sign-up honesty); Migration B (db/169) stays open. #371 (df071d36): the SHIPPED line for db/168; it was pasted on the demo and production on 20 Nov from 5954f838, `sha256 7c80311d0d67f811b3717c0d70024a7e19993b746a52262170482fc15abcebd2`. #368 (513013c8): redesign slice 1, one match card in three sizes on every signed-in first screen and the Matches list. #367 (d6d52f9a): redesign slice 3, the pad scores one tap a ball, with the board pinned. #369 (dd25c90d): records for the 19 Nov merges. #370 (3b80b4d2): two walks fixed at the root, `browser-innings-end` now waits for the fixture's own button and `browser-pupil` dates from the row. #366 (bc21dd20, redesign slice 7) is recorded in the 19 Nov (later) paragraph above. Redesign slices 1, 3 and 7 are done; the others stay open.
 
+20 Nov 2026: the public photo design is decided (Kameel, on the board: "All ten as recommended"), docs only: `docs/design/PUBLIC_PHOTO.md`. A8 stands for the pilot; the build is after the pilot and after counsel answers its §13.
+
+Decision (Kameel, 20 Nov, on the board): keep the separation. After a match, the coach's confirm finishes it; the official result stays with the director of sport or the competition organiser (OFFICIAL_RESULT D3 unchanged).
+
+Decisions (Kameel, 20 Nov 2026, on the board): (1) Migration B, a disable: "Drop it: a disable keeps the school's yes (lifecycle D1)". Switching a pupil's account off and on again does not end the school's yes; his account ending, his roster link moving, or his leaving the school (a move to another school included) still end it. (2) Date of birth: "The office corrects it; every change is audited (a follow-up)", with his note: "Date of birth should be match with an ID No." The office may correct a recorded date of birth; every change is logged (old date, new date, who); a date that does not match the ID number is refused on the server. A follow-up after db/169, not built yet (open item below). (3) Pro mode: "The team manager too, as built". The coach, the team manager and the office may switch Pro mode on for an upcoming home fixture (db/170, PR #377). (4) The demo's names: "Switch it on (the demo holds test players only)". `PUBLIC_NAME_INITIALS=on` is set on the demo service only, on 20 Nov; production ignores it until counsel has read the 18 Nov rule.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -5403,6 +5409,16 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - [ ] Reword that comment so the grep returns 0.
 - [ ] Tick SCRBRD-002's box.
 **Source:** the backlog map of 15 Nov 2026.
+
+### Date of birth: the office corrects it, every change audited (follow-up to db/169, 2026-11-20)
+**Priority:** P2 · **Domain:** Privacy / Sign-up · **Type:** build, Opus (a migration, and a minor's data)
+**Status:** open, not built. Decided by Kameel, 20 Nov: "The office corrects it; every change is audited (a follow-up)".
+**Why:** his note: "Date of birth should be match with an ID No."
+**Acceptance criteria:**
+- [ ] The office may correct a recorded date of birth.
+- [ ] Every change is logged: the old date, the new date, and who.
+- [ ] A date that does not match the ID number is refused on the server.
+**Source:** Kameel, on the board, 20 Nov 2026. Number not assigned.
 
 ---
 
