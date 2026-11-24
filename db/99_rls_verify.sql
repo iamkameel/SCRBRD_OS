@@ -153,10 +153,18 @@ CREATE OR REPLACE FUNCTION _count_accounts(p_email text) RETURNS integer AS $$
   SELECT count(*)::int FROM app_user WHERE lower(email) = lower(p_email);
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- An ID number carried along with a moved date of birth: its first six digits
+-- become the new date's, the rest kept. db/172 refuses a date of birth that
+-- disagrees with the ID number on file, the owner's included, so every helper
+-- here that moves a boy's birthday moves his ID number's date with it.
+CREATE OR REPLACE FUNCTION _id_follows(p_id text, p_born date) RETURNS text AS $$
+  SELECT CASE WHEN p_id IS NULL OR p_born IS NULL THEN p_id ELSE to_char(p_born, 'YYMMDD') || substr(p_id, 7) END
+$$ LANGUAGE sql IMMUTABLE;
+
 -- Move a child's eighteenth birthday, or take their date of birth away. Both
 -- are owner-only edits, and both roll back with the transaction.
 CREATE OR REPLACE FUNCTION _set_born(p_player uuid, p_born date) RETURNS void AS $$
-  UPDATE player SET born = p_born WHERE id = p_player;
+  UPDATE player SET born = p_born, id_number = _id_follows(id_number, p_born) WHERE id = p_player;
 $$ LANGUAGE sql SECURITY DEFINER;
 
 -- Wind a live link's end date back to a date already past. This is how the
@@ -1349,7 +1357,7 @@ CREATE OR REPLACE FUNCTION _v60_turn_eighteen(p uuid) RETURNS void AS $$
 DECLARE d int;
 BEGIN
   SELECT majority_on(born) - sa_today() INTO d FROM player WHERE id = p;
-  UPDATE player SET born = born - d WHERE id = p;
+  UPDATE player SET born = born - d, id_number = _id_follows(id_number, born - d) WHERE id = p;
   UPDATE assignment_subject SET valid_from = valid_from - d, valid_until = valid_until - d,
                                 verified_at = verified_at - make_interval(days => d), consent_at = consent_at - make_interval(days => d)
    WHERE player_id = p AND relationship IS DISTINCT FROM 'self';
@@ -1613,7 +1621,7 @@ END $$ LANGUAGE plpgsql;
 -- day it happened.
 CREATE OR REPLACE FUNCTION _v62_older(p uuid, d int) RETURNS void AS $$
 BEGIN
-  UPDATE player SET born = born - d WHERE id = p;
+  UPDATE player SET born = born - d, id_number = _id_follows(id_number, born - d) WHERE id = p;
   UPDATE assignment_subject SET valid_from = valid_from - d, valid_until = valid_until - d,
                                 verified_at = verified_at - make_interval(days => d), consent_at = consent_at - make_interval(days => d)
    WHERE player_id = p AND relationship IS DISTINCT FROM 'self';
@@ -9613,7 +9621,8 @@ BEGIN
   FOR i IN 1..3 LOOP
     INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, id_number, email, phone,
                         hometown, houseatschool, address, guardian, height, weight, fitness)
-    VALUES (HIL, 'U15E', format('Mask Boy %s', i), 1340 + i, 'batter', U15, format('080301580008%s', i),
+    -- The ID number carries his own date of birth: db/172 refuses one that does not.
+    VALUES (HIL, 'U15E', format('Mask Boy %s', i), 1340 + i, 'batter', U15, to_char(U15, 'YYMMDD') || format('580008%s', i),
             format('mask%s@example.invalid', i), format('+27 82 000 13%s', lpad(i::text, 2, '0')), 'Howick', 'Farfield',
             format('%s Example Road, Howick', i), jsonb_build_object('name', format('Mask Parent %s', i), 'phone', '+27 82 000 1399'),
             170 + i, 60 + i, 'fit')
@@ -14865,7 +14874,7 @@ BEGIN
 END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A player's date of birth set by the owner: the scan's own control.
 CREATE OR REPLACE FUNCTION _v168_set_born(p_player uuid, p_born date) RETURNS void AS $$
-  UPDATE player SET born = p_born WHERE id = p_player
+  UPDATE player SET born = p_born, id_number = _id_follows(id_number, p_born) WHERE id = p_player
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A function's grants, read from its ACL, the owner left out ("" for none, NULL when it does not exist).
 CREATE OR REPLACE FUNCTION _v168_acl(p_fn text) RETURNS text AS $$

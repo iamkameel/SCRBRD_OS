@@ -8,6 +8,9 @@
  *   - which side he plays for     POST /api/players/:id/team
  *   - a missing date of birth     POST /api/players/:id/date-of-birth
  *                                 (writes only where there is none)
+ *   - correcting a recorded one   POST /api/players/:id/date-of-birth/correction
+ *                                 and GET …/date-of-birth/changes: the school
+ *                                 office only, every change recorded (db/172)
  *   - who to ring in an emergency POST /api/players/:id/emergency-contacts
  *   - his name on public pages    POST /api/players/:id/public-name (the office,
  *                                 on a guardian's word or form) and
@@ -28,7 +31,7 @@
  *
  * Floors: nothing read under 12px, nothing pressed under 44px.
  */
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { D, inkOn, textOn } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useRows } from "../lib/live.js";
@@ -58,6 +61,7 @@ const SAY = {
   effective_on_invalid: "That date is not a date.",
   effective_on_in_future: "A move cannot be dated in the future.",
   born_required: "Give a date of birth.",
+  not_found: "That player is not on record.",
 };
 const words = (e) => e?.detail || SAY[e?.code] || BIRTH_DATE_MESSAGE[e?.code] || "The change was refused.";
 
@@ -83,6 +87,7 @@ export function EditProfile({ role, player, teams, onMoved }) {
     <div data-testid="edit-profile" style={{ display: "grid", gap: "16px", marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${D.border}` }}>
       {mayManage && <MoveSide player={player} teams={teams} onMoved={onMoved}/>}
       {mayManage && <CaptureBirthday role={role} player={player}/>}
+      {mayCorrectBirthday(role) && <CorrectBirthday player={player}/>}
       {mayContacts && (
         <div data-testid="edit-contacts">
           <p style={heading()}>Who to ring</p>
@@ -159,6 +164,84 @@ function CaptureBirthday({ role, player }) {
       {check && check.ok === false && <p role="alert" style={note(true)}>{BIRTH_DATE_MESSAGE[check.reason] || check.reason}</p>}
       <Go disabled={busy || !check?.ok} onClick={save} testid="edit-dob-save">Record it</Go>
       {said.text && <p role={said.bad ? "alert" : "status"} style={note(said.bad)}>{said.text}</p>}
+    </div>
+  );
+}
+
+/**
+ * The school office's three capabilities together (db/172's
+ * player_born_office(), which the server asks again): the principal, the
+ * director of sport and the sports administrator each lack one of them.
+ */
+export function mayCorrectBirthday(role) {
+  return signedIn() && ["player.profile.manage", "player.identity.read", "guardian.link.manage"]
+    .every((c) => holdsCapability(role, c));
+}
+
+/** How a change came about, in the office's words. */
+const HOW = { capture: "recorded", correction: "corrected", import: "from a roster import", owner: "by SCRBRD" };
+const day = (iso) => {
+  const d = iso ? new Date(`${String(iso).slice(0, 10)}T00:00:00Z`) : null;
+  return d && !Number.isNaN(d.getTime())
+    ? d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "none";
+};
+const when = (ts) => {
+  const d = ts ? new Date(ts) : null;
+  return d && !Number.isNaN(d.getTime())
+    ? d.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Johannesburg" }) : "";
+};
+
+/**
+ * Correcting a date of birth already on record: the office only, and every
+ * change is kept, before and after, who and when (Kameel, 20 Nov 2026). The
+ * server refuses a date that disagrees with the ID number on his record; a
+ * boy with no date at all is CaptureBirthday's above. Draws nothing for a
+ * person the server does not answer.
+ */
+function CorrectBirthday({ player }) {
+  const [nonce, setNonce] = useState(0);
+  const [state, setState] = useState(/** @type {{ born: string|null, changes: any[] } | null} */ (null));
+  const [born, setBorn] = useState("");
+  const [said, setSaid] = useState({ text: "", bad: false });
+  const [busy, setBusy] = useState(false);
+  const idBorn = useId();
+  useEffect(() => {
+    let live = true;
+    api(`/api/players/${player.id}/date-of-birth/changes`)
+      .then((r) => { if (live) setState({ born: r?.born ?? null, changes: Array.isArray(r?.changes) ? r.changes : [] }); })
+      .catch(() => { if (live) setState(null); });
+    return () => { live = false; };
+  }, [player.id, nonce]);
+  if (!state || !state.born) return null;
+  const check = born ? resolveBirthDate({ born }) : null;
+  const save = async () => {
+    setBusy(true); setSaid({ text: "", bad: false });
+    try {
+      const r = await api(`/api/players/${player.id}/date-of-birth/correction`, { method: "POST", body: { born } });
+      setBorn(""); setNonce((n) => n + 1);
+      setSaid({ text: r?.unchanged ? "That is the date already on record." : "Date of birth corrected.", bad: false });
+    } catch (e) { setSaid({ text: words(e), bad: true }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div data-testid="edit-dob-correct">
+      <p style={heading()}>Correct the date of birth</p>
+      <p style={note(false)} data-testid="edit-dob-on-record">On record for {player.name}: {day(state.born)}.</p>
+      <p style={note(false)}>Every change is kept: the date before and after, who made it and when. If his ID number is on file, the date must agree with it.</p>
+      <label htmlFor={idBorn} style={{ ...note(false), display: "block" }}>The right date of birth</label>
+      <input id={idBorn} type="date" value={born} onChange={(e) => setBorn(e.target.value)} style={field()} data-testid="edit-dob-correct-born"/>
+      {check && check.ok === false && <p role="alert" style={note(true)}>{BIRTH_DATE_MESSAGE[check.reason] || check.reason}</p>}
+      <Go disabled={busy || !check?.ok} onClick={save} testid="edit-dob-correct-save">Correct it</Go>
+      {said.text && <p role={said.bad ? "alert" : "status"} style={note(said.bad)} data-testid="edit-dob-correct-said">{said.text}</p>}
+      {state.changes.length > 0 && (
+        <ul data-testid="edit-dob-changes" style={{ listStyle: "none", padding: 0, margin: "10px 0 0", display: "grid", gap: "4px" }}>
+          {state.changes.map((c, i) => (
+            <li key={`${c.at}-${i}`} style={note(false)}>
+              {when(c.at)}: {day(c.was)} to {day(c.became)}, {HOW[c.how] || c.how}{c.by ? `, by ${c.by}` : ""}.
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

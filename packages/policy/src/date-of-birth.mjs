@@ -134,4 +134,20 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
     "The ID number carries a different date of birth to the one typed. One of them belongs to somebody else.",
   id_number_check_digit_failed:
     "Saved, but that ID number fails its own check digit — worth reading back against the document.",
+  // db/172's own refusals, which the database makes whoever writes: a date
+  // that disagrees with the ID number already on his record, and a recorded
+  // date changed by anyone but the school office.
+  born_correction_is_the_office:
+    "Only the school office may change a date of birth already on his record.",
+  born_in_future: "A date of birth cannot be in the future.",
 });
+
+/**
+ * The refusals db/172 makes in the database itself (its trigger on player,
+ * and player_born_correct()), by the names it raises them under. A route
+ * that writes born reads a Postgres error's message against this list.
+ */
+export const BORN_REFUSED_BY_DB = Object.freeze([
+  "id_number_disagrees_with_date_of_birth",
+  "born_correction_is_the_office",
+]);

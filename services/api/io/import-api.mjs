@@ -20,7 +20,7 @@
  * did.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
+import { resolveBirthDate, BIRTH_DATE_MESSAGE, BORN_REFUSED_BY_DB } from "@scrbrd/policy/date-of-birth";
 import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } from "./csv.mjs";
 /** @import { Pool, Db, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
 /** @import { ColumnSpec, RowError } from "./csv.mjs" */
@@ -48,6 +48,9 @@ import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } f
  *                                 membership the row opens (db/117).
  * @property {string} [mayImport]  SQL answering one boolean `ok` for the school ($1): may this
  *                                 caller import this kind at all. Asked once, before any row.
+ * @property {string} [setup]      SQL run once, in the file's transaction, before any row.
+ * @property {Record<string, { column: string, message: string }>} [refusals]
+ *                                 A database refusal by its message, as the row's error.
  * @property {(client: Db, school: string | undefined, v: Record<string, any>,
  *             file: Map<string, any>, line: number) => Promise<RowOutcome>} [apply]
  *                                 One row, written its own way. Used instead of find/insert/update.
@@ -191,6 +194,14 @@ export const IMPORTS = {
     // coalesce on every column, so a file that carries only names and teams
     // does not blank the birthdays somebody typed in by hand last term. A
     // blank cell in a CSV means "not in this file", never "delete this".
+    //
+    // A birthday the file CHANGES is a correction, not an overwrite (Kameel,
+    // 20 Nov 2026: "The office corrects it; every change is audited"). The
+    // statement is the same; db/172's trigger on the column decides: only the
+    // school office may change a recorded date, the date must agree with the
+    // ID number on his record, and every change is written to
+    // player_born_change as 'import'. Each refusal is that row's error
+    // (`refusals` below), and the file commits nothing.
     update: `update player
                 -- full_name and school_id are both referenced deliberately.
                 -- Postgres infers a parameter's type from its use, so an
@@ -223,6 +234,16 @@ export const IMPORTS = {
     // every row: the setting lives for the whole file's transaction, and a
     // row with no date must not inherit the previous row's.
     joinedOn: `select set_config('app.effective_on', coalesce(import_joined_on($1, $2)::text, ''), true)`,
+    // How db/172's record names a date this file writes: 'import'. For the
+    // whole file's transaction; a label, never an authority.
+    setup: `select set_config('app.born_how', 'import', true)`,
+    refusals: {
+      id_number_disagrees_with_date_of_birth: { column: "born",
+        message: "The ID number on his record carries a different date of birth. One of them belongs to somebody else; " +
+                 "the office can check it against his documents." },
+      born_correction_is_the_office: { column: "born",
+        message: `${BIRTH_DATE_MESSAGE.born_correction_is_the_office} Leave born blank on this line, or ask the office.` },
+    },
     params: (school, v) => [school, v.full_name, v.team_code, v.squad_no, v.playing_role,
                             v.batting_style, v.bowling_arm, v.bowling_style, v.born, v.id_number,
                             v.email, v.phone, v.hometown],
@@ -424,6 +445,7 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
       const may = (await client.query(def.mayImport, [schoolId])).rows[0];
       if (!may?.ok) { const e = /** @type {DressedError} */ (new Error("not_permitted")); e.status = 403; throw e; }
     }
+    if (def.setup) await client.query(def.setup);
     let inserted = 0, updated = 0, unchanged = 0;
     // What a kind's apply() remembers across the file's rows.
     /** @type {Map<string, any>} */
@@ -494,7 +516,10 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
       } catch (/** @type {any} */ e) {
         // 42501 is the policy; everything else is a constraint the CSV could
         // not know about. Both are reported against the line in their file.
-        refused.push({ line, column: null,
+        // A refusal the kind names (db/172's, on a birthday) is read first:
+        // its own words, on its own column.
+        const named = BORN_REFUSED_BY_DB.includes(e.message) ? def.refusals?.[e.message] : undefined;
+        refused.push(named ? { line, column: named.column, message: named.message } : { line, column: null,
           message: e.code === "42501" ? "not permitted at this school"
                  : (e.detail || e.message || "refused") });
         // The savepoint has to be rolled back before the transaction will
