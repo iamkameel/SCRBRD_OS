@@ -31,6 +31,8 @@ const SUITES = [
   ["teams",    "packages/policy/test/teams.test.mjs"],
   ["sa-id",    "packages/policy/test/sa-id.test.mjs"],
   ["dob",      "packages/policy/test/date-of-birth.test.mjs"],
+  // db/172: the century in SQL held to sa-id.mjs, on db/99 §147's one list.
+  ["sa-id-sql-pin", "packages/policy/test/sa-id-sql-pin.test.mjs"],
   ["modules",  "packages/policy/test/modules.test.mjs"],
   ["separation","packages/policy/test/separation.test.mjs"],
   ["sensitivity","packages/policy/test/sensitivity.test.mjs"],
