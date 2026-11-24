@@ -128,8 +128,9 @@ export function TermsGate({ child, w, onAgreed, testid = "family-gate" }) {
   return (
     <Card testid={`${testid}-${child.id}`}>
       <Title as="h2" testid={`${testid}-head`}>{words.head}</Title>
-      <Line testid={`${testid}-ask`}>{words.ask}</Line>
-      <Line quiet testid={`${testid}-opens`}>{words.opens}</Line>
+      {/* Open, the sheet says the ask in its own first line: each thing once. */}
+      {!open && <Line testid={`${testid}-ask`}>{words.ask}</Line>}
+      {!open && <Line quiet testid={`${testid}-opens`}>{words.opens}</Line>}
       {open
         ? <div ref={sheet}><AgreeTerms child={child} w={w ?? {}} onAgreed={onAgreed} onClose={() => toggle(false)}/></div>
         : <div ref={button}><Action primary onClick={() => toggle(true)} testid={`${testid}-read`}>{words.button}</Action></div>}
