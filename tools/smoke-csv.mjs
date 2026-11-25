@@ -506,6 +506,32 @@ try {
       csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL, commit: true });
     ok("sending it again is no change, and records nothing more",
        again.body?.committed === true && (await changesOf("K Dlamini")).length === 1);
+
+    // The ID number on file is the office's (db/172 review S1, N1).
+    const idOf = async (name) => (await q(`select id_number from player where school_id = $1 and full_name = $2`, [HIL, name]))[0]?.id_number;
+    const dirId = await importCsv("players", director, {
+      csv: "full_name,team_code,id_number\nFrom Id,1XI,1104075999084\n", schoolId: HIL });
+    ok("the director's file giving an ID number for a boy on the roster is refused, saying nothing of what is on file",
+       dirId.body?.committed === false && dirId.body?.errors?.[0]?.column === "id_number"
+         && /school office's to record/.test(dirId.body?.errors?.[0]?.message ?? ""), JSON.stringify(dirId.body?.errors));
+    const dirNone = await importCsv("players", director, {
+      csv: `full_name,team_code,id_number\nK Dlamini,U16B,${to.slice(2, 4)}${to.slice(5, 7)}${to.slice(8, 10)}5000081\n`, schoolId: HIL });
+    ok("...and the same words where none is on file",
+       dirNone.body?.errors?.[0]?.message === dirId.body?.errors?.[0]?.message, JSON.stringify(dirNone.body?.errors));
+    const swap = await importCsv("players", office, {
+      csv: "full_name,team_code,id_number\nFrom Id,1XI,1104075999084\n", schoolId: HIL, commit: true });
+    ok("the office's file carrying another number than his record's is refused on its line",
+       swap.body?.committed === false && swap.body?.errors?.[0]?.column === "id_number"
+         && /different ID number/.test(swap.body?.errors?.[0]?.message ?? ""), JSON.stringify(swap.body?.errors));
+    ok("...and the number on file stands", (await idOf("From Id")) === "1104075800085");
+    const sameId = await importCsv("players", office, {
+      csv: "full_name,team_code,id_number\nFrom Id,1XI,1104075800085\n", schoolId: HIL, commit: true });
+    ok("...while the number already on file goes through", sameId.body?.committed === true, JSON.stringify(sameId.body?.errors));
+    const fill = `${to.slice(2, 4)}${to.slice(5, 7)}${to.slice(8, 10)}5000081`;
+    const filled = await importCsv("players", office, {
+      csv: `full_name,team_code,id_number\nK Dlamini,U16B,${fill}\n`, schoolId: HIL, commit: true });
+    ok("the office's file fills a missing number", filled.body?.committed === true && (await idOf("K Dlamini")) === fill,
+       JSON.stringify(filled.body?.errors));
   }
 
   group("A round trip");

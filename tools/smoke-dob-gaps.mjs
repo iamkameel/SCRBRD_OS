@@ -146,6 +146,11 @@ try {
 
   group("the write closes a gap and refuses to reopen a birthday already captured");
   // db/172: the ID number already on his record decides, not only one typed beside the date.
+  // To one who may not read ID numbers, the refusal says neither that one is
+  // on file nor what it carries (review N1).
+  const notReader = await capture(P_INJURED, director, { born: "2013-06-01" });
+  ok("the director of sport is told only that the office must record it",
+     notReader.status === 422 && notReader.body?.error === "born_needs_the_office", JSON.stringify(notReader.body));
   const against = await capture(P_INJURED, registrar, { born: "2013-06-01" });
   ok("a date that disagrees with the ID number on his record is refused, by the database",
      against.status === 422 && against.body?.error === "id_number_disagrees_with_date_of_birth", JSON.stringify(against.body));
