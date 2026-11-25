@@ -317,6 +317,60 @@ try {
     `insert into match_squad (match_id, player_id, side) values ($1,$2,'home')`, [m.id, P_U13]);
   ok("...and cannot be picked either", /not registered to play \(unlinked\)/.test(u13Refused ?? ""));
 
+  group("Verified, not agreed: nothing of him until she agrees (db/175)");
+  {
+    // Slice 5b: a link the office verified without the terms reaches no row
+    // of the child. She is told whose terms they are (my_terms_due: his name,
+    // his school) and agrees for herself over HTTP, with no capability; then
+    // she reads him. Kameel, 18 Nov 2026: "Server withholds his data until
+    // she agrees."
+    for (let i = 0; i < 60; i++) {
+      try { const r = await api("/api/health"); if (r.body?.db === "ok") break; } catch { /* not up */ }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const GATED = "88888888-0000-0000-0000-0000000000f6";
+    await q(`insert into app_user (id, school_id, email, name, role)
+             values ($1,$2,'gated.parent@example.invalid','T Gated','parent')`, [GATED, HIL]);
+    ok("the office establishes her link",
+       (await call(REGISTRAR, "select * from guardian_link_establish($1,$2,'parent')", [GATED, P_CELE])).ok === true);
+    ok("...and verifies it without the terms",
+       (await call(REGISTRAR, "select * from guardian_link_verify($1,$2,null::text)", [GATED, P_CELE])).ok === true);
+    ok("she reads nothing of him: not his row",
+       !(await players(GATED)).includes(P_CELE));
+    ok("...nor a fixture through him", (await fixtures(GATED)) === 0);
+    const tok = await devLogin("gated.parent@example.invalid");
+    const due = await api("/api/read/my_terms_due", { token: tok });
+    ok("her terms are due for him, by name and school, and nothing else",
+       due.status === 200 && due.body?.rows?.length === 1 && due.body.rows[0].player_id === P_CELE
+       && !!due.body.rows[0].full_name && !!due.body.rows[0].school_name
+       && Object.keys(due.body.rows[0]).sort().join(",") === "full_name,link_id,player_id,school_id,school_name",
+       JSON.stringify(due.body));
+    const kids = await api("/api/read/my_children", { token: tok });
+    ok("...and her family list has his waiting row: pending, no team, no dates",
+       kids.status === 200 && kids.body?.rows?.length === 1 && kids.body.rows[0].consent_state === "pending"
+       && kids.body.rows[0].team_code == null && kids.body.rows[0].valid_from == null,
+       JSON.stringify(kids.body));
+    const career = await api(`/api/read/career?playerId=${P_CELE}`, { token: tok });
+    ok("...and a read of him answers no rows", (career.body?.rows ?? []).length === 0, JSON.stringify(career.body).slice(0, 200));
+    ok("she cannot agree another guardian's terms for him",
+       (await api(`/api/players/${P_CELE}/guardians/consent`, { method: "POST", token: tok,
+          body: { guardianId: "88888888-0000-0000-0000-000000000013", consentVersion: "popia-2026-01" } })).body?.ok !== true);
+    const agree = await api(`/api/players/${P_CELE}/guardians/consent`, { method: "POST", token: tok,
+       body: { guardianId: GATED, consentVersion: "popia-2026-01" } });
+    ok("she agrees for herself over HTTP", agree.body?.ok === true, JSON.stringify(agree.body));
+    ok("...and now she reads him", (await players(GATED)).includes(P_CELE));
+    ok("...and nothing is due", ((await api("/api/read/my_terms_due", { token: tok })).body?.rows ?? []).length === 0);
+    const after = await api("/api/read/my_children", { token: tok });
+    ok("...and her family list has him, agreed, with his side",
+       after.body?.rows?.length === 1 && after.body.rows[0].consent_state === "granted" && !!after.body.rows[0].team_code
+       && after.body.rows[0].consent_version === "popia-2026-01",
+       JSON.stringify(after.body));
+    const [rec] = await q(`select count(*)::int n from guardian_terms_record r
+                            join assignment_subject g on g.id = r.link_id join role_assignment a on a.id = g.assignment_id
+                           where a.person_id = $1 and r.state = 'granted' and r.how = 'guardian'`, [GATED]);
+    ok("...and her agreement is on record as her own", rec.n === 1);
+  }
+
   group("The link table cannot be written directly");
   const [anyAssign] = await q(`select id from role_assignment where role = 'guardian' limit 1`);
   ok("the office cannot INSERT a link, only call the function",

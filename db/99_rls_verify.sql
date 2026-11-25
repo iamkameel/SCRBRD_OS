@@ -26014,6 +26014,13 @@ BEGIN
                     AND (_v62_link(P_RCLUB, U_RCMUM)).until = majority_on(_born_of(P_RCLUB)),
       format('db/62 (request): a granted request wrote the pupil''s link %s and the club member''s %s',
              coalesce((_v62_link(P_RPUP, U_RMUM)).until::text, 'open'), coalesce((_v62_link(P_RCLUB, U_RCMUM)).until::text, 'open')));
+    -- db/175: the grant door leaves each link waiting for her agreement; each
+    -- agrees in the app, as the family screen asks, so what follows is the
+    -- link's dates and nothing else.
+    PERFORM _as(U_RMUM);
+    PERFORM _assert((SELECT ok FROM guardian_consent_record(U_RMUM, P_RPUP, 'popia-2026-01')), 'db/62 (request): the pupil''s mother could not agree');
+    PERFORM _as(U_RCMUM);
+    PERFORM _assert((SELECT ok FROM guardian_consent_record(U_RCMUM, P_RCLUB, 'popia-2026-01')), 'db/62 (request): the club member''s mother could not agree');
     PERFORM _as(U_OFF);
     SELECT ok, reason INTO v_ok, v_reason FROM decide_role_request((ids->>'r_radult')::uuid, true, 'verify db/62');
     PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult' AND _count_guardian_assignments(U_RAMUM) = 0
@@ -26938,8 +26945,13 @@ BEGIN
     PERFORM _assert(_notices_65(M) = want,
       format('db/65 (notice): the move asked %s; expected %s', _notices_65(M), want));
 
-    -- (reach) each reads his own notice and nobody else's
-    FOR r IN SELECT * FROM (VALUES (U_WHIT, P1), (U_BEKK, P2), (U_SARAH, P4), (U_CELE, P4), (U_SELF, P_INJURED)) v(who, boy) LOOP
+    -- (reach) each reads his own notice and nobody else's. N Cele has not
+    -- agreed the terms (db/175): hers is written, and held from her until she
+    -- agrees (Q4), so she reads none of them yet.
+    PERFORM _as(U_CELE);
+    SELECT count(*) INTO n FROM notification WHERE subject_id = M;
+    PERFORM _assert(n = 0, format('db/65 (reach): N Cele, not agreed, reads %s of the fixture''s notices', n));
+    FOR r IN SELECT * FROM (VALUES (U_WHIT, P1), (U_BEKK, P2), (U_SARAH, P4), (U_SELF, P_INJURED)) v(who, boy) LOOP
       PERFORM _as(r.who);
       SELECT string_agg(n.subject_person_id || ':' || (n.body LIKE '%is now%' AND n.body LIKE '%was for%'), ',') INTO got
         FROM notification n WHERE n.subject_id = M;
