@@ -35749,7 +35749,7 @@ $v49$;
   --   (enrol)    enrol_person() for a pupil takes his side from the roster; a
   --              pupil on no side is refused by name and no account is left
   --   (seed)     the whole table holds no live team-less `player` row, and
-  --              the seed's spectator@ account is on the 1st XI
+  --              the seed's mate@ account is on the 1st XI (db/173)
   --   (doors)    the constraint as written and validated; db/01's coach rule
   --              untouched; the grant door derives
   --
@@ -35835,8 +35835,9 @@ $v49$;
     -- (seed)
     PERFORM _assert(_v108_fact('teamless_live') = '0',
       format('§85 (seed): %s live team-less player rows on the record', _v108_fact('teamless_live')));
-    PERFORM _assert(_v108_fact('team_of', 'a5510000-0000-0000-0000-000000000001') = '1XI',
-      '§85 (seed): the seed''s spectator@ account is not a pupil of the 1st XI');
+    -- The seed's team-mate (mate@, db/173; spectator@ until then).
+    PERFORM _assert(_v108_fact('team_of', 'a5510000-0000-0000-0000-000000000173') = '1XI',
+      '§85 (seed): the seed''s mate@ account is not a pupil of the 1st XI');
 
     -- (doors)
     PERFORM _assert((SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
@@ -37008,8 +37009,8 @@ $v49$;
   --                opened 1 on his side, mb's stray row ended, nb's ended: he
   --                has no side), and the earlier sections' too; nothing then
   --                disagrees, and a second run changes nothing at all; the
-  --                seed's two `player` rows (R Pillay's, and spectator@'s, no
-  --                boy's) are as they were
+  --                seed's two `player` rows (R Pillay's, and mate@'s since
+  --                db/173) are as they were
   --   (playing up) up reads every ball of f16a (home) and f16w (away), the
   --                matches he is on the sheet of, and none of f16b, the older
   --                side's other match; and his own side's f14 as before. His
@@ -37222,7 +37223,7 @@ $v49$;
     PERFORM _assert(j = '{}'::jsonb AND _v112_fact('all_assignments') = v_all,
       format('§89 (idempotent): a second correction answered %s, or changed an assignment', j));
     PERFORM _assert(_v112_fact('seed_live') = v_seed
-                    AND v_seed LIKE '%a5510000-0000-0000-0000-000000000001:1XI%'
+                    AND v_seed LIKE '%a5510000-0000-0000-0000-000000000173:1XI%'
                     AND v_seed LIKE '%a5510000-0000-0000-0000-00000000000c:1XI%',
       format('§89 (idempotent): the seed''s live player rows are now %s, were %s', _v112_fact('seed_live'), v_seed));
     PERFORM _as(U_TM);
@@ -50214,8 +50215,8 @@ $m130$;
   --               principal do, and so does he
   --   (noboy)     A: a `player` naming no boy is closed, reads its own rows
   --               only; named, with a yes, it opens; the grant door refuses
-  --               to make one; the seeded test account (spectator@) alone
-  --               is not closed, by its id
+  --               to make one; the seeded test account (spectator@) holds
+  --               no pupil's role since db/173 (§148 (gate))
   --   (form)      D, optional until counsel: who signed the form and the
   --               day, when given, are checked and kept; a refusal records
   --               nothing; without them the tick is recorded; the office
