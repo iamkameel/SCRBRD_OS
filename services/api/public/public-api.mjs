@@ -475,7 +475,7 @@ export const NOT_FOUND_HTML = `<!doctype html>
       header{border-bottom:1px solid var(--line)}
       a{color:var(--ink);text-decoration:none;display:inline-flex;align-items:center;min-height:44px;min-width:44px;box-sizing:border-box}
       .mark{font-size:18px;font-weight:800}
-      .pill{padding:0 16px;border:1px solid var(--line);border-radius:999px;font-size:14px;font-weight:600}
+      .pill{padding:0 16px;border:1px solid var(--line);font-size:14px;font-weight:600}
       main{max-width:960px;margin:0 auto;padding:32px 16px}
       h1{font-size:20px;margin:0 0 8px}
       p{font-size:15px;line-height:1.5;color:var(--dim);margin:0 0 16px}
