@@ -447,18 +447,47 @@ export function shellHtml({ view, matchId, header }) {
 `;
 }
 
-/** The one not-found page: the same for every reason there is nothing. */
+/**
+ * The one not-found page: the same for every reason there is nothing, and it
+ * still leads somewhere (redesign slice 14, DESIGN_DIRECTION §2.1, §3.5): in
+ * the reader's theme (THEME_BOOT, as every public page), under the slim public
+ * header (the mark to the home page, "Log in"), with "See today's matches".
+ * Plain HTML and no script but the theme's: nothing here says whether a match
+ * exists, and the page loads no bundle. Mirrors apps/web/src/public/shell.jsx.
+ */
 export const NOT_FOUND_HTML = `<!doctype html>
 <html lang="en-ZA">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="${SHELL_ROBOTS}" />
+    <meta name="theme-color" content="#05070a" />
+    <meta name="color-scheme" content="dark light" />
     <title>Not found · SCRBRD</title>
+    <script>
+      ${THEME_BOOT}
+    </script>
+    <style>
+      :root{--bg:#05070a;--ink:#e8ecef;--dim:#a4adb3;--line:#2b343b}
+      :root[data-theme="daylight"]{--bg:#eef0ea;--ink:#12171b;--dim:#3f4a50;--line:#b9c0b8}
+      body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+      .bar{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:960px;margin:0 auto;padding:0 16px}
+      header{border-bottom:1px solid var(--line)}
+      a{color:var(--ink);text-decoration:none;display:inline-flex;align-items:center;min-height:44px;min-width:44px;box-sizing:border-box}
+      .mark{font-size:18px;font-weight:800}
+      .pill{padding:0 16px;border:1px solid var(--line);font-size:14px;font-weight:600}
+      main{max-width:960px;margin:0 auto;padding:32px 16px}
+      h1{font-size:20px;margin:0 0 8px}
+      p{font-size:15px;line-height:1.5;color:var(--dim);margin:0 0 16px}
+    </style>
   </head>
-  <body style="font-family:system-ui,sans-serif;background:#05070a;color:#e8ecef;padding:24px">
-    <h1 style="font-size:20px">This page is not available.</h1>
-    <p>The link may be wrong, or the match may not be public.</p>
+  <body>
+    <header data-testid="public-header"><div class="bar"><a class="mark" href="/" aria-label="SCRBRD, home">SCRBRD</a><a class="pill" href="/app" rel="nofollow">Log in</a></div></header>
+    <main>
+      <h1>This page is not available.</h1>
+      <p>The link may be wrong, or the match may not be public.</p>
+      <a class="pill" href="/" data-testid="public-see-today">See today's matches</a>
+    </main>
   </body>
 </html>
 `;

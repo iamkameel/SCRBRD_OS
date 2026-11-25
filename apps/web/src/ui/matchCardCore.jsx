@@ -123,7 +123,7 @@ function SideRow({ side, size, testid, mark = null }) {
  *   official?: "provisional" | "official" | "review" | null, now?: number,
  *   updated?: import("react").ReactNode, line?: import("react").ReactNode, lineTestid?: string,
  *   action?: any, also?: any, board?: import("react").ReactNode, children?: import("react").ReactNode,
- *   onOpen?: (() => void) | null, openLabel?: string, expanded?: boolean, controls?: string,
+ *   onOpen?: (() => void) | null, openLabel?: string, expanded?: boolean, controls?: string, actionPrimary?: boolean | null,
  *   loading?: boolean, error?: boolean, onRetry?: (() => void) | null,
  *   testid?: string, statusTestid?: string, sideTestid?: string, last?: boolean, aside?: import("react").ReactNode,
  *   stateTestid?: string, scoresTestid?: string, mark?: {end: "home" | "away", node: import("react").ReactNode} | null,
@@ -132,12 +132,15 @@ function SideRow({ side, size, testid, mark = null }) {
  *
  * `model`: cardModel()'s answer, where the screen made it already to say the
  * same sentence elsewhere (the public page's Share); the card then says it as
- * given. `mark`: one small thing drawn under one side's score (the public
+ * given. `actionPrimary`: false draws the action as the quiet one, where the
+ * card sits in a quiet block under a screen's lead (slice 8: one primary per
+ * screen); unset, a card's action is primary and a row's is not. `mark`: one
+ * small thing drawn under one side's score (the public
  * page's "Corrected" chip, GA-I36 §5), never a second figure.
  */
 export function MatchCardCore({ size = "card", match, fold = null, innings = null, resultSaid = null, scores = null, ownEnd = null, official = null, now,
                             updated = null, line = null, lineTestid, action = null, also = null, board = null, children = null,
-                            onOpen = null, openLabel, expanded, controls,
+                            onOpen = null, openLabel, expanded, controls, actionPrimary = null,
                             testid, statusTestid, sideTestid, last = false, aside = null, stateTestid, scoresTestid, mark = null, model = null }) {
   const s = SIZE[size];
   const row = size === "row";
@@ -169,7 +172,7 @@ export function MatchCardCore({ size = "card", match, fold = null, innings = nul
       {children}
       {(action || also) && (
         <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap", alignItems: "center", marginTop: row ? 0 : T.space.xs }}>
-          <ActionButton a={action} primary={!row}/>
+          <ActionButton a={action} primary={actionPrimary ?? !row}/>
           <ActionButton a={also} primary={false}/>
         </div>
       )}

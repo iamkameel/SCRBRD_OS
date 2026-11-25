@@ -250,7 +250,7 @@ group("The family screens are quiet with no innings at all (review S4)");
   ok("innings: drawn", quietWhenEmpty({ loading: false, error: null, rows: [{}] }) === false);
   const fam = read("../src/views/family/family.jsx"), pup = read("../src/views/family/pupil.jsx"), v = read("../src/views/seasontrend.jsx");
   ok("the parent's Home and the Passport ask for it, the card inside the frame so none is left empty",
-     /quietWhenNone\s+frame=\{\(panel\) => <Card label="Innings by innings" testid="family-trend">/.test(fam)
+     /quietWhenNone\s+frame=\{\(panel\) => <Card label="Innings by innings" testid="family-trend"( weight="quiet")?>/.test(fam)
      && /quietWhenNone\s+frame=\{\(panel\) => <Card label="Innings by innings" testid="passport-trend">/.test(pup));
   ok("...and the panel returns nothing, frame and all, when quiet", /if \(quietWhenNone && quietWhenEmpty\(read\)\) return null;/.test(v));
   ok("Analytics does not: there a staff reader picked the boy, and the careful words stay", !/quietWhenNone/.test(read("../src/views/AnalyticsView.jsx"))
