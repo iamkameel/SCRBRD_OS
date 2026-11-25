@@ -7,7 +7,7 @@ import { busOf, isMatchDay, sideFoot, sideRows, withSwitches } from "../../lib/c
 import { useFeatures } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { sidesOf } from "../../lib/matchCentre.js";
-import { chooseFixtures, countOf } from "../../lib/queue.js";
+import { chooseFixtures, countOf, fixtureRows, needsYouWords, splitForReader } from "../../lib/queue.js";
 import { BentoCard } from "../../ui/surfaces.jsx";
 import { MatchCard } from "../../ui/matchCard.jsx";
 import { useCockpit, useFeed } from "./useCockpit.js";
@@ -23,8 +23,10 @@ import { useCockpit, useFeed } from "./useCockpit.js";
  * are drawn, and read, on a tap. A coach with one fixture sees one card, as
  * before.
  *
- * Each card is one line about the side and the bus, a count ("N to resolve",
- * the feed over the reads made here) with a "Couldn't load X" line for every
+ * Each card is one line about the side and the bus, a count ("2 need you":
+ * this fixture's rows on Today's "Needs you", the queue's rule over the reads
+ * made here, so the two never disagree; redesign slice 11), what only the
+ * office can clear said as the office's, a "Couldn't load X" line for every
  * read that failed, and one tap into the Coach tab. It draws nothing for anyone
  * the gate does not admit, and nothing signed out. The lift reads are logged by
  * the database, so they are made only on the match day, and a card that has
@@ -85,6 +87,9 @@ export function MatchDayCard({ matches, onNav, only = null, skip = null }) {
   );
 }
 
+/** The session's own assignments, read when drawn. */
+const assignmentsOf = () => (signedIn() ? profile()?.assignments ?? null : null);
+
 // A function, not a constant: the theme's tokens are read when drawn, never at import.
 const btn = () => ({ minHeight: "44px", padding: `0 ${T.space.lg}`, background: "transparent", color: T.content.primary,
   border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 });
@@ -103,6 +108,15 @@ function Card({ match, gate, onNav, now, title, named, folded = false }) {
   const ours = gate.end === "home" ? sides.home.full : sides.away.full;
   const opponent = gate.end === "home" ? sides.away.full : sides.home.full;
   const count = countOf({ open: feed.open.length, reads, gate, lifts });
+  // The one count (redesign slice 11): this fixture's rows on "Needs you", from the same rule over the same reads,
+  // so the card and Today's "Needs you" never say two numbers. Needs you reads no lifts on opening (useQueue's
+  // no-tap mode), so neither does the count. A fixture the queue does not hold (live or played) has no count.
+  const queued = match.status === "upcoming" || match.calledOff === true;
+  const mine = useMemo(() => {
+    if (loading || !queued) return null;
+    const g = fixtureRows({ match, gate: { ...gate, panels: { ...gate.panels, lifts: false, liftOffice: false } }, reads: { ...reads, lifts: null }, now });
+    return splitForReader(g, assignmentsOf());
+  }, [loading, queued, match, gate, reads, now]);
   // With several cards the same two buttons repeat: each is named for its fixture (the visible words stay first).
   const who = named ? ` · ${ours} v ${opponent}` : "";
   const go = (drawer) => { requestCoach(match.id, drawer); onNav("matches"); };
@@ -123,8 +137,17 @@ function Card({ match, gate, onNav, now, title, named, folded = false }) {
               {rows ? (rows.length ? sideFoot(rows) : "No sheet published yet") : `${named11} named`}
               {bus ? ` · bus ${bus.capacity} seats` : ""}
             </p>
-            <p data-testid="matchday-count" style={{ ...line, color: T.content.primary, fontWeight: 600 }}>{count.line}</p>
-            {/* A read that failed is said, one line each: it is never "nothing to resolve". */}
+            {mine && (
+              <p data-testid="matchday-count" style={{ ...line, color: T.content.primary, fontWeight: 600 }}>
+                {needsYouWords({ open: mine.mine.length, failed: count.unread.length, sayFailed: false })}
+              </p>
+            )}
+            {/* Question 8 (decided 19 Nov): what only the office can clear is not on his "Needs you"; it is said
+                here, on the fixture, as the office's. */}
+            {mine?.office.map((r) => (
+              <p key={r.id} data-testid="matchday-office" data-rule={r.rule} style={line}>The office's: {r.fact}</p>
+            ))}
+            {/* A read that failed is said, one line each: it is never "nothing needs you". */}
             {count.unread.map((r) => (
               <p key={r.key} data-testid="matchday-unread" data-read={r.key} style={line}>{r.text}</p>
             ))}
