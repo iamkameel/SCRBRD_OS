@@ -16833,6 +16833,14 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v172_by_name(p_player uuid) RETURNS text AS $$
   SELECT c.by_name FROM player_born_change c WHERE c.player_id = p_player ORDER BY c.at DESC, c.id LIMIT 1
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The reason the latest change recorded, past row security.
+CREATE OR REPLACE FUNCTION _v172_reason(p_player uuid) RETURNS text AS $$
+  SELECT c.reason FROM player_born_change c WHERE c.player_id = p_player ORDER BY c.at DESC, c.id LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A person's audit label (db/79), owner-only to call in general.
+CREATE OR REPLACE FUNCTION _v168_audit_label(p_person uuid) RETURNS text AS $$
+  SELECT audit_person_label(p_person)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- His date of birth and ID number now, past row security: "born|id".
 CREATE OR REPLACE FUNCTION _v172_now(p_player uuid) RETURNS text AS $$
   SELECT coalesce(p.born::text, '-') || '|' || coalesce(p.id_number, '-') FROM player p WHERE p.id = p_player
@@ -16917,6 +16925,8 @@ DECLARE
   DOS    uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (player.profile.manage)
   WESOFF uuid := '88888888-0000-0000-0000-00000000000d';   -- Westville's office
   OWNER  uuid := '88888888-0000-0000-0000-000000000022';   -- the owner's key (superadmin)
+  DSO    uuid := '88888888-0000-0000-0000-000000000057';   -- Hilton's DSO (audit.read, not a boy's age)
+  PARENT uuid := '88888888-0000-0000-0000-000000000005';   -- a Hilton parent
   -- A fourteen-year-old's date, and the ID number that carries it.
   B   date := make_date(extract(year FROM sa_today())::int - 14, 5, 17);
   B2  date := make_date(extract(year FROM sa_today())::int - 14, 5, 18);
@@ -17043,14 +17053,16 @@ BEGIN
     PERFORM _as(REG);
     v := _v172_write(BOY, 'born', B2::text, 'import');
     PERFORM _assert(v = '1 rows', format('§147 (office): the office''s import: %s', v));
+    -- Kameel, 25 Nov 2026: a correction carries its reason, so the office's
+    -- own UPDATE, past the door, is refused by the record for want of one.
     v := _v172_write(BOY, 'born', B::text);
-    PERFORM _assert(v = '1 rows', format('§147 (office): the office''s write: %s', v));
-    PERFORM _assert(_v172_rows(BOY) = format('%s>%s:import:%s;%s>%s:correction:%s', B, B2, REG, B2, B, REG),
+    PERFORM _assert(v LIKE '23514:%player_born_change_reason%', format('§147 (office): the office''s write past the door: %s', v));
+    PERFORM _assert(_v172_rows(BOY) = format('%s>%s:import:%s', B, B2, REG),
                     format('§147 (office): recorded as %s', _v172_rows(BOY)));
     -- A support hour as the office is not the office (db/70's cut).
     SUP := _v168_support('v172');
     PERFORM _as(SUP);
-    v := _v172_write(BOY, 'born', B2::text);
+    v := _v172_write(BOY, 'born', B::text);   -- he reads B2 now: a change
     PERFORM _assert(v = '42501:born_correction_is_the_office', format('§147 (office): a support hour: %s', v));
 
   ELSIF p_case = 'door' THEN
@@ -17060,45 +17072,57 @@ BEGIN
     BOY := _v172_boy('door', B, IDN);
     FOREACH SUP IN ARRAY ARRAY[PRIN, DOS, COACH, WESOFF, OWNER] LOOP
       PERFORM _as(SUP);
-      SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2) x;
+      SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2, 'Verify 172: birth certificate seen') x;
       PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§147 (door): %s was answered %s %s', SUP, ok_, why));
     END LOOP;
     SUP := _v168_support('v172door');
     PERFORM _as(SUP);
-    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2) x;
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§147 (door): a support hour was answered %s %s', ok_, why));
     PERFORM _as(REG);
-    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(gen_random_uuid(), B2) x;
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(gen_random_uuid(), B2, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§147 (door): no such boy was answered %s %s', ok_, why));
-    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, NULL) x;
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, NULL, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(NOT ok_ AND why = 'born_required', format('§147 (door): no date: %s %s', ok_, why));
-    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2) x;
+    -- A reason, required (Kameel, 25 Nov 2026): none, blank, spaces, or past 200.
+    FOREACH v IN ARRAY ARRAY[NULL, '', '    ', E'\t\n'] LOOP
+      SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2, v) x;
+      PERFORM _assert(NOT ok_ AND why = 'reason_required', format('§147 (door): the reason %L: %s %s', v, ok_, why));
+    END LOOP;
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2, repeat('x', 201)) x;
+    PERFORM _assert(NOT ok_ AND why = 'reason_too_long', format('§147 (door): 201 characters: %s %s', ok_, why));
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(NOT ok_ AND why = 'id_number_disagrees_with_date_of_birth', format('§147 (door): against his ID number: %s %s', ok_, why));
-    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B) x;
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(ok_ AND why = 'unchanged', format('§147 (door): the same date: %s %s', ok_, why));
     PERFORM _assert(_v172_now(BOY) = B || '|' || IDN AND _v172_rows(BOY) = '',
                     format('§147 (door): a refusal or "unchanged" changed something: %s / %s', _v172_now(BOY), _v172_rows(BOY)));
     -- A boy with no ID number on file: the office corrects him, and it is kept.
     BOY := _v172_boy('door noid', B, NULL);
-    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, sa_today() + 1) x;
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, sa_today() + 1, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(NOT ok_ AND why = 'born_in_future', format('§147 (door): tomorrow: %s %s', ok_, why));
-    SELECT * INTO r FROM player_born_correct(BOY, B2) x;
+    SELECT * INTO r FROM player_born_correct(BOY, B2, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(r.ok AND r.reason IS NULL AND r.was = B AND r.born = B2, format('§147 (door): the correction answered %s', row_to_json(r)));
     PERFORM _assert(_v172_now(BOY) = B2 || '|-', format('§147 (door): his date is %s', _v172_now(BOY)));
     PERFORM _assert(_v172_rows(BOY) = format('%s>%s:correction:%s', B, B2, REG), format('§147 (door): recorded as %s', _v172_rows(BOY)));
-    PERFORM _assert(_v172_by_name(BOY) = (SELECT u.name FROM app_user u WHERE u.id = REG), '§147 (door): the office person''s name was not kept');
+    PERFORM _assert(_v172_by_name(BOY) = _v168_audit_label(REG), format('§147 (door): the office person''s label was not kept: %s', _v172_by_name(BOY)));
+    PERFORM _assert(_v172_reason(BOY) = 'Verify 172: birth certificate seen', format('§147 (door): the reason recorded is %s', _v172_reason(BOY)));
+    -- 200 characters is a reason, trimmed.
+    SELECT x.ok INTO ok_ FROM player_born_correct(BOY, B, '  ' || repeat('y', 200) || '  ') x;
+    PERFORM _assert(ok_ AND _v172_reason(BOY) = repeat('y', 200), format('§147 (door): 200 characters: %s %s', ok_, length(_v172_reason(BOY))));
 
   ELSIF p_case = 'read' THEN
     -- (read) The office reads a boy's changes, newest first; nobody else
     -- reads one row; the table itself is no one's through the application.
     BOY := _v172_boy('read', B, NULL);
     PERFORM _as(REG);
-    PERFORM player_born_correct(BOY, B2);
-    PERFORM player_born_correct(BOY, B);
+    PERFORM player_born_correct(BOY, B2, 'Verify 172: birth certificate seen');
+    PERFORM player_born_correct(BOY, B, 'Verify 172: birth certificate seen');
     SELECT count(*) INTO n FROM player_born_changes(BOY);
     PERFORM _assert(n = 2, format('§147 (read): the office reads %s changes', n));
     SELECT * INTO r FROM player_born_changes(BOY) LIMIT 1;
-    PERFORM _assert(r.was = B2 AND r.became = B AND r.how = 'correction' AND r.by_name IS NOT NULL,
+    PERFORM _assert(r.was = B2 AND r.became = B AND r.how = 'correction' AND r.by_name IS NOT NULL
+                    AND r.reason = 'Verify 172: birth certificate seen',
                     format('§147 (read): the newest change reads %s', row_to_json(r)));
     FOREACH SUP IN ARRAY ARRAY[PRIN, DOS, COACH, WESOFF, OWNER] LOOP
       PERFORM _as(SUP);
@@ -17142,11 +17166,39 @@ BEGIN
     v := _v172_owner(BOY, 'team', 'U16B');
     PERFORM _assert(v = 'set', format('§147 (old): another column could not change: %s', v));
     PERFORM _as(REG);
-    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2 + 1) x;
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2 + 1, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(NOT ok_ AND why = 'id_number_disagrees_with_date_of_birth', format('§147 (old): a third date: %s %s', ok_, why));
-    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B) x;
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(ok_, format('§147 (old): the number''s own date was refused: %s', why));
     PERFORM _assert(_v172_now(BOY) = B || '|' || IDN, format('§147 (old): his record is %s', _v172_now(BOY)));
+
+  ELSIF p_case = 'audit' THEN
+    -- (audit) Kameel, 25 Nov 2026: the changes join audit_log() for its
+    -- readers. The principal (audit.read, player.age.read) reads the
+    -- correction, the boy in initials, the dates, never the reason; the DSO
+    -- (audit.read, not his age) reads it without the dates; a coach and a
+    -- parent read nothing; and the kind is in the default list.
+    BOY := _v172_boy('audit', B, NULL);
+    PERFORM _as(REG);
+    SELECT x.ok INTO ok_ FROM player_born_correct(BOY, B2, 'Verify 172: a secret reason') x;
+    PERFORM _assert(ok_, '§147 (audit): the correction did not go in');
+    PERFORM _as(PRIN);
+    SELECT * INTO r FROM audit_log(HIL, ARRAY['dob']) a WHERE a.detail->>'how' = 'correction' AND a.detail->>'became' = B2::text;
+    PERFORM _assert(r.action = 'Corrected a date of birth' AND r.subject_kind = 'pupil' AND r.kind = 'dob'
+                    AND r.subject <> 'Verify OnesevenTwo Audit' AND r.detail->>'was' = B::text AND r.actor IS NOT NULL,
+                    format('§147 (audit): the principal reads %s', row_to_json(r)));
+    PERFORM _assert(NOT (row_to_json(r)::text LIKE '%secret reason%'), '§147 (audit): the reason reached the audit log');
+    SELECT count(*) INTO n FROM audit_log(HIL) a WHERE a.kind = 'dob';
+    PERFORM _assert(n >= 1, '§147 (audit): the default kinds leave dob out');
+    PERFORM _as(DSO);
+    SELECT * INTO r FROM audit_log(HIL, ARRAY['dob']) a WHERE a.detail->>'how' = 'correction' ORDER BY a.at DESC LIMIT 1;
+    PERFORM _assert(r.action = 'Corrected a date of birth' AND NOT (r.detail ? 'was') AND NOT (r.detail ? 'became'),
+                    format('§147 (audit): the DSO reads %s', row_to_json(r)));
+    FOREACH SUP IN ARRAY ARRAY[COACH, PARENT] LOOP
+      PERFORM _as(SUP);
+      SELECT count(*) INTO n FROM audit_log(HIL, ARRAY['dob']);
+      PERFORM _assert(n = 0, format('§147 (audit): %s reads %s rows', SUP, n));
+    END LOOP;
 
   ELSIF p_case = 'idswap' THEN
     -- (idswap) An ID number on file is the office's to change (review S1):
@@ -17209,8 +17261,10 @@ BEGIN
     PERFORM _assert(v2 = '42501:born_correction_is_the_office', format('§147 (definer): no one signed in, a recorded date: %s', v2));
     PERFORM _assert(v3 = '42501:id_number_change_is_the_office', format('§147 (definer): the director, his number: %s', v3));
     PERFORM _assert(v4 = '42501:born_correction_is_the_office', format('§147 (definer): the director, a recorded date: %s', v4));
-    PERFORM _assert(v5 = '1 rows', format('§147 (definer): the office through the door: %s', v5));
-    PERFORM _assert(_v172_rows(BOY2) = format('%s>%s:correction:%s', B, B2, REG), format('§147 (definer): recorded as %s', _v172_rows(BOY2)));
+    -- The office through a door that is not the correction door gives no
+    -- reason, so the record refuses it: the one way to correct is the door.
+    PERFORM _assert(v5 LIKE '23514:%player_born_change_reason%', format('§147 (definer): the office through another door: %s', v5));
+    PERFORM _assert(_v172_rows(BOY2) = '', format('§147 (definer): recorded as %s', _v172_rows(BOY2)));
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The doors and the pure reader are the application's; the two
@@ -17218,7 +17272,7 @@ BEGIN
     -- the record and the doors as the owner (definer).
     FOR r IN SELECT * FROM (VALUES
       ('sa_id_born(text,date)', 'scrbrd_app:EXECUTE', false), ('sa_id_born(text)', 'scrbrd_app:EXECUTE', false),
-      ('player_born_office(uuid)', 'scrbrd_app:EXECUTE', true), ('player_born_correct(uuid,date)', 'scrbrd_app:EXECUTE', true),
+      ('player_born_office(uuid)', 'scrbrd_app:EXECUTE', true), ('player_born_correct(uuid,date,text)', 'scrbrd_app:EXECUTE', true),
       ('player_born_changes(uuid)', 'scrbrd_app:EXECUTE', true), ('player_born_checked()', '', false),
       ('player_born_record()', '', true)) AS t(fn, acl, definer) LOOP
       PERFORM _assert(_v168_acl(r.fn) IS NOT DISTINCT FROM r.acl, format('§147 (grants): %s is granted %s', r.fn, coalesce(_v168_acl(r.fn), 'NULL (missing)')));
@@ -49385,6 +49439,8 @@ $m130$;
   --   (owner)    a new ID number is checked too; the owner's own write
   --              (no one signed in) let through and recorded 'owner'
   --   (old)      a row that disagreed before db/172 stands until written
+  --   (audit)    the changes in audit_log(): the principal with the dates,
+  --              the DSO without, never the reason; a coach and a parent nothing
   --   (idswap)   an ID number on file is the office's to change; a date and
   --              a forged number in one statement refused (review S1)
   --   (definer)  logged in as the application, a definer door meets every
@@ -49416,6 +49472,7 @@ $m130$;
   PERFORM _v172_case('read');
   PERFORM _v172_case('owner');
   PERFORM _v172_case('old');
+  PERFORM _v172_case('audit');
   PERFORM _v172_case('idswap');
   PERFORM _v172_case('definer');
   PERFORM _v172_case('grants');

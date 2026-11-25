@@ -142,6 +142,9 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
   id_number_change_is_the_office:
     "Only the school office may change an ID number already on his record.",
   born_in_future: "A date of birth cannot be in the future.",
+  // A correction carries its reason (Kameel, 25 Nov 2026).
+  reason_required: "Say why you are correcting it, for example \"birth certificate seen\".",
+  reason_too_long: "Keep the reason to 200 characters.",
   // Said instead of a disagreement with the ID number on file to a person who
   // may not read ID numbers (review N1): it tells him neither that one is on
   // file nor what date it carries.

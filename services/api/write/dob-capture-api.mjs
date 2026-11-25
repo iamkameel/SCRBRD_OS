@@ -93,7 +93,7 @@ export function dobCaptureRoutes({ pool, secret }) {
       }
     },
 
-    // POST /api/players/:id/date-of-birth/correction { born }
+    // POST /api/players/:id/date-of-birth/correction { born, reason }
     // The office changes a date already on record (or fills one). The format
     // and the age band are resolveBirthDate()'s, as at every door; who may,
     // and the ID number on file, are the database's (player_born_correct()).
@@ -106,10 +106,15 @@ export function dobCaptureRoutes({ pool, secret }) {
         // beside it would be a second, unchecked claim.
         const dob = resolveBirthDate({ born: b.born });
         if (!dob.ok) throw err(dob.reason);
+        // Why, in the office's words, and required (Kameel, 25 Nov 2026):
+        // checked here for the words, and again by the door and the record.
+        const why = typeof b.reason === "string" ? b.reason.trim() : "";
+        if (!why) throw err("reason_required");
+        if (why.length > 200) throw err("reason_too_long");
         const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
           const { rows } = await client.query(
             `select ok, reason, to_char(was, 'YYYY-MM-DD') as was, to_char(born, 'YYYY-MM-DD') as born
-               from player_born_correct($1::uuid, $2::date)`, [id, dob.born]);
+               from player_born_correct($1::uuid, $2::date, $3::text)`, [id, dob.born, why]);
           return rows[0];
         });
         if (!out?.ok) {
@@ -138,9 +143,10 @@ export function dobCaptureRoutes({ pool, secret }) {
                from player_masked m where m.id = $1`, [id])).rows;
           if (!p?.office) return null;
           const { rows } = await client.query(
-            `select at, to_char(was, 'YYYY-MM-DD') as was, to_char(became, 'YYYY-MM-DD') as became, how, by_name
+            `select at, to_char(was, 'YYYY-MM-DD') as was, to_char(became, 'YYYY-MM-DD') as became, how, by_name, reason
                from player_born_changes($1::uuid)`, [id]);
-          return { born: p.born, changes: rows.map((r) => ({ at: r.at, was: r.was, became: r.became, how: r.how, by: r.by_name })) };
+          return { born: p.born, changes: rows.map((r) => ({ at: r.at, was: r.was, became: r.became, how: r.how, by: r.by_name,
+                                                              reason: r.reason ?? null })) };
         });
         if (!out) throw err("not_permitted", 403);
         res.json(out);

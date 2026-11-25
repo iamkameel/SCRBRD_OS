@@ -208,9 +208,10 @@ function CorrectBirthday({ player }) {
   const [nonce, setNonce] = useState(0);
   const [state, setState] = useState(/** @type {{ born: string|null, changes: any[] } | null} */ (null));
   const [born, setBorn] = useState("");
+  const [why, setWhy] = useState("");
   const [said, setSaid] = useState({ text: "", bad: false });
   const [busy, setBusy] = useState(false);
-  const idBorn = useId();
+  const idBorn = useId(), idWhy = useId(), idHint = useId();
   useEffect(() => {
     let live = true;
     api(`/api/players/${player.id}/date-of-birth/changes`)
@@ -220,11 +221,12 @@ function CorrectBirthday({ player }) {
   }, [player.id, nonce]);
   if (!state || !state.born) return null;
   const check = born ? resolveBirthDate({ born }) : null;
+  const reason = why.trim();
   const save = async () => {
     setBusy(true); setSaid({ text: "", bad: false });
     try {
-      const r = await api(`/api/players/${player.id}/date-of-birth/correction`, { method: "POST", body: { born } });
-      setBorn(""); setNonce((n) => n + 1);
+      const r = await api(`/api/players/${player.id}/date-of-birth/correction`, { method: "POST", body: { born, reason } });
+      setBorn(""); setWhy(""); setNonce((n) => n + 1);
       setSaid({ text: r?.unchanged ? "That is the date already on record." : "Date of birth corrected.", bad: false });
     } catch (e) { setSaid({ text: words(e), bad: true }); }
     finally { setBusy(false); }
@@ -237,13 +239,17 @@ function CorrectBirthday({ player }) {
       <label htmlFor={idBorn} style={{ ...note(false), display: "block" }}>The right date of birth</label>
       <input id={idBorn} type="date" value={born} onChange={(e) => setBorn(e.target.value)} style={field()} data-testid="edit-dob-correct-born"/>
       {check && check.ok === false && <p role="alert" style={note(true)}>{BIRTH_DATE_MESSAGE[check.reason] || check.reason}</p>}
-      <Go disabled={busy || !check?.ok} onClick={save} testid="edit-dob-correct-save">Correct it</Go>
+      <label htmlFor={idWhy} style={{ ...note(false), display: "block" }}>Why are you correcting it?</label>
+      <input id={idWhy} value={why} maxLength={200} aria-describedby={idHint} onChange={(e) => setWhy(e.target.value)}
+        style={field()} data-testid="edit-dob-correct-reason" placeholder="Birth certificate seen"/>
+      <p id={idHint} style={note(false)}>For example: birth certificate seen. Kept with the change.</p>
+      <Go disabled={busy || !check?.ok || !reason} onClick={save} testid="edit-dob-correct-save">Correct it</Go>
       {said.text && <p role={said.bad ? "alert" : "status"} style={note(said.bad)} data-testid="edit-dob-correct-said">{said.text}</p>}
       {state.changes.length > 0 && (
         <ul data-testid="edit-dob-changes" style={{ listStyle: "none", padding: 0, margin: "10px 0 0", display: "grid", gap: "4px" }}>
           {state.changes.map((c, i) => (
             <li key={`${c.at}-${i}`} style={note(false)}>
-              {when(c.at)}: {day(c.was)} to {day(c.became)}, {HOW[c.how] || c.how}{c.by ? `, by ${c.by}` : ""}.
+              {when(c.at)}: {day(c.was)} to {day(c.became)}, {HOW[c.how] || c.how}{c.by ? `, by ${c.by}` : ""}{c.reason ? `: ${c.reason}` : ""}.
             </li>
           ))}
         </ul>

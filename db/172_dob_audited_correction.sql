@@ -173,15 +173,27 @@ CREATE TABLE IF NOT EXISTS player_born_change (
   was         date,                    -- NULL: there was none (a capture)
   became      date,
   how         text NOT NULL CHECK (how IN ('capture', 'correction', 'import', 'owner')),
-  -- Who: the signed-in person, and his name as it was. No foreign key: the
-  -- record outlives the account.
+  -- Who: the signed-in person, and his label as it was (audit_person_label(),
+  -- db/79: a pupil in initials, review N5). No foreign key: the record
+  -- outlives the account.
   by_id       uuid,
   by_name     text,
+  -- Why, in the office's words (Kameel, 25 Nov 2026: a correction carries a
+  -- required short reason, "birth certificate seen"). A correction's alone:
+  -- a capture, an import and the owner say what they were by `how`.
+  reason      text,
   -- clock_timestamp(), not now(): two changes in one transaction (an import
   -- that names a boy twice) keep their order.
   at          timestamptz NOT NULL DEFAULT clock_timestamp(),
   CHECK (was IS DISTINCT FROM became)
 );
+-- A development database that took an earlier cut of this file.
+ALTER TABLE player_born_change ADD COLUMN IF NOT EXISTS reason text;
+ALTER TABLE player_born_change DROP CONSTRAINT IF EXISTS player_born_change_reason;
+ALTER TABLE player_born_change ADD CONSTRAINT player_born_change_reason
+  -- coalesce: a CHECK that comes out NULL passes, and a NULL reason must not.
+  CHECK (CASE WHEN how = 'correction' THEN coalesce(reason ~ '\S' AND char_length(reason) <= 200, false)
+              ELSE reason IS NULL END) NOT VALID;   -- a development database's earlier-cut rows stand; every new row is held
 CREATE INDEX IF NOT EXISTS player_born_change_player ON player_born_change (player_id, at);
 ALTER TABLE player_born_change ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON player_born_change FROM PUBLIC;
@@ -248,16 +260,20 @@ CREATE TRIGGER player_born_agrees_with_id
 -- app.born_how is a label and never an authority: the office rule above
 -- does not read it.
 CREATE OR REPLACE FUNCTION player_born_record() RETURNS trigger AS $$
-DECLARE v_me uuid := app_user_id();
+DECLARE v_me uuid := app_user_id(); v_how text;
 BEGIN
   IF NEW.born IS NOT DISTINCT FROM OLD.born THEN RETURN NULL; END IF;
-  INSERT INTO player_born_change (player_id, school_id, was, became, how, by_id, by_name)
-  VALUES (NEW.id, NEW.school_id, OLD.born, NEW.born,
-          CASE WHEN v_me IS NULL THEN 'owner'
-               WHEN current_setting('app.born_how', true) = 'import' THEN 'import'
-               WHEN OLD.born IS NULL THEN 'capture'
-               ELSE 'correction' END,
-          v_me, (SELECT u.name FROM app_user u WHERE u.id = v_me));
+  v_how := CASE WHEN v_me IS NULL THEN 'owner'
+                WHEN current_setting('app.born_how', true) = 'import' THEN 'import'
+                WHEN OLD.born IS NULL THEN 'capture'
+                ELSE 'correction' END;
+  -- A correction's reason is the door's (app.born_reason, set for its one
+  -- UPDATE). Without one the row's CHECK refuses the write: a recorded date
+  -- is corrected through player_born_correct() or not at all.
+  INSERT INTO player_born_change (player_id, school_id, was, became, how, by_id, by_name, reason)
+  VALUES (NEW.id, NEW.school_id, OLD.born, NEW.born, v_how,
+          v_me, CASE WHEN v_me IS NOT NULL THEN audit_person_label(v_me) END,
+          CASE WHEN v_how = 'correction' THEN nullif(current_setting('app.born_reason', true), '') END);
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION player_born_record() FROM PUBLIC;
@@ -269,10 +285,13 @@ CREATE TRIGGER player_born_changes_are_recorded
 
 
 -- ── 6 · The office's door ──────────────────────────────────────────
-CREATE OR REPLACE FUNCTION player_born_correct(p_player uuid, p_born date)
+-- An earlier cut took no reason.
+DROP FUNCTION IF EXISTS player_born_correct(uuid, date);
+CREATE OR REPLACE FUNCTION player_born_correct(p_player uuid, p_born date, p_reason text)
 RETURNS TABLE (ok boolean, reason text, was date, born date) AS $$
 #variable_conflict use_column
-DECLARE p record; v_from_id date;
+-- Trimmed of every kind of space, as the route's trim() trims it.
+DECLARE p record; v_from_id date; v_why text := regexp_replace(p_reason, '^\s+|\s+$', '', 'g');
 BEGIN
   -- Who is asking first, and only then the lock (review N2): a caller who
   -- is not the office holds no row of anybody's.
@@ -286,6 +305,12 @@ BEGIN
   IF p_born IS NULL THEN
     RETURN QUERY SELECT false, 'born_required'::text, p.born, NULL::date; RETURN;
   END IF;
+  IF v_why IS NULL OR v_why = '' THEN
+    RETURN QUERY SELECT false, 'reason_required'::text, p.born, NULL::date; RETURN;
+  END IF;
+  IF char_length(v_why) > 200 THEN
+    RETURN QUERY SELECT false, 'reason_too_long'::text, p.born, NULL::date; RETURN;
+  END IF;
   IF p_born > sa_today() THEN
     RETURN QUERY SELECT false, 'born_in_future'::text, p.born, NULL::date; RETURN;
   END IF;
@@ -296,18 +321,23 @@ BEGIN
   IF v_from_id IS NOT NULL AND v_from_id <> p_born THEN
     RETURN QUERY SELECT false, 'id_number_disagrees_with_date_of_birth'::text, p.born, NULL::date; RETURN;
   END IF;
+  PERFORM set_config('app.born_reason', v_why, true);
   UPDATE player x SET born = p_born WHERE x.id = p_player;
+  PERFORM set_config('app.born_reason', '', true);
   RETURN QUERY SELECT true, NULL::text, p.born, p_born;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
-REVOKE ALL ON FUNCTION player_born_correct(uuid, date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION player_born_correct(uuid, date) TO scrbrd_app;
+REVOKE ALL ON FUNCTION player_born_correct(uuid, date, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION player_born_correct(uuid, date, text) TO scrbrd_app;
 
 
 -- ── 7 · The office reads a boy's changes ───────────────────────────
+-- An earlier cut answered no reason.
+DROP FUNCTION IF EXISTS player_born_changes(uuid);
 CREATE OR REPLACE FUNCTION player_born_changes(p_player uuid)
-RETURNS TABLE (at timestamptz, was date, became date, how text, by_name text) AS $$
+RETURNS TABLE (at timestamptz, was date, became date, how text, by_name text, reason text) AS $$
   SELECT c.at, c.was, c.became, c.how,
-         coalesce(audit_person_label(c.by_id), c.by_name, CASE WHEN c.how = 'owner' THEN 'SCRBRD' END)
+         coalesce(audit_person_label(c.by_id), c.by_name, CASE WHEN c.how = 'owner' THEN 'SCRBRD' END),
+         c.reason
     FROM player_born_change c
     JOIN player p ON p.id = c.player_id
    WHERE c.player_id = p_player AND player_born_office(p.school_id)
@@ -315,6 +345,75 @@ RETURNS TABLE (at timestamptz, was date, became date, how text, by_name text) AS
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION player_born_changes(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION player_born_changes(uuid) TO scrbrd_app;
+
+
+-- ── 7b · The audit log (Kameel, 25 Nov 2026) ───────────────────────
+-- audit_log() (db/79, as db/148 left it, the last to touch it; db/169–171
+-- did not) gains the kind 'dob': a date of birth recorded, corrected,
+-- imported or set by the owner, by whom (audit_person_label(), masked as
+-- every actor is), about which boy (in initials, as every pupil is), under
+-- audit.read for his side. The dates come only to a reader who holds
+-- player.age.read for him; the reason never (the log's own rule: "never a
+-- reason or a note"). Patched in place by exact needle, as db/142–148 patch
+-- it, and only over db/148's body or this file's: the folded md5 below.
+CREATE OR REPLACE FUNCTION pg_temp._v172_fold(t text) RETURNS text AS $$
+  SELECT md5(regexp_replace(btrim(t), '\s+', ' ', 'g'))
+$$ LANGUAGE sql IMMUTABLE;
+CREATE OR REPLACE FUNCTION pg_temp._v172_patch(p_fn text, p_needle text, p_repl text) RETURNS void AS $$
+DECLARE v_src text; v_n integer;
+BEGIN
+  SELECT p.prosrc INTO v_src FROM pg_proc p WHERE p.oid = p_fn::regprocedure;
+  IF position(p_repl IN v_src) > 0 THEN RETURN; END IF;
+  v_n := (length(v_src) - length(replace(v_src, p_needle, ''))) / length(p_needle);
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'db/172: % holds its needle % times, not once: look before replacing it', p_fn, v_n;
+  END IF;
+  EXECUTE replace(pg_get_functiondef(p_fn::regprocedure), p_needle, p_repl);
+END $$ LANGUAGE plpgsql;
+
+DO $audit_guard$
+DECLARE v text := pg_temp._v172_fold((SELECT prosrc FROM pg_proc
+                   WHERE oid = 'audit_log(uuid,text[],timestamptz,timestamptz,text,integer)'::regprocedure));
+BEGIN
+  IF v IS NULL OR v NOT IN ('4c8a819926d5d303207948bdf3e55a85', '25f7df23628e41c73c4e9575e8eb37a3') THEN
+    RAISE EXCEPTION 'db/172: audit_log() is neither db/148''s nor this file''s (md5 % of its folded body); look before replacing it', v;
+  END IF;
+END $audit_guard$;
+
+SELECT pg_temp._v172_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
+  E'\'role\', \'duty\', \'recognition\']',
+  E'\'role\', \'duty\', \'recognition\', \'dob\']');
+SELECT pg_temp._v172_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
+  E'        UNION ALL\n        -- duty_suspension: a match duty paused and lifted.',
+  E'        UNION ALL\n'
+  || E'        -- player_born_change (db/172): a boy''s date of birth recorded,\n'
+  || E'        -- corrected, imported or set by the owner, and by whom. The dates to\n'
+  || E'        -- a reader of his age alone; never the reason.\n'
+  || E'        SELECT bc.at, \'dob\',\n'
+  || E'               CASE bc.how WHEN \'capture\'    THEN \'Recorded a date of birth\'\n'
+  || E'                           WHEN \'correction\' THEN \'Corrected a date of birth\'\n'
+  || E'                           WHEN \'import\'     THEN \'Wrote a date of birth from a roster import\'\n'
+  || E'                           ELSE \'SCRBRD changed a date of birth\' END,\n'
+  || E'               bc.by_id, bc.player_id, NULL, NULL, NULL, NULL, NULL, bc.school_id,\n'
+  || E'               jsonb_strip_nulls(jsonb_build_object(\'how\', bc.how,\n'
+  || E'                 \'was\', CASE WHEN app_can(\'player.age.read\', bc.school_id, bp.team_code, bc.player_id, NULL) THEN bc.was END,\n'
+  || E'                 \'became\', CASE WHEN app_can(\'player.age.read\', bc.school_id, bp.team_code, bc.player_id, NULL) THEN bc.became END)),\n'
+  || E'               \'dob:\' || bc.id::text\n'
+  || E'          FROM player_born_change bc\n'
+  || E'          JOIN player bp ON bp.id = bc.player_id\n'
+  || E'         WHERE \'dob\' = ANY (v_kinds) AND bc.school_id = p_school\n'
+  || E'           AND app_can(\'audit.read\', bc.school_id, bp.team_code, bc.player_id, NULL)\n'
+  || E'        UNION ALL\n        -- duty_suspension: a match duty paused and lifted.');
+
+DO $audit_check$
+DECLARE v text := (SELECT prosrc FROM pg_proc WHERE oid = 'audit_log(uuid,text[],timestamptz,timestamptz,text,integer)'::regprocedure);
+BEGIN
+  IF pg_temp._v172_fold(v) <> '25f7df23628e41c73c4e9575e8eb37a3' THEN
+    RAISE EXCEPTION 'db/172: audit_log() is not this file''s after the paste (md5 %)', pg_temp._v172_fold(v);
+  END IF;
+END $audit_check$;
+DROP FUNCTION pg_temp._v172_patch(text, text, text);
+DROP FUNCTION pg_temp._v172_fold(text);
 
 
 -- ── 8 · What is already on file ────────────────────────────────────
