@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { D, textOn } from "../design/tokens.js";
 import { Badge, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
-import { useNotifications, report, reportable } from "../lib/notifications.js";
+import { useNotifications, report, reportable, confirmsResult } from "../lib/notifications.js";
+import { requestResult } from "../lib/cockpitNav.js";
 import { readState } from "../lib/readState.js";
 import { Icon } from "../ui/icons.jsx";
 import { liftable } from "../lib/staffRegister.js";
@@ -36,6 +37,12 @@ import { requestFix } from "../lib/fixNote.js";
  * landed on it (scrolled to and focused, lib/fixNote.js), below the screen's DSO card.
  * Drawn only for a holder of safeguarding.concern.read; the inbox is the
  * server's, as it always was.
+ *
+ * A live match's "is decided. Confirm the result." notice (db/171, redesign
+ * slice 4) carries "Confirm the result": one tap opens the match in the
+ * Match Centre on its Confirm (mc-finish). Only those who may confirm are
+ * sent one; the panel itself is drawn under its own gate, and the server
+ * decides the press.
  */
 function NotificationsView({ role, onNav = null }) {
   const dso = !!onNav && holdsAsHeld(role, "safeguarding.concern.read");
@@ -120,6 +127,19 @@ function NotificationsView({ role, onNav = null }) {
                       style={{marginTop:"6px",minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
                         color:D.textPrimary,cursor:"pointer",fontFamily:D.head,fontSize:"12px",fontWeight:700}}>
                       Open the inbox <span aria-hidden="true">›</span>
+                    </button>
+                  )}
+                  {onNav && confirmsResult(n) && (
+                    <button type="button" className="pressBtn" data-testid="notice-confirm-result"
+                      onClick={() => {
+                        if (!n.read) void open(n.id);
+                        requestResult(/** @type {string} */ (n.subjectId));
+                        requestFix({ page: "matches", find: ['[data-testid="mc-finish"]'], fallback: ['[data-testid="mc-confirm-result-panel"]', '[data-testid="mc-official"]'] });
+                        onNav("matches");
+                      }}
+                      style={{marginTop:"6px",minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
+                        color:D.textPrimary,cursor:"pointer",fontFamily:D.head,fontSize:"12px",fontWeight:700}}>
+                      Confirm the result <span aria-hidden="true">›</span>
                     </button>
                   )}
                   {isOpen && sentence && <p data-testid="notice-sentence" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,margin:0}}>{sentence}</p>}
