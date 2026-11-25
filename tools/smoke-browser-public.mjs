@@ -521,7 +521,7 @@ try {
     ok("...a 44px target", !!box && box.height >= 44 && box.width >= 44, JSON.stringify(box));
     const failed = await text(page);
     ok("...and nothing more than before: no score, no name", await tid(page, "public-match").count() === 0 && leaks(failed).length === 0
-       && failed.replace(/\s+/g, " ").trim() === "Couldn't load this match. Retry", failed);
+       && failed.replace(/\s+/g, " ").trim() === "SCRBRD Log in Couldn't load this match. Retry See today's matches", failed);
     const before = asked.length;
     failing = false;
     await tid(page, "public-retry").click({ timeout: 4000 }).catch(() => {});
