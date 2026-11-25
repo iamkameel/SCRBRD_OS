@@ -1476,6 +1476,17 @@ try {
   const shortShown = await ph.page.locator("#mc-panel-summary, [data-testid='mc-scores']").first().evaluate(() =>
     [...document.querySelectorAll("[data-testid='mc-scores'] .mc-short")].filter((e) => getComputedStyle(e).display !== "none").map((e) => e.textContent));
   ok(`the scores name the sides by code (${shortShown.join(", ")})`, shortShown.length === 2 && shortShown[0] === "HIL 1XI", shortShown.join(", "));
+  // Slice 10 (Kameel, 25 Nov): on a phone Share always sits under the page's More, with the other tools, so the
+  // row under the header never changes shape as their reads answer: Back, then More; Share only once it is opened.
+  ok("on a phone the page's tools are under one More, and Share is not in the row", await tid(ph.page, "mc-tools-open").count() === 1
+     && await tid(ph.page, "mc-share").count() === 0 && await tid(ph.page, "mc-bigscreen-open").count() === 0);
+  await tid(ph.page, "mc-tools-open").click({ timeout: 4000 }).catch(() => {});
+  await tid(ph.page, "mc-tools").waitFor({ timeout: 4000 }).catch(() => {});
+  ok("...More opens them: Share and Big screen, each 44px", await ph.page.evaluate(() => ["mc-share", "mc-bigscreen-open"]
+    .every((t) => (document.querySelector(`[data-testid="mc-tools"] [data-testid="${t}"]`)?.getBoundingClientRect().height ?? 0) >= 44)));
+  await ph.page.keyboard.press("Escape");
+  ok("...and Escape closes it, focus back on More", await tid(ph.page, "mc-tools").count() === 0
+     && await ph.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "mc-tools-open");
   // CRI-1.3: at 390 the strip is Summary, Scorecard, Commentary and More; the rest are in More's menu.
   for (const t of TABS) {
     await pickTab(ph.page, t).catch(() => {});

@@ -9,10 +9,11 @@ import PageLinks from "./pageLinks.jsx";
  * page's Big screen, Share and ground display, which were their own rows
  * between Back and the match.
  *
- * Where there is room they sit in Back's row. On a phone, two or more of them
- * fold into one "More" button that opens a small panel beneath it; one alone
- * is drawn as itself, as the tab strip never draws a menu of one. Each item is
- * the caller's to offer: this decides only where they go.
+ * Where there is room they sit in Back's row. On a phone they always sit in
+ * one "More" button that opens a small panel beneath it, even one alone
+ * (Kameel, 25 Nov: "Share always under More"), so the row never changes shape
+ * as the reads that offer each tool answer one by one. Each item is the
+ * caller's to offer: this decides only where they go.
  *
  * The panel is a disclosure, not a menu: Share says "Link copied" in it, so
  * it stays open until the person closes it. Escape, or a press outside it,
@@ -28,7 +29,7 @@ export function PageTools({ phone, big, links }) {
   const panel = useRef(/** @type {HTMLDivElement | null} */ (null));
   const id = useId();
   const n = (big ? 1 : 0) + (links?.share ? 1 : 0) + (links?.display ? 1 : 0);
-  const folded = phone && n > 1;
+  const folded = phone && n > 0;
 
   useEffect(() => {
     if (!open) return undefined;

@@ -803,11 +803,8 @@ try {
       };
       await press(/Get Started|Log In/); await press(/sarah@example\.invalid|Director/); await press(/^Sign In$/);
       await until(page, () => !!document.querySelector('[data-testid="match-view"]'), 20000);
-      // Slice 10: on a phone, with two tools or more, Share and the ground display sit under the page's More. Which
-      // tools there are follows reads that answer one by one (the publication, the big screen's sides), so the row is
-      // read once they have: Share alone first can fold under More a moment later.
-      await until(page, () => !!document.querySelector('[data-testid="mc-share"], [data-testid="mc-tools-open"]'), 10000);
-      await sleep(3000);
+      // Slice 10 (Kameel, 25 Nov): on a phone Share and the ground display always sit under the page's More.
+      await until(page, () => !!document.querySelector('[data-testid="mc-tools-open"]'), 10000);
       if (await tid(page, "mc-tools-open").count()) {
         await tid(page, "mc-tools-open").click({ timeout: 4000 }).catch(() => {});
         await until(page, () => !!document.querySelector('[data-testid="mc-share"]'), 4000);
