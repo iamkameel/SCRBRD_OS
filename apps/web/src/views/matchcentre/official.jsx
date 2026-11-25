@@ -83,12 +83,16 @@ export function useOfficial(match, on, seen) {
   return { data, reload, act };
 }
 
-/** @param {{official: ReturnType<typeof useOfficial>, names: {home: string, away: string}}} p */
-export function OfficialLine({ official, names }) {
-  const w = officialWords(official.data, names);
+/**
+ * @param {{official: ReturnType<typeof useOfficial>, names: {home: string, away: string},
+ *          fixture?: {finished?: boolean, competition?: boolean}}} p
+ *   `fixture`: what the fixture row already says, finished and in a competition, for who the result waits on
+ */
+export function OfficialLine({ official, names, fixture = {} }) {
+  const w = officialWords(official.data, names, Date.now(), fixture);
   return (
     <div role="status" aria-live="polite" data-testid="mc-official">
-      {w && <StateLabel kind={w.kind} why={w.why} compact/>}
+      {w && <StateLabel kind={w.kind} why={w.why} words={w.words ?? null} compact/>}
     </div>
   );
 }

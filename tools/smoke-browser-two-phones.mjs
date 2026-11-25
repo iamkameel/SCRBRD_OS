@@ -198,10 +198,16 @@ const until = async (page, fn, ms = 15000, step = 400) => {
   return !!(await fn());
 };
 const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
-const banner = async (page) => ({
-  reason: (await tid(page, "sync-banner").first().getAttribute("data-reason", { timeout: 800 }).catch(() => null)) ?? null,
-  text: ((await tid(page, "sync-banner").first().innerText({ timeout: 800 }).catch(() => "")) || "").replace(/\s+/g, " ").trim(),
-});
+// The pad's banner, or, on a phone that holds nothing of the match, the other-phone screen in its place
+// (redesign slice 13; Kameel, 25 Nov 2026: a lapsed hold opens there, Take over scoring its primary).
+const banner = async (page) => {
+  const at = (await tid(page, "other-phone").count()) ? "other-phone" : "sync-banner";
+  return {
+    at,
+    reason: ((await tid(page, at).first().getAttribute("data-reason", { timeout: 800 }).catch(() => null)) || null),
+    text: ((await tid(page, at).first().innerText({ timeout: 800 }).catch(() => "")) || "").replace(/\s+/g, " ").trim(),
+  };
+};
 const board = async (page) => ((await page.locator('[role="status"][aria-live="polite"]').filter({ hasText: / for \d+, / })
   .first().textContent({ timeout: 1500 }).catch(() => "")) || "").trim();
 /** The pad's legal balls, from its board ("… for 0, 8.2 overs"). */
@@ -270,6 +276,7 @@ try {
   ok("B is told another phone was scoring, and offered Take over scoring",
      await until(B.page, async () => (await banner(B.page)).reason === "held_elsewhere", 15000)
      && (await tid(B.page, "sync-confirm-takeover").count()) === 1, JSON.stringify(await banner(B.page)));
+  ok("...on the other-phone screen, B holding nothing of the match (slice 13)", (await banner(B.page)).at === "other-phone");
   const deviceB = await B.page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
   await tid(B.page, "sync-confirm-takeover").click({ timeout: 3000 });
   ok("Take over, confirmed: B holds the pen", await until(B.page, async () => (await sessionRow())?.holder_device === deviceB, 10000), JSON.stringify(await sessionRow()));

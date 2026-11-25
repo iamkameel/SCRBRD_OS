@@ -25,6 +25,7 @@
  */
 import { roleGrants } from "@scrbrd/policy/roles";
 import { couldNotRead } from "./readState.js";
+import { holderOf } from "./otherPhone.js";
 
 const HOUR = 3600e3;
 
@@ -196,7 +197,7 @@ export const STATE_WORDS = Object.freeze({
  * @param {Map<string, {rows?: any[], error?: any}>|null} [a.coverage]  match_duties per fixture
  * @param {Set<string>|null} [a.decided]  live fixtures whose log already decides them
  * @param {number} a.now
- * @returns {{ items: {match: any, appointment: ReturnType<typeof appointmentOf>, group: "appointed"|"team", state: string, sessionError: boolean}[], shown: any[], later: number }}
+ * @returns {{ items: {match: any, appointment: ReturnType<typeof appointmentOf>, group: "appointed"|"team", state: string, sessionError: boolean, holder: ReturnType<typeof holderOf>}[], shown: any[], later: number }}
  */
 export function scorerFixtures({ matches, assignments, officials = [], userId = null, coverage = null, decided = null, now }) {
   const demo = assignments == null;
@@ -208,7 +209,9 @@ export function scorerFixtures({ matches, assignments, officials = [], userId = 
       const cov = coverage?.get?.(m.id) ?? null;
       const session = (cov?.rows ?? []).find((r) => r?.duty === "scoring") ?? null;
       return { match: m, appointment, group: /** @type {"appointed"|"team"} */ (appointment ? "appointed" : "team"),
-               state: fixtureState(m, session, !!decided?.has?.(m.id)), sessionError: !!cov?.error };
+               state: fixtureState(m, session, !!decided?.has?.(m.id)), sessionError: !!cov?.error,
+               // Who holds the scoring, as the read said it (slice 13: "A Wessels is scoring on another phone").
+               holder: holderOf(cov?.rows) };
     });
   const big = Number.MAX_SAFE_INTEGER;
   items.sort((x, y) => (x.group === y.group ? 0 : x.group === "appointed" ? -1 : 1)

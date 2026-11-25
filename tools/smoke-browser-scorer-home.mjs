@@ -266,8 +266,16 @@ try {
      at(OTHER) > 0 && at(OTHER) < at(MINE) && order.slice(1).every((o) => o.group === "team"), JSON.stringify(order));
   // The list draws before each fixture's scoring-session read answers: wait for
   // the state the read gives, rather than reading the first paint.
-  ok("the live fixture another device holds says so", await until(async () => (await attr(`fixture-${OTHER}`, "data-state")) === "held_other"
-     && /another device is scoring/.test(await tid(`fixture-${OTHER}-state`).innerText().catch(() => "")), 10000));
+  // Redesign slice 13 (§2.2): who holds it, only as the match_duties read gives it to this reader. A scorer
+  // holds no user.read, so app_user's policy (db/09) gives him no holder's name: "Someone else", never a guess.
+  const holderName = "Someone else";
+  ok("...and the coach's name is not on his home", !(await text()).includes((await dbq(`select name from app_user where id = $1`, [COACH_ID]))[0]?.name ?? "\u0000"));
+  ok("the live fixture another device holds says so, and who", await until(async () => (await attr(`fixture-${OTHER}`, "data-state")) === "held_other"
+     && (await tid(`fixture-${OTHER}-state`).innerText().catch(() => "")).includes(`${holderName} is scoring on another phone`), 10000),
+     await tid(`fixture-${OTHER}-state`).innerText().catch(() => ""));
+  ok("...and Now's card says it in one line, in place of the paragraph",
+     (await tid(`now-live-${OTHER}-state`).innerText().catch(() => "")).trim() === `${holderName} is scoring on another phone`,
+     await tid(`now-live-${OTHER}-state`).innerText().catch(() => ""));
   ok("...and offers the pad, whose take-over is the route, not a claim from here",
      /Open the pad/.test(await tid(`fixture-${OTHER}-open`).innerText().catch(() => "")) && /hands over/.test(await tid(`fixture-${OTHER}`).innerText().catch(() => "")));
   // Slice 1 (b): each fixture says its status sentence, the Match Centre's (lib/matchCentre.js statusSentence).
@@ -287,6 +295,30 @@ try {
   ok("...a friendly needs no published conditions", (await attr("prep-conditions", "data-state")) === "ok");
   const childReads = reads.filter((r) => /\/api\/read\/(players|readiness|availability|match_squad|roster_on|injuries|career)/.test(r));
   ok("nothing about a child was read for the home (no roster, sheet, availability or injury read)", childReads.length === 0, childReads.join(", "));
+
+  // Redesign slice 13 (DESIGN_DIRECTION §3.4 Flow E): one screen, before any toss sheet.
+  group("A2. He opens the match another phone holds: who is scoring, the code, the score; nothing claimed");
+  await tid(`now-live-${OTHER}-open`).click({ timeout: 5000 });
+  ok("the pad opens on the other-phone screen", await until(async () => (await attr("other-phone", "data-kind")) === "another", 10000), (await text()).slice(0, 200));
+  ok("...saying who is scoring", (await tid("other-phone-who").innerText().catch(() => "")).trim() === `${holderName} is scoring this match on another phone.`,
+     await tid("other-phone-who").innerText().catch(() => ""));
+  ok("...with no toss sheet and no keys", (await tid("toss-sheet").count()) === 0 && (await tid("basic-pad").count()) === 0 && !/\bDOT\b/.test(await text()));
+  ok("...Enter the handover code, Watch the score and Check again", (await tid("other-phone-code").count()) === 1
+     && (await tid("other-phone-watch").count()) === 1 && (await tid("other-phone-check").count()) === 1);
+  ok("...and no claim was made", (await dbq(`select holder_device, epoch from scoring_session where match_id = $1`, [OTHER]))[0]?.holder_device === "dev-another-phone");
+  await tap("other-phone-code");
+  ok("Enter the handover code: the code, and nothing to hand over", (await tid("handover-code-entry").count()) === 1 && (await tid("handover-tab-hand").count()) === 0);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  ok("...closed, the same screen again, still no toss sheet", (await tid("other-phone").count()) === 1 && (await tid("toss-sheet").count()) === 0);
+  await tap("other-phone-check", 1500);
+  ok("Check again: still held, nothing taken", (await tid("other-phone").count()) === 1
+     && (await dbq(`select holder_device from scoring_session where match_id = $1`, [OTHER]))[0]?.holder_device === "dev-another-phone");
+  await tap("other-phone-watch", 1500);
+  ok("Watch the score: the Match Centre, on this match", await until(async () => (await attr("match-view", "data-match")) === OTHER, 10000)
+     && new URL(page.url()).pathname === `/app/matches/${OTHER}`, page.url());
+  await page.locator("nav button", { hasText: /^\s*Today\s*$/ }).first().click({ timeout: 5000 }).catch(() => {});
+  ok("...and Today is a tap away", await home());
 
   group("B. He starts today's fixture: the pad claims it, and home says it is on this device");
   await tid(`fixture-${MINE}-open`).click({ timeout: 5000 });
