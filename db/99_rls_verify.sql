@@ -16833,6 +16833,10 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 CREATE OR REPLACE FUNCTION _v172_by_name(p_player uuid) RETURNS text AS $$
   SELECT c.by_name FROM player_born_change c WHERE c.player_id = p_player ORDER BY c.at DESC, c.id LIMIT 1
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy moved to another school, as the owner (no one signed in).
+CREATE OR REPLACE FUNCTION _v172_move(p_player uuid, p_school uuid) RETURNS void AS $$
+  UPDATE player SET school_id = p_school WHERE id = p_player
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The reason the latest change recorded, past row security.
 CREATE OR REPLACE FUNCTION _v172_reason(p_player uuid) RETURNS text AS $$
   SELECT c.reason FROM player_born_change c WHERE c.player_id = p_player ORDER BY c.at DESC, c.id LIMIT 1
@@ -16925,6 +16929,7 @@ DECLARE
   DOS    uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (player.profile.manage)
   WESOFF uuid := '88888888-0000-0000-0000-00000000000d';   -- Westville's office
   OWNER  uuid := '88888888-0000-0000-0000-000000000022';   -- the owner's key (superadmin)
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
   DSO    uuid := '88888888-0000-0000-0000-000000000057';   -- Hilton's DSO (audit.read, not a boy's age)
   PARENT uuid := '88888888-0000-0000-0000-000000000005';   -- a Hilton parent
   -- A fourteen-year-old's date, and the ID number that carries it.
@@ -17035,8 +17040,9 @@ BEGIN
   ELSIF p_case = 'office' THEN
     -- (office) A recorded date changed by the application role directly is
     -- the office's alone: the director of sport, who may update the row, is
-    -- refused; the coach's update reaches no row; the office's goes in and
-    -- is recorded, as 'import' when the import says so.
+    -- refused; the coach's update reaches no row; and the office's own, past
+    -- the door, is refused for want of a reason, an import's included
+    -- (Kameel, 25 Nov 2026; review B S1: the import label exempts nothing).
     BOY := _v172_boy('office', B, NULL);
     PERFORM _as(DOS);
     v := _v172_write(BOY, 'born', B2::text);
@@ -17052,17 +17058,22 @@ BEGIN
     PERFORM _assert(_v172_now(BOY) = B || '|-' AND _v172_rows(BOY) = '', format('§147 (office): something changed: %s / %s', _v172_now(BOY), _v172_rows(BOY)));
     PERFORM _as(REG);
     v := _v172_write(BOY, 'born', B2::text, 'import');
-    PERFORM _assert(v = '1 rows', format('§147 (office): the office''s import: %s', v));
-    -- Kameel, 25 Nov 2026: a correction carries its reason, so the office's
-    -- own UPDATE, past the door, is refused for want of one.
-    v := _v172_write(BOY, 'born', B::text);
+    PERFORM _assert(v = '23514:born_correction_needs_a_reason', format('§147 (office): the office''s import: %s', v));
+    v := _v172_write(BOY, 'born', B2::text);
     PERFORM _assert(v = '23514:born_correction_needs_a_reason', format('§147 (office): the office''s write past the door: %s', v));
-    PERFORM _assert(_v172_rows(BOY) = format('%s>%s:import:%s', B, B2, REG),
-                    format('§147 (office): recorded as %s', _v172_rows(BOY)));
+    PERFORM _assert(_v172_now(BOY) = B || '|-' AND _v172_rows(BOY) = '', format('§147 (office): recorded %s / %s', _v172_now(BOY), _v172_rows(BOY)));
+    -- An import that fills a missing date is a capture, and needs no reason.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _born_constraint(false);
+    BOY2 := _v172_boy('office fill', NULL, NULL);
+    PERFORM _born_constraint(true);
+    PERFORM _as(REG);
+    v := _v172_write(BOY2, 'born', B::text, 'import');
+    PERFORM _assert(v = '1 rows' AND _v172_rows(BOY2) = format('->%s:import:%s', B, REG), format('§147 (office): an import''s fill: %s / %s', v, _v172_rows(BOY2)));
     -- A support hour as the office is not the office (db/70's cut).
     SUP := _v168_support('v172');
     PERFORM _as(SUP);
-    v := _v172_write(BOY, 'born', B::text);   -- he reads B2 now: a change
+    v := _v172_write(BOY, 'born', B2::text);
     PERFORM _assert(v = '42501:born_correction_is_the_office', format('§147 (office): a support hour: %s', v));
 
   ELSIF p_case = 'door' THEN
@@ -17085,7 +17096,7 @@ BEGIN
     SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, NULL, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(NOT ok_ AND why = 'born_required', format('§147 (door): no date: %s %s', ok_, why));
     -- A reason, required (Kameel, 25 Nov 2026): none, blank, spaces, or past 200.
-    FOREACH v IN ARRAY ARRAY[NULL, '', '    ', E'\t\n'] LOOP
+    FOREACH v IN ARRAY ARRAY[NULL, '', '    ', E'\t\n', E'\u00a0', E'\u200b', E'\u2060', ' . ! '] LOOP
       SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B2, v) x;
       PERFORM _assert(NOT ok_ AND why = 'reason_required', format('§147 (door): the reason %L: %s %s', v, ok_, why));
     END LOOP;
@@ -17098,6 +17109,15 @@ BEGIN
     PERFORM _assert(_v172_now(BOY) = B || '|' || IDN AND _v172_rows(BOY) = '',
                     format('§147 (door): a refusal or "unchanged" changed something: %s / %s', _v172_now(BOY), _v172_rows(BOY)));
     -- A boy with no ID number on file: the office corrects him, and it is kept.
+    -- Filling a missing date is a capture: no reason asked, none kept (review B N8).
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _born_constraint(false);
+    BOY2 := _v172_boy('door fill', NULL, NULL);
+    PERFORM _born_constraint(true);
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY2, B, NULL) x;
+    PERFORM _assert(ok_ AND _v172_rows(BOY2) = format('->%s:capture:%s', B, REG) AND _v172_reason(BOY2) IS NULL,
+                    format('§147 (door): a fill: %s %s / %s', ok_, why, _v172_rows(BOY2)));
     BOY := _v172_boy('door noid', B, NULL);
     SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, sa_today() + 1, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(NOT ok_ AND why = 'born_in_future', format('§147 (door): tomorrow: %s %s', ok_, why));
@@ -17199,6 +17219,30 @@ BEGIN
       SELECT count(*) INTO n FROM audit_log(HIL, ARRAY['dob']);
       PERFORM _assert(n = 0, format('§147 (audit): %s reads %s rows', SUP, n));
     END LOOP;
+
+  ELSIF p_case = 'moved' THEN
+    -- (moved) Review B N2: a boy's changes are read by his school's office,
+    -- and only its own school's rows. Corrected at Hilton, then moved to
+    -- Westville: Westville's office reads none of Hilton's names or reasons,
+    -- Hilton's office (no longer his) reads none; Westville's own correction
+    -- is Westville's to read.
+    BOY := _v172_boy('moved', B, NULL);
+    PERFORM _as(REG);
+    SELECT x.ok INTO ok_ FROM player_born_correct(BOY, B2, 'Verify 172: Hilton''s reason') x;
+    PERFORM _assert(ok_, '§147 (moved): Hilton''s correction did not go in');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v172_move(BOY, WES);
+    PERFORM _as(WESOFF);
+    SELECT count(*) INTO n FROM player_born_changes(BOY);
+    PERFORM _assert(n = 0, format('§147 (moved): Westville''s office reads %s of Hilton''s changes', n));
+    PERFORM _as(REG);
+    SELECT count(*) INTO n FROM player_born_changes(BOY);
+    PERFORM _assert(n = 0, format('§147 (moved): Hilton''s office reads %s changes of a boy no longer its', n));
+    PERFORM _as(WESOFF);
+    SELECT x.ok INTO ok_ FROM player_born_correct(BOY, B, 'Verify 172: Westville''s reason') x;
+    SELECT count(*) INTO n FROM player_born_changes(BOY);
+    PERFORM _assert(ok_ AND n = 1 AND (SELECT c.reason FROM player_born_changes(BOY) c) = 'Verify 172: Westville''s reason',
+                    format('§147 (moved): Westville reads %s of its own', n));
 
   ELSIF p_case = 'idswap' THEN
     -- (idswap) An ID number on file is the office's to change (review S1):
@@ -49441,6 +49485,7 @@ $m130$;
   --   (old)      a row that disagreed before db/172 stands until written
   --   (audit)    the changes in audit_log(): the principal with the dates,
   --              the DSO without, never the reason; a coach and a parent nothing
+  --   (moved)    a moved boy's changes: each office reads its own school's
   --   (idswap)   an ID number on file is the office's to change; a date and
   --              a forged number in one statement refused (review S1)
   --   (definer)  logged in as the application, a definer door meets every
@@ -49473,6 +49518,7 @@ $m130$;
   PERFORM _v172_case('owner');
   PERFORM _v172_case('old');
   PERFORM _v172_case('audit');
+  PERFORM _v172_case('moved');
   PERFORM _v172_case('idswap');
   PERFORM _v172_case('definer');
   PERFORM _v172_case('grants');

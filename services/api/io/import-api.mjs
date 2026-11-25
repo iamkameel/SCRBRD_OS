@@ -202,12 +202,13 @@ export const IMPORTS = {
     // blank cell in a CSV means "not in this file", never "delete this".
     //
     // A birthday the file CHANGES is a correction, not an overwrite (Kameel,
-    // 20 Nov 2026: "The office corrects it; every change is audited"). The
-    // statement is the same; db/172's trigger on the column decides: only the
-    // school office may change a recorded date, the date must agree with the
-    // ID number on his record, and every change is written to
-    // player_born_change as 'import'. Each refusal is that row's error
-    // (`refusals` below), and the file commits nothing.
+    // 20 Nov 2026: "The office corrects it; every change is audited"; 25 Nov:
+    // a correction carries its reason). The statement is the same; db/172's
+    // trigger on the column decides: a recorded date is not changed by a file
+    // at all (it is corrected on Edit Profile, with a reason), a missing date
+    // must agree with the ID number on his record, and every date the file
+    // writes is recorded in player_born_change as 'import'. Each refusal is
+    // that row's error (`refusals` below), and the file commits nothing.
     update: `update player
                 -- full_name and school_id are both referenced deliberately.
                 -- Postgres infers a parameter's type from its use, so an
@@ -257,6 +258,10 @@ export const IMPORTS = {
         notOffice: `${BIRTH_DATE_MESSAGE.born_needs_the_office} Leave born blank on this line.` },
       born_correction_is_the_office: { column: "born",
         message: `${BIRTH_DATE_MESSAGE.born_correction_is_the_office} Leave born blank on this line, or ask the office.` },
+      // A recorded date is corrected from Edit Profile, with its reason (Kameel,
+      // 25 Nov 2026; db/172 review B S1): a file fills a missing date only.
+      born_correction_needs_a_reason: { column: "born",
+        message: "A date of birth already on record is corrected from Edit Profile, with a reason. Leave born blank on this line." },
       id_number_change_is_the_office: { column: "id_number",
         message: `${BIRTH_DATE_MESSAGE.id_number_change_is_the_office} Leave id_number blank on this line.` },
     },

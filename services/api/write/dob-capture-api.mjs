@@ -106,11 +106,12 @@ export function dobCaptureRoutes({ pool, secret }) {
         // beside it would be a second, unchecked claim.
         const dob = resolveBirthDate({ born: b.born });
         if (!dob.ok) throw err(dob.reason);
-        // Why, in the office's words, and required (Kameel, 25 Nov 2026):
-        // checked here for the words, and again by the door and the record.
-        const why = typeof b.reason === "string" ? b.reason.trim() : "";
-        if (!why) throw err("reason_required");
-        if (why.length > 200) throw err("reason_too_long");
+        // Why, in the office's words (Kameel, 25 Nov 2026). Required by the
+        // door for a correction, and not asked for filling a missing date
+        // (review B N8); words, at least one letter or digit (N1).
+        const typed = typeof b.reason === "string" ? b.reason.trim() : "";
+        const why = /[\p{L}\p{N}]/u.test(typed) ? typed : null;
+        if (why && why.length > 200) throw err("reason_too_long");
         const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
           const { rows } = await client.query(
             `select ok, reason, to_char(was, 'YYYY-MM-DD') as was, to_char(born, 'YYYY-MM-DD') as born

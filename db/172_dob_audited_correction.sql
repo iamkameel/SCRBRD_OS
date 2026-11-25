@@ -194,7 +194,7 @@ ALTER TABLE player_born_change ADD CONSTRAINT player_born_change_reason
   -- A reason is a correction's alone, and is words. That every correction
   -- the application makes HAS one is player_born_checked()'s rule (the
   -- owner's own fixes need none).
-  CHECK (reason IS NULL OR (how = 'correction' AND reason ~ '\S' AND char_length(reason) <= 200)) NOT VALID;   -- a development database's earlier-cut rows stand; every new row is held
+  CHECK (reason IS NULL OR (how = 'correction' AND reason ~ '[[:alnum:]]' AND char_length(reason) <= 200)) NOT VALID;   -- a development database's earlier-cut rows stand; every new row is held
 CREATE INDEX IF NOT EXISTS player_born_change_player ON player_born_change (player_id, at);
 ALTER TABLE player_born_change ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON player_born_change FROM PUBLIC;
@@ -237,10 +237,11 @@ BEGIN
   -- A correction the application makes carries its reason (Kameel, 25 Nov
   -- 2026), which only the door sets (app.born_reason, for its one UPDATE):
   -- a recorded date is corrected through player_born_correct() or not at
-  -- all. An import says what it is by its `how`.
+  -- all, a roster import included (review B S1): a file fills a missing date
+  -- and never changes a recorded one. A reason is words: at least one letter
+  -- or digit, so a lone invisible character is none (review B N1).
   IF TG_OP = 'UPDATE' AND OLD.born IS NOT NULL AND NEW.born IS DISTINCT FROM OLD.born AND v_app
-     AND coalesce(current_setting('app.born_how', true), '') <> 'import'
-     AND coalesce(current_setting('app.born_reason', true), '') !~ '\S' THEN
+     AND coalesce(current_setting('app.born_reason', true), '') !~ '[[:alnum:]]' THEN
     RAISE EXCEPTION 'born_correction_needs_a_reason'
       USING ERRCODE = 'check_violation',
             HINT = 'A date of birth on record is corrected through player_born_correct(), with its reason.';
@@ -269,8 +270,7 @@ CREATE TRIGGER player_born_agrees_with_id
 -- How: no one signed in is the owner; the import says so for its own
 -- transaction (app.born_how = 'import', set by the import route); a date
 -- where there was none is a capture; any other change is a correction.
--- app.born_how is a label and never an authority: the office rule above
--- does not read it.
+-- app.born_how is a label and never an authority: no rule above reads it.
 CREATE OR REPLACE FUNCTION player_born_record() RETURNS trigger AS $$
 DECLARE v_me uuid := app_user_id(); v_how text;
 BEGIN
@@ -316,7 +316,12 @@ BEGIN
   IF p_born IS NULL THEN
     RETURN QUERY SELECT false, 'born_required'::text, p.born, NULL::date; RETURN;
   END IF;
-  IF v_why IS NULL OR v_why = '' THEN
+  -- A reason is asked only of a correction (review B N8): filling a missing
+  -- date is a capture, and asks for none. It is words: at least one letter
+  -- or digit (review B N1).
+  IF p.born IS NULL THEN
+    v_why := NULL;
+  ELSIF v_why IS NULL OR v_why !~ '[[:alnum:]]' THEN
     RETURN QUERY SELECT false, 'reason_required'::text, p.born, NULL::date; RETURN;
   END IF;
   IF char_length(v_why) > 200 THEN
@@ -332,7 +337,7 @@ BEGIN
   IF v_from_id IS NOT NULL AND v_from_id <> p_born THEN
     RETURN QUERY SELECT false, 'id_number_disagrees_with_date_of_birth'::text, p.born, NULL::date; RETURN;
   END IF;
-  PERFORM set_config('app.born_reason', v_why, true);
+  PERFORM set_config('app.born_reason', coalesce(v_why, ''), true);
   UPDATE player x SET born = p_born WHERE x.id = p_player;
   PERFORM set_config('app.born_reason', '', true);
   RETURN QUERY SELECT true, NULL::text, p.born, p_born;
@@ -351,7 +356,9 @@ RETURNS TABLE (at timestamptz, was date, became date, how text, by_name text, re
          c.reason
     FROM player_born_change c
     JOIN player p ON p.id = c.player_id
-   WHERE c.player_id = p_player AND player_born_office(p.school_id)
+   -- His current school's office, and only its own school's rows (review B
+   -- N2): a new school's office reads no old school's names or reasons.
+   WHERE c.player_id = p_player AND player_born_office(p.school_id) AND c.school_id = p.school_id
    ORDER BY c.at DESC, c.id
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION player_born_changes(uuid) FROM PUBLIC;

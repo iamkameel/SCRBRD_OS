@@ -221,7 +221,7 @@ function CorrectBirthday({ player }) {
   }, [player.id, nonce]);
   if (!state || !state.born) return null;
   const check = born ? resolveBirthDate({ born }) : null;
-  const reason = why.trim();
+  const reason = /[\p{L}\p{N}]/u.test(why) ? why.trim() : "";
   const save = async () => {
     setBusy(true); setSaid({ text: "", bad: false });
     try {

@@ -2630,6 +2630,9 @@ To paste:
   make.
 - **Before the API deploys.** `services/api/expected-migrations.json` lists
   172, and the API refuses to start on a database without it.
+- **No roster imports between the paste and the API's deploy.** The API before
+  it does not word db/172's refusals, so an import in that window fails on a
+  raw name (it fails closed: nothing is written).
 - It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, and a `DROP
   TRIGGER IF EXISTS` before each trigger. It takes a short lock on `player` for
   its two triggers (ten-second `lock_timeout`, reset by its last statement); a
