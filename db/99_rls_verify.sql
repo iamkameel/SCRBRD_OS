@@ -17796,6 +17796,11 @@ BEGIN
   VALUES (u, 'google.com', 'v174-' || p_tag, 'v174.' || p_tag || '@example.invalid', 'new_account');
   RETURN u;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A Google sign-in for an account that has one already (an office person, say).
+CREATE OR REPLACE FUNCTION _v174_identity(p_user uuid, p_tag text) RETURNS void AS $$
+  INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how)
+  VALUES (p_user, 'google.com', 'v174-' || p_tag, 'v174.' || p_tag || '@example.invalid', 'new_account')
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- An account the office typed an address on, with no Google sign-in at all.
 CREATE OR REPLACE FUNCTION _v174_typed_only(p_tag text) RETURNS uuid AS $$
   INSERT INTO app_user (school_id, email, name, role)
@@ -17865,6 +17870,13 @@ CREATE OR REPLACE FUNCTION _v174_link(p_person uuid, p_player uuid) RETURNS text
     FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
    WHERE a.person_id = p_person AND a.role = 'guardian' AND a.active AND g.player_id = p_player
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A guardian link's shape, without its people: "role|relationship|verification|consent|ends".
+CREATE OR REPLACE FUNCTION _v174_shape(p_person uuid, p_player uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(a.role || '|' || g.relationship || '|' || g.verification_state || '|' || g.consent_state
+                             || '|' || coalesce(g.valid_until::text, 'open') || '|' || coalesce(a.team_code, '-'), ';'), '')
+    FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+   WHERE a.person_id = p_person AND a.active AND g.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A person's ended guardian link to a boy, made here (revoked by the office).
 CREATE OR REPLACE FUNCTION _v174_revoked_link(p_person uuid, p_player uuid, p_by uuid) RETURNS void AS $$
 DECLARE a uuid;
@@ -17902,11 +17914,12 @@ CREATE OR REPLACE FUNCTION _v174_anywhere(p_text text) RETURNS integer AS $$
        + (SELECT count(*) FROM access_log l WHERE l::text LIKE '%' || p_text || '%')::int
        + (SELECT count(*) FROM notification n WHERE n::text LIKE '%' || p_text || '%')::int
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
--- The door's callers, as db/92's foot check and db/174's ask it.
+-- The door's callers, as db/92's foot check and db/174's ask it, leaving
+-- out this file's own helpers (named _…), which exist only while it runs.
 CREATE OR REPLACE FUNCTION _v174_door_callers() RETURNS text AS $$
   SELECT string_agg(p.oid::regprocedure::text, ', ' ORDER BY p.oid::regprocedure::text)
     FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
-   WHERE ns.nspname = 'public' AND p.proname <> 'role_request_grant_as'
+   WHERE ns.nspname = 'public' AND p.proname <> 'role_request_grant_as' AND p.proname NOT LIKE '\_%'
      AND regexp_replace(p.prosrc, '--[^\n]*', '', 'g') ~ 'role_request_grant_as\s*\('
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A column's or a constraint's shape, as the owner reads the catalogue.
@@ -17962,7 +17975,7 @@ DECLARE
   PARENT uuid := '88888888-0000-0000-0000-000000000005';   -- a Hilton parent
   T text := p_case;
   BOY uuid; BOY2 uuid; U uuid; U2 uuid; OFF uuid; ROW_ uuid; ROW2 uuid; Q uuid; B date;
-  v text; v2 text; n int; n2 int; r record;
+  v text; v2 text; n int; n2 int; r record; r2 record;
 BEGIN
   PERFORM set_config('app.user_id', '', true);
   PERFORM _v174_switch(true);
@@ -17988,11 +18001,19 @@ BEGIN
                     AND (_v92_notice(HIL, 'Linked from the family list')).required_capability = 'guardian.link.manage'
                     AND NOT (_v92_notice(HIL, 'Linked from the family list')).is_public,
       format('§149 (match): the notice reads %s', row_to_json(_v92_notice(HIL, 'Linked from the family list'))));
-    -- The ceiling: the ordinary guardian bundle, and nothing of his read before she agrees.
-    PERFORM _as(U);
-    PERFORM _assert((SELECT count(*) FROM player p WHERE p.id = BOY) = 0,
-      '§149 (match): she read his roster row before agreeing to the terms');
+    -- The ceiling: the ordinary guardian bundle. Her link is the shape the
+    -- office's own hand grant writes (a control, granted by the office from
+    -- Requests): the same role, relationship, verification, pending consent
+    -- and end, so whatever holds a hand-granted parent back until she agrees
+    -- holds her back too.
+    BOY2 := _v174_boy(T || 'hand', 14); U2 := _v174_google(T || '.hand');
+    PERFORM _as(U2);
+    INSERT INTO role_request (person_id, role, school_id) VALUES (U2, 'guardian', HIL) RETURNING id INTO Q;
+    PERFORM _as(REG);
+    PERFORM _assert((SELECT d.ok FROM decide_role_request(Q, true, NULL, BOY2, NULL) d), '§149 (match): the office''s hand grant failed');
     PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v174_shape(U, BOY) = _v174_shape(U2, BOY2) AND _v174_shape(U, BOY) <> '',
+      format('§149 (match): the list''s link %s is not a hand grant''s %s', _v174_shape(U, BOY), _v174_shape(U2, BOY2)));
     -- One go: the same row claims nobody twice.
     U2 := _v174_google(T || '.again');
     SELECT * INTO r FROM _v174_ask(U2, 'guardian', B);
@@ -18015,10 +18036,15 @@ BEGIN
     SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.nogoogle@example.invalid'); ROW2 := r.row_id;
     SELECT * INTO r FROM _v174_ask(U2, 'guardian', B);
     PERFORM _assert(r.answer = 'sent' AND _v174_row(ROW2) = 'open:-:-', format('§149 (address): no sign-in answered %s / %s', r.answer, _v174_row(ROW2)));
-    -- With the condition back (her verified address listed), she is linked.
+    -- With the condition back (her verified address listed), she is linked:
+    -- she withdraws the waiting request, as POST /api/requests/:id/withdraw does, and asks again.
     SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.google@example.invalid');
-    SELECT * INTO r FROM _v174_ask(_v92_id('v174.' || T || '.typed@example.invalid'), 'guardian', B);
-    PERFORM _assert(r.answer = 'sent', format('§149 (address): her pending request was asked again and answered %s', r.answer));
+    PERFORM _as(U);
+    UPDATE role_request SET state = 'withdrawn' WHERE person_id = U AND state = 'pending';
+    PERFORM set_config('app.user_id', '', true);
+    SELECT * INTO r FROM _v174_ask(U, 'guardian', B);
+    PERFORM _assert(r.answer = 'linked' AND _v174_link(U, BOY) = 'verified|pending|' || REG,
+      format('§149 (address): her verified address listed answered %s', r.answer));
 
   ELSIF p_case = 'open' THEN
     -- (open) Condition 2, removed: a withdrawn row and an expired row link
@@ -18071,7 +18097,14 @@ BEGIN
       PERFORM _as(U2);
       PERFORM _assert(family_register_line(r.req) IS NULL, format('§149 (date): %s read the office''s line', U2));
     END LOOP;
+    -- An office person who is also a parent: the line on her own request is not hers to read.
+    OFF := _v174_office(T || 'mum'); PERFORM _v174_identity(OFF, T || '.officemum');
+    SELECT * INTO r2 FROM _v174_list(REG, BOY, 'v174.' || T || '.officemum@example.invalid');
+    SELECT * INTO r2 FROM _v174_ask(OFF, 'guardian', _v174_born(BOY) + 2);
+    PERFORM _as(OFF);
+    PERFORM _assert(family_register_line(r2.req) IS NULL, '§149 (date): the office person read the line on her own request');
     PERFORM _as(REG);
+    PERFORM _assert(family_register_line(r2.req) = 'details_disagree', '§149 (date): the office does not read the line on a colleague''s request');
     PERFORM _assert(_decide93(r.req, false) = 'ok', '§149 (date): the office could not decline');
     PERFORM set_config('app.user_id', '', true);
     SELECT * INTO r FROM _v174_ask(U, 'guardian', _v174_born(BOY));
@@ -18227,8 +18260,7 @@ BEGIN
     PERFORM set_config('app.user_id', '', true);
 
   ELSIF p_case = 'upload' THEN
-    -- (upload) Who may upload, and what a row may hold. The office and the
-    -- principal; never a coach, the DSO, a parent, the owner's key or
+    -- (upload) Who may upload, and what a row may hold. The office; never a coach, the DSO, a parent, the owner's key or
     -- another school's office. A child of another school reads as no child.
     -- A dry run writes nothing; one bad row commits nothing.
     BOY := _v174_boy(T, 14);
@@ -18236,8 +18268,12 @@ BEGIN
       SELECT * INTO r FROM _v174_list(U, BOY, 'v174.' || T || '.x@example.invalid');
       PERFORM _assert(r.result = 'not_permitted', format('§149 (upload): %s uploaded: %s', U, r.result));
     END LOOP;
+    -- The principal reads the list (guardian.link.manage) but lists only what
+    -- she may grant by hand: a guardian is the office's to grant (db/77's floor).
     SELECT * INTO r FROM _v174_list(PRIN, BOY, 'v174.' || T || '.prin@example.invalid');
-    PERFORM _assert(r.result = 'ok', format('§149 (upload): the principal could not upload: %s', r.result));
+    PERFORM _assert(r.result = 'not_grantable_here', format('§149 (upload): the principal listed a parent: %s', r.result));
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.prin@example.invalid');
+    PERFORM _assert(r.result = 'ok', format('§149 (upload): the office could not list: %s', r.result));
     PERFORM _as(REG);
     SELECT count(*) INTO n FROM family_register_upload(HIL, jsonb_build_array(
       jsonb_build_object('player_id', BOY, 'email', 'v174.' || T || '.dry@example.invalid', 'kind', 'guardian', 'relationship', 'parent')), false) u
@@ -50971,6 +51007,17 @@ $m130$;
   --   (q11)      a declined pupil claim tells the DSO: his `player`
   --              request (db/174) and his claim (db/168)
   --   (grants)   ACLs of every function
+  -- Broken by hand (25 Nov 2026), each went red for its own reason:
+  --   the uploader's authority not asked        → (departed) red: linked
+  --   the date not compared                     → (date) red: a wrong date linked
+  --   the switch not asked                      → (switch) red: linked while off
+  --   "the boy has an account" not asked        → (pupil) red: merged
+  --   the cooldown not asked                    → (paused) red: linked
+  --   the row's dates and withdrawal not asked  → (open) red: the claim raised
+  --   the typed address matched as well         → (address) red: linked
+  --   the revoked address let into the upload   → (revoked) red
+  --   the requester shown her own line          → (date) red
+  --   a pupil under 18 let in on player         → (pupil) red: in
   PERFORM _v174_case('match');
   PERFORM _v174_case('address');
   PERFORM _v174_case('open');
