@@ -26,7 +26,7 @@ import { saClock } from "../lib/saTime.js";
 import { MatchCard } from "../ui/matchCard.jsx";
 import { sideOfTeam } from "../lib/matchCentre.js";
 import { decidedOn, openWords, resultSaidOf } from "../lib/matchCard.js";
-import { cockpitGate } from "../lib/cockpit.js";
+import { cockpitGate, isMatchDay } from "../lib/cockpit.js";
 import { missingDuties, nobodyOnRecord } from "../lib/signals.js";
 import { requestCoach, requestDuties, requestResult } from "../lib/cockpitNav.js";
 import { fixFor, requestFix } from "../lib/fixNote.js";
@@ -218,7 +218,7 @@ function useWeekResults(ids) {
 function DaySheet({ role, live = true, demoNote = "sample fixtures, no server connected", liveMatch = null, board = null, boardState = {},
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
                     reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true, off = {},
-                    needsYou = null, nextFold = null, lastMatch = null, dso = null, chipDoor = null,
+                    needsYou = null, needsYouAfterNext = false, nextFold = null, lastMatch = null, dso = null, chipDoor = null,
                     liveInnings = null, liveResult = null, liveConditions = null, nowLine = null, nowAction = null, openMatch = null }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
@@ -275,8 +275,9 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
         )}
 
         {/* 1b. Needs you — what is waiting on this reader, each row landing on its fix (EXPERIENCE_PASS §1.3, §1.10).
-            Drawn only for someone who can act on a row (Q17), and only when one is open. */}
-        {needsYou}
+            Drawn only for someone who can act on a row (Q17), and only when one is open. On his side's match day,
+            before the toss, it follows the match instead (Kameel, 25 Nov; DESIGN_DIRECTION §3.3). */}
+        {!needsYouAfterNext && needsYou}
 
         {/* 2. Today / next — the next fixture, ready or not. */}
         {holds("fixture.read") && (
@@ -329,6 +330,8 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
             ))}
           </BentoCard>
         )}
+
+        {needsYouAfterNext && needsYou}
 
         {/* 2b. Match day — the coach's cards for his other fixtures within seven days (SCRBRD-136). Handed in, so the
             pitch deck's frame draws the day sheet without them; nothing for anyone the gate does not admit. */}
@@ -566,6 +569,8 @@ function DashboardView({ role, onNav, onOpenScorer }) {
       onNav={onNav} onOpenScorer={onOpenScorer} chipDoor={chipDoor}
       // The set-up list leads Needs you for a school with no fixtures (Slice 6), from the fixtures and players read here,
       // once both have answered whole: a read still out, or failed, draws no list rather than one that is wrong.
+      // His side plays today and has not started: the match card leads, and Needs you sits under it (§3.3).
+      needsYouAfterNext={!!(signedIn() && next && !liveMatch && isMatchDay(next, Date.now()) && cockpitGate(assignments, next))}
       needsYou={signedIn() ? <NeedsYou role={role} matches={MATCHES} onNav={onNav} players={PLAYERS}
         matchesAnswered={[matchesRead, playersRead].every((r) => r.live && !r.loading && !r.error)}/> : null}
       nextFold={signedIn() && next ? <MatchDayCard matches={MATCHES} onNav={onNav} only={next.id}/> : null}
