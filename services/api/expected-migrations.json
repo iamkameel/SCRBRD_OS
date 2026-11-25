@@ -164,5 +164,6 @@
   "171_slice4_followups.sql",
   "172_dob_audited_correction.sql",
   "173_dob_first_dates.sql",
-  "174_family_register.sql"
+  "174_family_register.sql",
+  "175_terms_gate.sql"
 ]
