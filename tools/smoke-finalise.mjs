@@ -11,8 +11,20 @@
  *      Westville's coach (scoring.finalise at the AWAY side), each 403
  *      not_permitted; a malformed id 404; U, which the log has not decided,
  *      422 not_decided.
- *   B. The scorer finishes D: 200, "finished", the words the pad shows; the
- *      status complete; one scoring_audit row, his.
+ *   B. The scorer does NOT finish D (db/171; Kameel, 20 Nov 2026, Q2 (a):
+ *      his part ends at the last ball): 403 coach_confirms, in its words,
+ *      the match still live, no audit row. The chase's seal told the 1XI
+ *      coach and the director of sport, once each: "1XI v Westville Boys'
+ *      High 1XI is decided. Confirm the result." — never the scorer, and the
+ *      same batch sent again tells nobody twice.
+ *   P. The pen (db/171): the scorer's phone still holds D, so the coach's
+ *      Confirm is 422 held_elsewhere. The coach cannot put the scorer's pen
+ *      down; the scorer cannot at another generation, from another device,
+ *      or with a ball still to send; then he does (the end screen's
+ *      release), the session idle, and the coach confirms at once: 200,
+ *      finished; the status complete; one scoring_audit row, the coach's;
+ *      the decided notices taken back. The released generation's ball is
+ *      set aside, not written into the log.
  *   C. Again: 200 already_complete, and nothing more written.
  *   D. After it: the official result reads provisional (not "not finished"),
  *      and a claim of the pen is refused match_complete (db/33).
@@ -115,24 +127,76 @@ try {
   }
   const bad = await finalise("not-a-match", scorer);
   ok(`a malformed id: 404 (${bad.status})`, bad.status === 404, show(bad));
-  const undecided = await finalise(U, scorer);
+  // Asked as the coach: since db/171 the scorer hears coach_confirms first.
+  const undecided = await finalise(U, await login("coach@example.invalid", "coach-phone"));
   ok("U, which the log has not decided: 422 not_decided, in words",
     undecided.status === 422 && undecided.body?.error === "not_decided" && undecided.body?.detail === FINALISE_WORDS.not_decided, show(undecided));
   // Both are live from their first ball (db/165), and no refusal moved either.
   ok("...and every refusal left both live, with no audit row", (await status(D)) === "live" && (await status(U)) === "live"
     && (await audits(D)).length === 0 && (await audits(U)).length === 0);
 
-  group("B. The scorer finishes D");
-  const done = await finalise(D, scorer);
-  ok("200, finished, in the pad's words", done.status === 200 && done.body?.state === "finished" && done.body?.message === FINALISE_WORDS.finished, show(done));
-  ok("the status is complete", (await status(D)) === "complete");
+  group("B. The scorer does not finish D; the coach is told");
+  const refusedScorer = await finalise(D, scorer);
+  ok("the scorer: 403 coach_confirms, in its words", refusedScorer.status === 403 && refusedScorer.body?.error === "coach_confirms"
+    && refusedScorer.body?.detail === FINALISE_WORDS.coach_confirms, show(refusedScorer));
+  ok("...the match still live, no audit row", (await status(D)) === "live" && (await audits(D)).length === 0);
+  const coach = await login("coach@example.invalid", "coach-phone");
+  const sarah = await login("sarah@example.invalid", "dos-phone");
+  const TITLE = "1XI v Westville Boys' High 1XI is decided. Confirm the result.";
+  const decided = async (token) => ((await api("/api/read/notifications", { token })).body?.rows ?? [])
+    .filter((n) => n.subject_id === D && n.title === TITLE);
+  const toCoach = await decided(coach);
+  ok("the 1XI coach reads one decided notice for D, medium, in the fixture kind", toCoach.length === 1
+    && toCoach[0].urgency === "medium" && toCoach[0].kind === "fixture", JSON.stringify(toCoach));
+  ok("...and so does the director of sport", (await decided(sarah)).length === 1);
+  ok("...and the scorer none", (await decided(scorer)).length === 0);
+  // The pad re-sends a batch it got no answer to: every event a duplicate.
+  const [{ n: before }] = await q(`select count(*)::int n from notification where subject_id = $1 and title = $2`, [D, TITLE]);
+  const resent = await q(`select idempotency_key, client_seq, client_ts, innings, epoch, device_id, payload from ball_event where match_id = $1 and kind = 'innings_end' order by seq desc limit 1`, [D]);
+  const again1 = await api(`/api/matches/${D}/events`, { method: "POST", token: scorer, body: { events: resent.map((r) => ({
+    epoch: r.epoch, deviceId: r.device_id, idempotencyKey: r.idempotency_key, clientSeq: Number(r.client_seq), clientTs: Number(r.client_ts) || Date.parse(r.client_ts), innings: r.innings, payload: r.payload })) } });
+  const [{ n: after }] = await q(`select count(*)::int n from notification where subject_id = $1 and title = $2`, [D, TITLE]);
+  ok(`the seal sent again (${JSON.stringify(again1.body).slice(0, 80)}) tells nobody twice`, after === before && before >= 2, `${before} → ${after}`);
+
+  group("P. The pen: the coach confirms at once once the scorer's end screen puts it down");
+  const held = await finalise(D, coach);
+  ok("while the scorer's phone holds it: 422 held_elsewhere", held.status === 422 && held.body?.error === "held_elsewhere", show(held));
+  const release = (token, body) => api(`/api/matches/${D}/session/release`, { method: "POST", token, body });
+  const [{ epoch }] = await q(`select epoch from scoring_session where match_id = $1`, [D]);
+  const byCoach = await release(coach, { epoch, pending: 0 });
+  ok("the coach cannot put the scorer's pen down: not_token_holder", byCoach.body?.ok === false && byCoach.body?.reason === "not_token_holder", show(byCoach));
+  const stale = await release(scorer, { epoch: epoch + 1, pending: 0 });
+  ok("the scorer at another generation: not_token_holder", stale.body?.ok === false && stale.body?.reason === "not_token_holder", show(stale));
+  const elsewhere = await release(await login("scorer@example.invalid", "another-pad"), { epoch, pending: 0 });
+  ok("the scorer from another device: not_token_holder", elsewhere.body?.ok === false && elsewhere.body?.reason === "not_token_holder", show(elsewhere));
+  const named = await release(scorer, { epoch, pending: 0, device: "another-pad" });
+  ok("a body naming another device: device_mismatch", named.body?.ok === false && named.body?.reason === "device_mismatch", show(named));
+  const unsent = await release(scorer, { epoch, pending: 1 });
+  ok("a ball still to send: unsynced_work", unsent.body?.ok === false && unsent.body?.reason === "unsynced_work", show(unsent));
+  const down = await release(scorer, { epoch, pending: 0 });
+  ok("the scorer puts it down: ok, the generation moved on", down.body?.ok === true && down.body?.epoch === epoch + 1, show(down));
+  const [s] = await q(`select state, holder_user_id from scoring_session where match_id = $1`, [D]);
+  ok("...the session idle, nobody holding it", s.state === "idle" && s.holder_user_id === null, JSON.stringify(s));
   const [{ id: scorerId }] = await q(`select id from app_user where email = 'scorer@example.invalid'`);
+  ok("...one pen_released row, his", (await q(`select actor_id from scoring_audit where match_id = $1 and event = 'pen_released'`, [D]))
+    .map((r) => r.actor_id).join() === scorerId);
+  const late = await api(`/api/matches/${D}/events`, { method: "POST", token: scorer, body: { events: [{
+    epoch, deviceId: "finalise-pad", idempotencyKey: `${D}:finalise-pad:late`, clientSeq: 999, clientTs: T0 + 9_999_000, innings: 1,
+    payload: { ...ball({ type: BALL_TYPE.RUN, value: 4 }), id: `${D}:finalise-pad:late`, innings: 1 } }] } });
+  ok("a ball under the released generation is set aside, not logged",
+    (await q(`select count(*)::int n from ball_event where match_id = $1 and idempotency_key = $2`, [D, `${D}:finalise-pad:late`]))[0].n === 0
+    && (await q(`select count(*)::int n from ball_event_quarantine where match_id = $1`, [D]))[0].n === 1, show(late));
+  const done = await finalise(D, coach);
+  ok("the coach confirms at once: 200, finished, in the pad's words", done.status === 200 && done.body?.state === "finished" && done.body?.message === FINALISE_WORDS.finished, show(done));
+  ok("the status is complete", (await status(D)) === "complete");
+  const [{ id: coachId }] = await q(`select id from app_user where email = 'coach@example.invalid'`);
   const rows = await audits(D);
-  ok("one scoring_audit row, his, with the outcome", rows.length === 1 && rows[0].actor_id === scorerId && /win/.test(rows[0].detail?.outcome ?? ""),
+  ok("one scoring_audit row, the coach's, with the outcome", rows.length === 1 && rows[0].actor_id === coachId && /win/.test(rows[0].detail?.outcome ?? ""),
     JSON.stringify(rows));
+  ok("the decided notices are taken back: the coach reads none", (await decided(coach)).length === 0);
 
   group("C. Again: a no-op");
-  const again = await finalise(D, scorer);
+  const again = await finalise(D, coach);
   ok("200 already_complete", again.status === 200 && again.body?.state === "already_complete", show(again));
   ok("...and nothing more written", (await audits(D)).length === 1);
 

@@ -218,6 +218,7 @@ export const CONFIRM_RESULT_WORDS = Object.freeze({
   super_over_pending: "The match is tied and its conditions provide a super over: it is played, or the organiser decides, first.",
   match_abandoned: "This match was called off, so there is no result to confirm.",
   held_elsewhere: "The scorer's phone still holds the match. It lets go about a minute and a half after the scorer leaves the pad; then confirm again.",
+  coach_confirms: "The scorer's part ends at the last ball: the home side's coach, director of sport or sports administrator confirms the result.",
 });
 
 /**

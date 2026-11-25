@@ -2,7 +2,7 @@ import { useState } from "react";
 import { D, T } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { couldConfirmResult, profile } from "../lib/session.js";
-import { roleGrants } from "@scrbrd/policy/roles";
+import { roleConfirmsResult } from "@scrbrd/policy/roles";
 import { Btn } from "./ui.jsx";
 
 /**
@@ -46,12 +46,16 @@ export const FINISH_WORDS = Object.freeze({
   super_over_pending: "The match is tied and its conditions provide a super over: play it, or record the organiser's decision, first.",
   match_abandoned: "This match was called off, so there is no result to confirm.",
   held_elsewhere: "The scorer's phone still holds the match. It lets go about a minute and a half after the scorer leaves the pad; then confirm again.",
+  // db/171: the server's half of the rule below (scoring.finalise held only as the scorer).
+  coach_confirms: "Your part is done. The coach, director of sport or sports administrator confirms the result.",
 });
 
 /** The scorer's end (Flow D, step 3), and the sign-in for a coach on this phone. */
 export const FINISH_GATE_WORDS = Object.freeze({
   done: "Your part is done.",
   coach: "The coach confirms the result.",
+  // db/171: the pad has put the pen down, so the coach's Confirm works at once.
+  released: "The coach can confirm the result now.",
   sign_in: "Coaching this side? Sign in to confirm the result here.",
 });
 
@@ -83,7 +87,7 @@ export function doneWords({ balls, pending, online }) {
 export function finishOffer(schoolId, teamCode) {
   if (!signedIn()) return "sign_in";
   const may = schoolId ? couldConfirmResult(schoolId, teamCode)
-    : (profile()?.assignments ?? []).some((/** @type {any} */ a) => a.role !== "scorer" && roleGrants(a.role, "scoring.finalise"));
+    : (profile()?.assignments ?? []).some((/** @type {any} */ a) => roleConfirmsResult(a.role));
   return may ? "finish" : "done";
 }
 
@@ -91,16 +95,18 @@ export function finishOffer(schoolId, teamCode) {
  * The result screen's panel when confirming is not this person's: "Your part
  * is done", what is sent or still on the phone, who confirms, and "Back to
  * Today". A pad not signed in also offers a coach the sign-in that returns here.
- * @param {{ offer: "done"|"sign_in", onSignIn?: (() => void)|null, online?: boolean, balls?: number, pending?: number, onBack?: (() => void)|null }} props
+ * Once the pad has put the pen down (db/171, `released`), the coach may
+ * confirm at once, and the line says so.
+ * @param {{ offer: "done"|"sign_in", onSignIn?: (() => void)|null, online?: boolean, balls?: number, pending?: number, onBack?: (() => void)|null, released?: boolean }} props
  */
-export function FinishGate({ offer, onSignIn = null, online = true, balls = 0, pending = 0, onBack = null }) {
+export function FinishGate({ offer, onSignIn = null, online = true, balls = 0, pending = 0, onBack = null, released = false }) {
   const text = { fontFamily: D.body, fontSize: "15px", lineHeight: 1.45, color: D.textSecondary, margin: 0, textAlign: /** @type {const} */ ("center"), maxWidth: "520px" };
   return (
-    <div data-testid="pad-finish-panel" data-offer={offer} data-pending={pending}
+    <div data-testid="pad-finish-panel" data-offer={offer} data-pending={pending} data-released={released ? "true" : "false"}
       style={{ display: "grid", gap: "12px", justifyItems: "center", marginBottom: "28px" }}>
       <p data-testid="pad-done-lead" style={{ ...text, fontSize: "20px", fontWeight: 700, color: D.textPrimary }}>{FINISH_GATE_WORDS.done}</p>
       <p role="status" aria-live="polite" data-testid="pad-done-said" style={text}>
-        {doneWords({ balls, pending, online })} {FINISH_GATE_WORDS.coach}
+        {doneWords({ balls, pending, online })} {released && pending === 0 ? FINISH_GATE_WORDS.released : FINISH_GATE_WORDS.coach}
       </p>
       {onBack && <Btn variant="primary" size="lg" onClick={onBack} data-testid="pad-done-back">Back to Today</Btn>}
       {offer === "sign_in" && online && onSignIn && (

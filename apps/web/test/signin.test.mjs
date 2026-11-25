@@ -32,7 +32,7 @@ import { GRANTABLE_ROLES, SUBJECT_SCOPED_ROLES, SELF_REGISTRABLE_ROLES, SELF_REG
 import { exchangeGoogle, exchangeState, EXCHANGE_WORDS, CLAIM_STEPS, CLAIM_MEANWHILE } from "../src/lib/signin.js";
 import { googleConfig, signInConfig, googleFailure, GOOGLE_FAILURE_WORDS, addSignIn, authReady } from "../src/lib/google.js";
 import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../src/lib/signinNotice.js";
-import { FORM_ON_FILE, OFFICE_WITHDRAW, OWN_SIGNIN_REFUSALS, formReady, heldWords, officeSigninWords, ownSigninWords } from "../src/lib/ownSignin.js";
+import { FORM_ON_FILE, OFFICE_WITHDRAW, OWN_SIGNIN_REFUSALS, accountWords, formReady, heldWords, officeSigninWords, ownSigninWords } from "../src/lib/ownSignin.js";
 import {
   KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, NOTE_MAX, buildRequest, joinWords, parentNote, sentWords, spectatorAsk,
 } from "../src/lib/joinSchool.js";
@@ -275,6 +275,13 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
   ok("the office names the closed state", typeof OFFICE_STATE_WORDS.closed === "string" && /taken back/.test(OFFICE_STATE_WORDS.closed));
   {
     const base = { inForce: false, adult: false, bornKnown: true, yesHow: null, yesBy: null, yesAt: null, yours: false, canAllow: true, canStop: false };
+    // Q3 (db/173): before her yes, what the recognised account typed and the day.
+    ok("Q3: the account's name, year and the day it was recognised",
+       accountWords({ typedName: "R Pillay", typedYear: "Grade 10", recognisedOn: "2026-11-03" })
+         === "Your yes opens the account the school office recognised as him on 3 November 2026. It gave the name \u201cR Pillay\u201d, Grade 10. If that is not him, ask the school office before you say yes.");
+    ok("Q3: no year typed, none said", !/,\s*\./.test(accountWords({ typedName: "R Pillay", typedYear: null, recognisedOn: "2026-11-03" }) ?? "")
+       && /the name \u201cR Pillay\u201d\. If/.test(accountWords({ typedName: "R Pillay", typedYear: null, recognisedOn: "2026-11-03" }) ?? ""));
+    ok("Q3: no account, no line", accountWords(null) === null && accountWords({ typedName: "", typedYear: null, recognisedOn: null }) === null);
     ok("own sign-in, closed: he sees what the public sees", /cannot sign in to his own page/.test(ownSigninWords(base, "Sipho")) && /public sees/.test(ownSigninWords(base, "Sipho")));
     ok("...hers: allowed by you, with the day, and she can stop it",
        ownSigninWords({ ...base, inForce: true, yesHow: "guardian", yours: true, yesAt: "2026-11-18T08:00:00Z" }, "Sipho") === "You allowed Sipho's own sign-in on 18 November 2026. You can stop it at any time.",

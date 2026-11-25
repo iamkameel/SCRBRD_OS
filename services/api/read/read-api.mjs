@@ -4208,7 +4208,8 @@ function composeRatings(rows) {
 }
 
 // "recognition" (db/142): the honours audit, joined into audit_log().
-const AUDIT_KINDS = new Set(["access", "scoring", "amendment", "scorebook", "support", "role", "duty", "recognition"]);
+// "dob" (db/172): every change to a boy's date of birth.
+const AUDIT_KINDS = new Set(["access", "scoring", "amendment", "scorebook", "support", "role", "duty", "recognition", "dob"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**

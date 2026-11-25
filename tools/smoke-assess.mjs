@@ -141,7 +141,7 @@ try {
   const mineOnly = (await api("/api/read/skills", { token: pupil })).body?.rows ?? [];
   ok("a pupil reads his own ratings", mineOnly.length > 0);
   ok("...and not a team-mate's", mineOnly.every((r) => r.player_id === "aaaaaaaa-0000-0000-0000-000000000005"));   // R Pillay, himself
-  const teamOnly = await login("spectator@example.invalid");   // holds `player` and nothing about himself
+  const teamOnly = await login("mate@example.invalid");   // holds `player` and nothing about himself
   ok("the team role alone reads no ratings at all", ((await api("/api/read/skills", { token: teamOnly })).body?.rows ?? []).length === 0);
   ok("a pupil cannot rate themselves",
      (await assess(P_OWN, pupil, { scores: { technical: { footwork: 19 } } })).status === 403);

@@ -545,8 +545,8 @@ try {
     }
     ok("B2: and his app offers no Analytics, so no picker of another boy's line",
        await s.page.locator('[data-testid="mnav-analytics"], [data-testid="nav-analytics"], [data-testid="season-trend-player"]').count() === 0);
-    const tm = await devToken("spectator@example.invalid");
-    ok("B2: a team-mate pupil (spectator@, `player` on the 1st XI) reads none of his innings", !!tm && (await readRows(tm, `innings_by_season?playerId=${PILLAY}`)).length === 0);
+    const tm = await devToken("mate@example.invalid");
+    ok("B2: a team-mate pupil (mate@, `player` on the 1st XI) reads none of his innings", !!tm && (await readRows(tm, `innings_by_season?playerId=${PILLAY}`)).length === 0);
   }
   await tid(s.page, "passport-tab-wheel").click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1500);
@@ -626,7 +626,7 @@ try {
   group("A pupil with no file of his own reaches Leagues, and no ordered list of team-mates is drawn (R5b)");
   {
     const { token } = await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: "spectator@example.invalid", deviceId: "pupil-walk-ranks" }) })).json();
+      body: JSON.stringify({ email: "mate@example.invalid", deviceId: "pupil-walk-ranks" }) })).json();
     // REACH-D2 (Kameel, 7 Nov 2026): his reads no longer carry his side's
     // figures. He has no file of his own, so they carry nobody's.
     const getRows = async (r) => (await (await fetch(`${API}/api/read/${r}`, { headers: { authorization: `Bearer ${token}` } })).json()).rows ?? [];
@@ -637,7 +637,7 @@ try {
     await click(r.page, /Get Started|Log In/, 5000);
     await r.page.waitForTimeout(500);
     // Not one of the login screen's pilot buttons: typed, as any account is.
-    await r.page.locator('input[type="email"]').first().fill("spectator@example.invalid").catch(() => {});
+    await r.page.locator('input[type="email"]').first().fill("mate@example.invalid").catch(() => {});
     await click(r.page, /^Sign In$/, 5000);
     await afterReads(r.page, 2200);
     const comps = await destByWord(r.page, /^Competitions\d*$/);
@@ -734,9 +734,11 @@ try {
   await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
            values ('a5510000-0000-0000-0000-0000000000a2', $1, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c')`, [WHITFIELD]);
   // db/169: he is 16 and was enrolled the way the office did before db/169 (his own
-  // link stamped 'granted'). The paste carries that stamp over as the office's yes
-  // for his own sign-in (db/169 §6); the walk asks for the same carry-over.
-  await q(`select pupil_signin_carry_over()`);
+  // link stamped 'granted'). The paste carried that stamp over as the school's yes
+  // for his own sign-in (db/169 §6); db/173 carries over only stamps from before
+  // db/169's first paste, so the walk writes that yes itself.
+  await q(`insert into pupil_signin_consent (player_id, answer, how, given_by, given_by_name, terms_version, given_at, school_id)
+           values ($1, 'yes', 'enrolled', '88888888-0000-0000-0000-00000000000c', 'The office', 'popia-2026-01', now(), $2)`, [WHITFIELD, HIL]);
 
   // What the tab may never say (§4): the walk's own list, kept apart from the screen's.
   const NEVER = new RegExp(String.raw`injur|fitness|\bfit\b|physio|rehab|restrict|return date|guideline|workload|wellness|available|unavailable|doubtful|\breason|because|\bwhy\b|threat|probab|win chance|shoulder|impingement|hamstring|funeral|${RTW_WORDS}`, "i");

@@ -134,4 +134,60 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
     "The ID number carries a different date of birth to the one typed. One of them belongs to somebody else.",
   id_number_check_digit_failed:
     "Saved, but that ID number fails its own check digit — worth reading back against the document.",
+  // db/172's own refusals, which the database makes whoever writes: a date
+  // that disagrees with the ID number already on his record, and a recorded
+  // date changed by anyone but the school office.
+  born_correction_is_the_office:
+    "Only the school office may change a date of birth already on his record.",
+  id_number_change_is_the_office:
+    "Only the school office may change an ID number already on his record.",
+  born_in_future: "A date of birth cannot be in the future.",
+  // A correction carries its reason (Kameel, 25 Nov 2026).
+  reason_required: "Say why you are correcting it, for example \"birth certificate seen\".",
+  reason_too_long: "Keep the reason to 200 characters.",
+  born_correction_needs_a_reason: "A date of birth on record is corrected on his Edit Profile, with the reason.",
+  // Said instead of a disagreement with the ID number on file to a person who
+  // may not read ID numbers (review N1): it tells him neither that one is on
+  // file nor what date it carries.
+  born_needs_the_office: "The school office must record this date of birth.",
+  // db/173 (Kameel, 25 Nov 2026): an ID number, first or not, is the office's.
+  id_number_needs_the_office: "The school office must record this ID number.",
 });
+
+/**
+ * The refusals db/172 makes in the database itself (its trigger on player,
+ * and player_born_correct()), by the names it raises them under. A route
+ * that writes born reads a Postgres error's message against this list.
+ */
+export const BORN_REFUSED_BY_DB = Object.freeze([
+  "id_number_disagrees_with_date_of_birth",
+  "born_correction_is_the_office",
+  "id_number_change_is_the_office",
+  "born_correction_needs_a_reason",
+  // db/173: a first date that makes him 18 today, and a first ID number,
+  // from anyone but the school office.
+  "born_needs_the_office",
+  "id_number_needs_the_office",
+]);
+
+/**
+ * The day a boy born on `born` (yyyy-mm-dd) turns 18, as db/08's
+ * majority_on() has it: Postgres's date + 18 years, which clamps 29
+ * February to 28 February.
+ * @param {string} born
+ * @returns {string} yyyy-mm-dd
+ */
+export function majorityOn(born) {
+  const [y, m, d] = String(born).split("-").map(Number);
+  const last = new Date(Date.UTC(y + 18, m, 0)).getUTCDate();
+  return `${String(y + 18).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+}
+
+/**
+ * Does a date of birth make him 18 on `today` (yyyy-mm-dd, the school's day,
+ * db/08's sa_today())? The test db/173's trigger makes of a first date.
+ * @param {string} born @param {string} today
+ */
+export function isEighteenOn(born, today) {
+  return majorityOn(born) <= today;
+}

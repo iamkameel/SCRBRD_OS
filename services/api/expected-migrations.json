@@ -160,5 +160,8 @@
   "167_owner_key_logged.sql",
   "168_pupil_claim_basic_view.sql",
   "169_pupil_signin_gate.sql",
-  "170_fixture_pro_mode.sql"
+  "170_fixture_pro_mode.sql",
+  "171_slice4_followups.sql",
+  "172_dob_audited_correction.sql",
+  "173_dob_first_dates.sql"
 ]

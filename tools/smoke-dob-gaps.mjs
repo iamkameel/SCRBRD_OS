@@ -15,12 +15,17 @@
  *   3. resolveBirthDate()'s refusals arrive as the same codes the client reads
  *   4. capturing a birthday and re-establishing a guardian link is one
  *      sequence, through two existing, separately-authorized routes
+ *   5. db/172: a date that disagrees with the ID number on his record is
+ *      refused at capture; correcting a recorded date is the office's alone,
+ *      through POST …/date-of-birth/correction; every change is read back
+ *      through GET …/date-of-birth/changes, by the office only
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-dob-gaps.mjs
  */
 import { spawn } from "node:child_process";
 import pg from "pg";
+import { bornFromSaId } from "@scrbrd/policy/sa-id";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const PORT = port(8827);
@@ -30,6 +35,8 @@ const HIL       = "11111111-1111-1111-1111-111111111111";
 const P_INJURED = "aaaaaaaa-0000-0000-0000-000000000005";  // R Pillay, 1XI — guardian: D Pillay
 const PARENT    = "88888888-0000-0000-0000-000000000005";  // D Pillay
 const P_U13     = "aaaaaaaa-0000-0000-0000-000000000013";  // B Khumalo, U13A — unlinked
+const P_U16     = "aaaaaaaa-0000-0000-0000-000000000006";  // K Dlamini, U16B — no ID number on file
+const WHY       = "Verify walk: birth certificate seen";
 
 let pass = 0, fail = 0;
 const ok = (n, c, extra) => { if (c) pass++; else { fail++; console.log("  ✗", n, extra ?? ""); } };
@@ -57,6 +64,9 @@ const login = async (email) => (await api("/api/auth/dev-login", {
 const gaps = async (token) => (await api("/api/read/dob_gaps", { token })).body?.rows || [];
 const capture = (playerId, token, body) =>
   api(`/api/players/${playerId}/date-of-birth`, { method: "POST", token, body });
+const correct = (playerId, token, body) =>
+  api(`/api/players/${playerId}/date-of-birth/correction`, { method: "POST", token, body });
+const changes = (playerId, token) => api(`/api/players/${playerId}/date-of-birth/changes`, { token });
 const relink = (playerId, token, body) =>
   api(`/api/players/${playerId}/guardians`, { method: "POST", token, body });
 
@@ -80,6 +90,14 @@ try {
 
   const registrar = await login("registrar@example.invalid");  // schooladmin: user.role.assign, guardian.link.manage, player.profile.manage
   const coach     = await login("coach@example.invalid");      // 1XI coach: none of the three
+  const director  = await login("sarah@example.invalid");      // director of sport: player.profile.manage, not the office
+  const principal = await login("principal@example.invalid");  // guardian.link.manage, not the office
+  const wesOffice = await login("registrar.wes@example.invalid");
+  // R Pillay's ID number is on file (db/98); the date it carries is the only
+  // date of birth db/172 lets anyone record for him.
+  const pillayId = (await q(`select id_number from player where id = $1`, [P_INJURED]))[0].id_number;
+  const pillayBorn = bornFromSaId(pillayId);
+  ok("the fixture: R Pillay has an ID number that carries a date", !!pillayBorn, String(pillayId));
 
   // ── The fixture: R Pillay loses his birthday, and his live guardian
   // link with it — exactly db/10's effect, produced the same way rather than
@@ -128,13 +146,28 @@ try {
      [401, 403].includes((await capture(P_INJURED, undefined, { born: "2013-06-01" })).status));
 
   group("the write closes a gap and refuses to reopen a birthday already captured");
-  const captured = await capture(P_INJURED, registrar, { born: "2013-06-01" });
-  ok("the office captures it", captured.status === 200 && captured.body?.born === "2013-06-01", JSON.stringify(captured.body));
-  ok("...and it is on the record", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_INJURED]))[0].b === "2013-06-01");
+  // db/172: the ID number already on his record decides, not only one typed beside the date.
+  // To one who may not read ID numbers, the refusal says neither that one is
+  // on file nor what it carries (review N1).
+  const notReader = await capture(P_INJURED, director, { born: "2013-06-01" });
+  ok("the director of sport is told only that the office must record it",
+     notReader.status === 422 && notReader.body?.error === "born_needs_the_office", JSON.stringify(notReader.body));
+  const against = await capture(P_INJURED, registrar, { born: "2013-06-01" });
+  ok("a date that disagrees with the ID number on his record is refused, by the database",
+     against.status === 422 && against.body?.error === "id_number_disagrees_with_date_of_birth", JSON.stringify(against.body));
+  ok("...and nothing landed", (await q(`select born from player where id = $1`, [P_INJURED]))[0].born === null);
+  const captured = await capture(P_INJURED, registrar, { born: pillayBorn });
+  ok("the office captures the date his ID number carries", captured.status === 200 && captured.body?.born === pillayBorn, JSON.stringify(captured.body));
+  ok("...and it is on the record", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_INJURED]))[0].b === pillayBorn);
   const again = await capture(P_INJURED, registrar, { born: "2010-01-01" });
   ok("capturing it a second time is refused — WHERE born IS NULL, not a check that could be forgotten",
      again.status === 403 && again.body?.error === "not_permitted", JSON.stringify(again.body));
-  ok("...and the first birthday stands", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_INJURED]))[0].b === "2013-06-01");
+  ok("...and the first birthday stands", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_INJURED]))[0].b === pillayBorn);
+  const pillayLog = await changes(P_INJURED, registrar);
+  ok("the capture is on his record of changes, and so is the owner's clearing it for this walk",
+     pillayLog.status === 200 && pillayLog.body?.changes?.[0]?.how === "capture" && pillayLog.body.changes[0].became === pillayBorn
+       && pillayLog.body.changes[0].was === null && /\S/.test(pillayLog.body.changes[0].by ?? "")
+       && pillayLog.body.changes.some((c) => c.how === "owner" && c.became === null), JSON.stringify(pillayLog.body));
 
   group("closing the birthday gap closes both rows dob_gaps() showed — the guardian link needs its own step");
   const afterCapture = await gaps(registrar);
@@ -171,11 +204,85 @@ try {
   await pool.query(`update player set born = null where id = $1`, [P_U13]);
   await restoreBornConstraint();
   ok("B Khumalo is now a plain gap", (await gaps(registrar)).some((r) => r.kind === "no_dob" && r.player_id === P_U13));
+  // db/173 (Kameel, 25 Nov 2026): an ID number, first or not, is the office's
+  // to write, and so is a first date that makes him 18.
+  const dirId = await capture(P_U13, director, { idNumber: "1104075800085" });
+  ok("the director of sport may not record an ID number (db/173)",
+     dirId.status === 403 && dirId.body?.error === "id_number_needs_the_office", JSON.stringify(dirId.body));
+  const adultDay = (await q(`select to_char(sa_today() - interval '19 years', 'YYYY-MM-DD') d`))[0].d;
+  const dirAdult = await capture(P_U13, director, { born: adultDay });
+  ok("...nor a first date that makes him 18, in the words a non-office caller is always given",
+     dirAdult.status === 422 && dirAdult.body?.error === "born_needs_the_office", JSON.stringify(dirAdult.body));
+  ok("...and nothing landed", (await q(`select born, id_number from player where id = $1`, [P_U13]))[0].born === null);
+  const add = (token, body) => api("/api/players", { method: "POST", token, body: { schoolId: HIL, teamCode: "U16A", ...body } });
+  const dirAdd = await add(director, { fullName: "Adult Addboy", born: adultDay });
+  ok("the director's Add Player with a date that makes him 18 is refused",
+     dirAdd.status === 422 && dirAdd.body?.error === "born_needs_the_office", JSON.stringify(dirAdd.body));
+  const dirAddId = await add(director, { fullName: "Id Addboy", idNumber: "1104075800085" });
+  ok("...and with an ID number", dirAddId.status === 403 && dirAddId.body?.error === "id_number_needs_the_office", JSON.stringify(dirAddId.body));
+  const offAdd = await add(registrar, { fullName: "Adult Addboy", born: adultDay });
+  ok("...while the office's goes in, recorded as its capture",
+     offAdd.status === 200 && (await q(`select c.how, c.by_office from player_born_change c where c.player_id = $1`, [offAdd.body?.id]))
+       .map((r) => `${r.how}:${r.by_office}`).join() === "capture:true", JSON.stringify(offAdd.body));
   const byId = await capture(P_U13, registrar, { idNumber: "1104075800085" });
   ok("the birthday is read out of the ID number", byId.status === 200 && byId.body?.bornFrom === "id_number", JSON.stringify(byId.body));
   ok("...the date it decodes to", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_U13]))[0].b === "2011-04-07");
   ok("...and the number itself is kept", (await q(`select id_number from player where id = $1`, [P_U13]))[0].id_number === "1104075800085");
   ok("the gap is gone", !(await gaps(registrar)).some((r) => r.player_id === P_U13));
+
+  group("correcting a recorded date is the office's, and every change is kept (db/172)");
+  const u16 = (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_U16]))[0].b;
+  const u16New = `${u16.slice(0, 5)}${u16.slice(5, 7) === "03" ? "04" : "03"}${u16.slice(7)}`;
+  for (const [who, token] of [["a coach", coach], ["the director of sport", director], ["the principal", principal],
+                              ["another school's office", wesOffice]]) {
+    const r = await correct(P_U16, token, { born: u16New, reason: WHY });
+    ok(`${who} may not correct it`, r.status === 403 && r.body?.error === "not_permitted", JSON.stringify(r.body));
+    const h = await changes(P_U16, token);
+    ok(`...nor read its changes`, h.status === 403, JSON.stringify(h.body));
+  }
+  ok("an unauthenticated correction is refused", [401, 403].includes((await correct(P_U16, undefined, { born: u16New, reason: WHY })).status));
+  ok("...and his date stands", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_U16]))[0].b === u16);
+  ok("the wrong shape is refused before the database is asked",
+     (await correct(P_U16, registrar, { born: "2011/04/07", reason: WHY })).body?.error === "born_must_be_yyyy_mm_dd");
+  ok("...and a date outside a pupil's age", (await correct(P_U16, registrar, { born: "1970-01-01", reason: WHY })).body?.error === "born_not_plausible_for_a_school_pupil");
+  for (const [label, reason] of [["none", undefined], ["blank", "   "], ["invisible", "\u200b"], ["over 200 characters", "x".repeat(201)]]) {
+    const r = await correct(P_U16, registrar, { born: u16New, reason });
+    const long = label.startsWith("over");
+    ok(`a correction with its reason ${label} is refused`,
+       r.status === (long ? 400 : 422) && r.body?.error === (long ? "reason_too_long" : "reason_required"), JSON.stringify(r.body));
+  }
+  ok("a player id that is not one is not found", (await correct("not-a-player", registrar, { born: u16New, reason: WHY })).status === 404);
+  const fixed = await correct(P_U16, registrar, { born: u16New, reason: WHY });
+  ok("the office corrects it", fixed.status === 200 && fixed.body?.born === u16New && fixed.body?.was === u16 && fixed.body?.unchanged === false,
+     JSON.stringify(fixed.body));
+  ok("...and the record says so", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_U16]))[0].b === u16New);
+  const same = await correct(P_U16, registrar, { born: u16New, reason: WHY });
+  ok("the date already on record is answered unchanged", same.status === 200 && same.body?.unchanged === true, JSON.stringify(same.body));
+  const log = await changes(P_U16, registrar);
+  // Two rows since db/173: the correction, and before it the seed's first date (the owner's).
+  ok("the office reads the change: before, after, how, by whom; and the first date before it",
+     log.status === 200 && log.body?.born === u16New && log.body?.changes?.length === 2
+       && log.body.changes[1].how === "owner" && log.body.changes[1].was === null && log.body.changes[1].became === u16
+       && log.body.changes[0].was === u16 && log.body.changes[0].became === u16New
+       && log.body.changes[0].how === "correction" && /\S/.test(log.body.changes[0].by ?? "")
+       && log.body.changes[0].reason === WHY, JSON.stringify(log.body));
+  // Kameel, 25 Nov 2026: the changes join the audit log, for its readers.
+  const auditOf = async (token) => (await api("/api/read/audit_log?kinds=dob", { token })).body?.rows ?? [];
+  const asHead = await auditOf(principal);
+  // His name is masked as audit_log() masks every pupil's (db/79; "K Dlamini"
+  // is already an initial and a surname); db/99 §147 (audit) holds a longer one.
+  ok("the principal reads the correction in the audit log, about a pupil, never the reason",
+     asHead.some((r) => r.kind === "dob" && r.action === "Corrected a date of birth" && r.detail?.became === u16New
+                        && r.subjectKind === "pupil")
+       && !JSON.stringify(asHead).includes(WHY), JSON.stringify(asHead).slice(0, 400));
+  ok("...and a coach reads none of it", (await auditOf(coach)).length === 0);
+  // B Khumalo now carries 1104075800085: only its own date may stand.
+  const offId = await correct(P_U13, registrar, { born: "2011-04-08", reason: WHY });
+  ok("a correction that disagrees with his ID number is refused",
+     offId.status === 422 && offId.body?.error === "id_number_disagrees_with_date_of_birth", JSON.stringify(offId.body));
+  ok("...and his date stands", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_U13]))[0].b === "2011-04-07");
+  ok("the refusals wrote nothing to his record of changes",
+     (await q(`select count(*)::int n from player_born_change where player_id = $1 and how = 'correction'`, [P_U13]))[0].n === 0);
 
 } catch (e) {
   fail++; console.log("\n  ✗ threw:", e.message);
