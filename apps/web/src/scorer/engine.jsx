@@ -851,9 +851,11 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
         // handover, which the protocol hands the log to (spec §4 step 2).
         // Who holds the scoring is asked beside it (slice 13), so a phone that
         // holds nothing of this match learns before any toss sheet is drawn.
-        const holderRead = fixtureLive ? readHolder(id) : Promise.resolve(null);
-        const server = fixtureLive ? await liveLog(resume.cfg) : null;
+        // Both answered before the log is set, so nothing between setting the
+        // log and the end of the opening waits on the network.
+        const [server, h] = fixtureLive ? await Promise.all([liveLog(resume.cfg), readHolder(id)]) : [null, null];
         if (cancelled) return;
+        if (fixtureLive) { setHolder(h); setFreshOpen(true); }
         if (server?.length) {
           for (const e of server) if (e?.id) { serverKnownRef.current.add(e.id); adoptedRef.current.push(e.id); }
           const log = padLogFrom(server);
@@ -905,9 +907,6 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
           if (!toss) setModal("toss");
           setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
         }
-        const h = await holderRead;
-        if (cancelled) return;
-        if (fixtureLive) { setHolder(h); setFreshOpen(true); }
       }
       setScreen("match");
       hydratedRef.current = true;
