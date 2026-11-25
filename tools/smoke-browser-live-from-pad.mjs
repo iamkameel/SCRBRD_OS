@@ -442,9 +442,19 @@ try {
   if (empties) note(`${empties} press(es) with no answer on screen, pressed again`);
   note(`confirmed after ${tries} press(es), ${Math.round((Date.now() - tConfirm) / 1000)} s (the scorer's lease letting go)`);
   ok(`he confirms it: "${lastSaid}"`, confirmed, lastSaid);
+  // One status (question 2): straight after his confirm, before the fixture's re-read, the header says the result,
+  // and nothing in it says Provisional beside the panel's "Confirmed".
+  const headerSays = () => {
+    const h = document.querySelector('[data-testid="match-view"] header');
+    return document.querySelector('[data-testid="mc-status"]')?.textContent?.trim() === "Result" && !!h && !/provisional/i.test(h.textContent ?? "");
+  };
+  ok(`...and straight after, his header reads the confirmed status ("${await word(co.page, "mc-status")}"), with no Provisional in it`,
+     await until(co.page, headerSays, 1500), await co.page.locator('[data-testid="match-view"] header').innerText().catch(() => ""));
   ok(`the server has the match complete (${await statusOf(MATCH)})`, (await statusOf(MATCH)) === "complete");
   // The fixture re-read comes back complete; the answer stays where he read it (the panel no longer goes with it).
   await afterReads(co.page, 2500);
+  ok("...and the header still reads it once the fixture is re-read", await co.page.evaluate(headerSays),
+     await co.page.locator('[data-testid="match-view"] header').innerText().catch(() => ""));
   ok("...and the answer is still on his screen once the fixture is re-read", /^Confirmed\. The match is finished\.$/.test(await inner(co.page, "mc-finish-said")),
      await inner(co.page, "mc-finish-said"));
   const [{ id: coachId }] = await q(`select id from app_user where email = 'coach@example.invalid'`);

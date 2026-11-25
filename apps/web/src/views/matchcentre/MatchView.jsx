@@ -564,10 +564,12 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const isLive = match.status === "live";
   // Slice 4 (DESIGN_DIRECTION Q2): a live fixture whose log has decided it is the coach's to confirm, and until
   // then it reads "Provisional" to everyone, here as on every card. A super over in play is not decided.
-  const provisional = isLive && !log.demo && !!log.result && !liveSO;
   // The coach's answer, held here and not in the panel: a confirm re-reads the fixture, which comes back complete,
   // and the panel (drawn while provisional) would go with its answer before anyone read it (CI, 20 Nov).
   const [confirmedSaid, setConfirmedSaid] = useState(/** @type {string | null} */ (null));
+  // One status (question 2): once his confirm has answered OK, the header says what the panel says, the result, at
+  // once, not "Provisional" until the fixture's re-read arrives.
+  const provisional = isLive && !log.demo && !!log.result && !liveSO && !confirmedSaid;
   // OFFICIAL_RESULT (db/114): provisional, under review (staff) or official —
   // the server's state for a finished fixture, read again as the log moves.
   const official = useOfficial(match, !!match.live && !log.demo && !isLive && match.status !== "upcoming", log.events?.length ?? 0);
@@ -689,7 +691,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !(log.result && !liveSO) ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
             {isLive && !(log.result && !liveSO) && <span className="live-dot" aria-hidden="true"/>}
-            {provisional ? "Provisional" : (log.result && !liveSO) || (server && server.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {provisional ? "Provisional" : (log.result && !liveSO) || (server && server.outcome !== "in_progress" && !liveSO) || match.status === "complete" || confirmedSaid ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           {log.demo && <StateLabel kind="demo" compact/>}
         </div>
@@ -703,7 +705,10 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
             tab but a live Summary, which says it under its board (EXPERIENCE_PASS §3.3), so it is said once. */}
         {!summarySays && <StatusLine st={status} except={["upcoming"]}/>}
         {ourLine && <p data-testid="mc-our-line" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{ourLine}</p>}
-        {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
+        {/* After his confirm, the official result's own "Provisional" (db/114: it waits on its confirmation, a step of
+            its own) is not set beside "Confirmed" in this session: one status (question 2). Disputed or official, it is. */}
+        {!log.demo && !(confirmedSaid && !["official", "under_review"].includes(official.data?.state))
+          && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         {!log.demo && <StaleLine stale={log.stale} refreshing={log.refreshing} failed={log.failed} okAt={log.okAt} onRefresh={log.refresh}/>}
         {corrections.words && (
