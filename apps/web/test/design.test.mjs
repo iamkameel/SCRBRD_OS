@@ -151,8 +151,9 @@ ok("the faces are the three that stay: Mono for figures, Sans to read, Syne for 
 const ROLE_STYLES = [...Object.values(R.figure), ...Object.values(R.title), R.body, R.label, R.control];
 ok("each role is plain CSS, safe to spread into a style",
    ROLE_STYLES.every((r) => Object.keys(r).every((k) => /^(fontFamily|fontSize|lineHeight|fontWeight|fontVariantNumeric|letterSpacing|textTransform)$/.test(k))));
-ok("nothing read is below the 12px floor", ROLE_STYLES.every((r) => px_(r.fontSize) >= T.floor.read)
-   && T.floor.read === 12 && T.floor.tap === 16 && T.floor.target === 44);
+ok("nothing read is below the 12px floor; the floors are 12 to read, 44 to tap, 16 in a control", ROLE_STYLES.every((r) => px_(r.fontSize) >= T.floor.read)
+   && T.floor.read === 12 && T.floor.target === 44 && T.floor.control === 16 && px_(R.control.fontSize) === T.floor.control
+   && !("tap" in T.floor));
 ok("the flip is 190ms, swift", T.motion.flip === "190ms" && T.motion.swift === "cubic-bezier(.4,0,.2,1)");
 ok("...and GLOBAL_CSS draws it with those two, where reduced motion can cut it",
    new RegExp(`\\.os-board-flip\\{[^}]*animation:boardFlip ${T.motion.flip} ${T.motion.swift.replace(/[().,]/g, "\\$&")}`).test(tokens.GLOBAL_CSS)

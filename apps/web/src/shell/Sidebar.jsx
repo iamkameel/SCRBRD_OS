@@ -2,7 +2,7 @@ import pkg from "../../package.json";
 import SCRBRD_LOGO from "../assets/scrbrd-logo.jpg";
 import { NAV_META, ROLES, groupNav } from "../design/roles.js";
 import { useMenuItems } from "../lib/homeNav.js";
-import { D, T, inkOn } from "../design/tokens.js";
+import { D, T, inkOn, px } from "../design/tokens.js";
 import { invitationsWords } from "../lib/invitationCount.js";
 import { SportSwitcher } from "./MobileNav.jsx";
 import { Icon } from "../ui/icons.jsx";
@@ -31,12 +31,14 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
       flexShrink:0, position:"sticky", top:0, height:"100vh", overflow:"hidden",
     }}>
       {/* Logo */}
-      <div style={{padding:"12px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",alignItems:"center",gap:"10px",minHeight:"60px"}}>
+      {/* §3.5: the toggle is 44 × 44 (T.floor.target); it was a bare 5×16 glyph. Collapsed, the rail is 58 wide,
+          so the mark and the toggle stack rather than squeeze into one row. */}
+      <div style={{padding:collapsed?"8px 7px":"8px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",gap:collapsed?"4px":"10px",minHeight:"60px"}}>
         {collapsed
           ? <div style={{width:"30px",height:"30px",borderRadius:D.md,background:D.gradMain,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",flexShrink:0}}><Icon name="bat"/></div>
           : <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"28px",objectFit:"contain",filter:"brightness(1.1)",flexShrink:0,maxWidth:"120px"}}/>
         }
-        <button onClick={onToggle} className="pressBtn" data-testid="sidebar-toggle" aria-label={collapsed?"Expand navigation":"Collapse navigation"} aria-expanded={!collapsed} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"14px",flexShrink:0}}>
+        <button onClick={onToggle} className="pressBtn" data-testid="sidebar-toggle" aria-label={collapsed?"Expand navigation":"Collapse navigation"} aria-expanded={!collapsed} style={{marginLeft:collapsed?0:"auto",minWidth:px(T.floor.target),minHeight:px(T.floor.target),padding:0,display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"14px",flexShrink:0}}>
           {collapsed?"›":"‹"}
         </button>
       </div>
@@ -90,6 +92,8 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
                   className="pressBtn os-state"
                   data-selected={isActive}
                   style={{
+                  // §3.5: 44px to tap (T.floor.target); a destination was 39 tall.
+                  minHeight:px(T.floor.target),
                   padding:collapsed?"12px 0":"10px 14px",
                   display:"flex",alignItems:"center",gap:"10px",cursor:"pointer",
                   // The selected destination is marked by a rail against its
@@ -151,6 +155,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
           style={{
             width:collapsed?"100%":"calc(100% - 4px)",
             margin:collapsed?"0":"0 2px",
+            minHeight:px(T.floor.target),
             padding:collapsed?"12px 0":"8px 10px",
             display:"flex",alignItems:"center",justifyContent:collapsed?"center":"flex-start",gap:"10px",
             background:"transparent",border:`1px solid ${D.border}`,borderRadius:T.radius.md,
