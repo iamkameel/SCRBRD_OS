@@ -3491,9 +3491,11 @@ try {
          kd === "1 to do" && dm === "1 to do" && !/2 to do/.test(await st("family-file").innerText()), [kd, dm]);
       await st(`family-todo-${DM}`).click({ timeout: 4000 }).catch(() => {});
       await S.page.waitForSelector('[data-testid="family-child"]', { timeout: 8000 }).catch(() => {});
-      await settled(S.page);
-      const dmHome = [(await st("family-child").innerText().catch(() => "")).trim(), (await todo(S.page).locator("h2").first().innerText().catch(() => "")).trim()];
-      ok("D Mkhize's count opens D Mkhize's Home", dmHome[0] === "D Mkhize" && /To do for D Mkhize/i.test(dmHome[1]), [...dmHome, (await text(S.page)).slice(0, 300)]);
+      await afterReads(S.page, 1500);
+      // Slice 8 (§2.6): his one owed answer is his next fixture's, asked in the lead; the list would only count it, so it is not drawn.
+      const dmHome = [(await st("family-child").innerText().catch(() => "")).trim(), (await st("next-fixture").innerText().catch(() => "")).trim()];
+      ok("D Mkhize's count opens D Mkhize's Home, where the one thing owed leads: his fixture, his answer not yet given", dmHome[0] === "D Mkhize"
+         && await st("next-fixture").getAttribute("data-weight") === "lead" && /No answer yet/.test(dmHome[1]) && await todo(S.page).count() === 0, [...dmHome, (await text(S.page)).slice(0, 300)]);
       ok("no scoping refusals or page errors for her", S.refusals.length === 0 && S.errors.length === 0, S.errors.join(" | "));
       await S.ctx.close();
 
