@@ -205,7 +205,7 @@ function ImportLive({ role }) {
                                 fontFamily: D.body, fontSize: "13px", color: D.textPrimary }}>
                   <input type="checkbox" data-testid="import-adults-tick" checked={tickedNow}
                          onChange={(e) => setTicked(e.target.checked ? checked : null)}
-                         style={{ width: "24px", height: "24px", margin: 0 }}/>
+                         style={{ width: "44px", height: "44px", margin: 0, flexShrink: 0 }}/>
                   {tick.words}
                 </label>
               </div>

@@ -771,8 +771,10 @@ try {
       ok("no console errors on the phone", phone.errors.length === 0, phone.errors.join(" | "));
     } finally { await phone.ctx.close(); }
 
-    // A follower reads the school's news and not the side's (db/101).
-    const fan = await reader("spectator@example.invalid", { width: 1280, height: 900 });
+    // A follower reads the school's news and not the side's (db/101): a pupil
+    // of the 1st XI reading the Second XI's. (mate@ since db/173; spectator@ is
+    // a spectator now, and a spectator reads every side's team posts, R-G.)
+    const fan = await reader("mate@example.invalid", { width: 1280, height: 900 });
     try {
       await toFeed(fan.page);
       const ids = await fan.page.$$eval('[data-testid="news-list"] article[data-testid^="news-"]', (els) => els.map((e) => e.getAttribute("data-testid")?.slice(5)));
