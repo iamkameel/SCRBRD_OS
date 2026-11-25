@@ -1,8 +1,8 @@
 import { useEffect, useId, useState } from "react";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
-import { OFFICE_INTRO, OFFICE_STATE_WORDS, clearWords, dayWords, officeWords, rosterMatches } from "../lib/pupilClaim.js";
+import { NOT_HIM, OFFICE_INTRO, OFFICE_STATE_WORDS, clearWords, dayWords, officeWords, rosterMatches } from "../lib/pupilClaim.js";
 
 // ══════════════════════════════════════════════════════
 //  PUPIL CLAIMS  (Settings → People; SCRBRD-140 honesty model, Migration A; db/168)
@@ -42,10 +42,13 @@ const todayIso = () => {
 };
 
 /** One claim, with the office's two answers. */
-export function PupilClaimRow({ c, players, school, busy, onRecognise, onDecline }) {
+export function PupilClaimRow({ c, players, school, busy, onRecognise, onDecline, onNotHim }) {
   const [q, setQ] = useState("");
   const [pick, setPick] = useState("");
   const [declining, setDeclining] = useState(false);
+  const [notHim, setNotHim] = useState(false);
+  // db/169 (S10): a claim matched to a boy (recognised, opened, or closed again) can be taken back.
+  const matched = ["recognised", "open", "closed"].includes(c.state) && !!c.playerId;
   const searchId = useId(), pickId = useId();
   const matches = rosterMatches(players, school, q);
   const waiting = c.state === "with_office";
@@ -64,10 +67,10 @@ export function PupilClaimRow({ c, players, school, busy, onRecognise, onDecline
         <div style={{ display: "grid", gap: "8px", marginTop: "10px" }}>
           <label htmlFor={searchId} style={{ ...sub(), fontWeight: 700, color: D.textPrimary }}>Find him on your list</label>
           <input id={searchId} value={q} onChange={(e) => { setQ(e.target.value); setPick(""); }} autoComplete="off" data-testid="pupil-claim-search"
-            style={{ minHeight: "44px", padding: "10px 12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf1, color: D.textPrimary, fontFamily: D.body, fontSize: "16px", boxSizing: "border-box" }}/>
+            style={{ minHeight: "44px", padding: "10px 12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf1, color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, boxSizing: "border-box" }}/>
           <label htmlFor={pickId} style={{ ...sub(), fontWeight: 700, color: D.textPrimary }}>His place on the list</label>
           <select id={pickId} value={pick} onChange={(e) => setPick(e.target.value)} data-testid="pupil-claim-pick"
-            style={{ minHeight: "44px", padding: "10px 12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf1, color: D.textPrimary, fontFamily: D.body, fontSize: "16px", boxSizing: "border-box" }}>
+            style={{ minHeight: "44px", padding: "10px 12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf1, color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, boxSizing: "border-box" }}>
             <option value="">Choose…</option>
             {matches.map((p) => <option key={p.id} value={p.id}>{p.name}{p.team ? ` (${p.team})` : ""}</option>)}
           </select>
@@ -86,8 +89,20 @@ export function PupilClaimRow({ c, players, school, busy, onRecognise, onDecline
           </div>
         </div>
       )}
-      {c.state === "recognised" && !declining && (
+      {c.state === "recognised" && !declining && !notHim && (
         <div style={{ marginTop: "10px" }}><Act quiet disabled={busy} onClick={() => setDeclining(true)} data-testid="pupil-claim-decline">Decline after all</Act></div>
+      )}
+      {matched && !declining && !notHim && onNotHim && (
+        <div style={{ marginTop: "10px" }}><Act quiet disabled={busy} onClick={() => setNotHim(true)} data-testid="pupil-claim-not-him">{NOT_HIM.button}</Act></div>
+      )}
+      {matched && notHim && (
+        <div role="group" aria-label={NOT_HIM.button} data-testid="pupil-claim-not-him-ask" style={{ marginTop: "10px" }}>
+          <div style={{ ...sub(), color: D.textPrimary, marginBottom: "8px" }}>{NOT_HIM.ask}</div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <Act disabled={busy} onClick={onNotHim} data-testid="pupil-claim-not-him-confirm">{busy ? "Working…" : NOT_HIM.confirm}</Act>
+            <Act quiet disabled={busy} onClick={() => setNotHim(false)}>Keep it</Act>
+          </div>
+        </div>
       )}
     </li>
   );
@@ -110,7 +125,8 @@ function SchoolClaims({ school, players }) {
     setBusy(c.id); setNote(null);
     try {
       await api(`/api/pupil-claims/${encodeURIComponent(c.id)}/${what}`, { method: "POST", body });
-      setNote({ tone: "ok", text: what === "recognise" ? `Recognised ${c.name}. Nothing about him is opened by it.` : `Declined. The safeguarding officers have been told, without his name.` });
+      setNote({ tone: "ok", text: what === "recognise" ? `Recognised ${c.name}. Nothing about him is opened by it.`
+                              : what === "not-him" ? NOT_HIM.done : `Declined. The safeguarding officers have been told, without his name.` });
     } catch (e) { setNote({ tone: "error", text: officeWords(e) }); }
     setBusy(null); setNonce((n) => n + 1);
   };
@@ -136,7 +152,8 @@ function SchoolClaims({ school, players }) {
           <ul style={{ margin: "8px 0 0", padding: 0, display: "grid", gap: "8px" }}>
             {list.map((c) => (
               <PupilClaimRow key={c.id} c={c} players={players} school={school.id} busy={busy === c.id}
-                onRecognise={(playerId) => act(c, "recognise", { playerId })} onDecline={() => act(c, "decline")}/>
+                onRecognise={(playerId) => act(c, "recognise", { playerId })} onDecline={() => act(c, "decline")}
+                onNotHim={() => act(c, "not-him")}/>
             ))}
           </ul>
         </>

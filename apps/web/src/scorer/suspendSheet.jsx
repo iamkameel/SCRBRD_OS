@@ -131,7 +131,7 @@ export function SuspendSheet({ view: startView = "reason", innings, events, curI
                 data-testid="suspend-typed"
                 style={{ flex: 1, minWidth: 0, minHeight: "48px", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
                   border: `1px solid ${T.line.normal}`, background: T.surface.interactive, color: T.content.primary,
-                  fontFamily: T.type.body, fontSize: "16px" }}/>
+                  fontFamily: T.type.body, fontSize:T.role.control.fontSize }}/>
               <button type="button" data-testid="suspend-typed-go" disabled={!typed.trim() || !!typedCode}
                 aria-describedby={typedCode ? refusalId : undefined}
                 onClick={() => { if (typed.trim() && !typedCode) onReplace(typed.trim(), midOver); }} className="os-state"
@@ -297,7 +297,7 @@ function ReportItem({ s, canFile, matchId }) {
           <textarea id={`sr-${s.key}`} data-testid="suspend-report-body" value={text} onChange={(e) => setText(e.target.value)} rows={4}
             style={{ width: "100%", boxSizing: "border-box", padding: T.space.sm, borderRadius: T.radius.md, resize: "vertical",
               border: `1px solid ${T.line.normal}`, background: T.surface.interactive, color: T.content.primary,
-              fontFamily: T.type.body, fontSize: "15px", lineHeight: 1.45 }}/>
+              fontFamily: T.type.body, fontSize:T.role.control.fontSize, lineHeight: 1.45 }}/>
           <button type="button" data-testid="suspend-report-file" disabled={!!state.busy || !text.trim()} onClick={file}
             className="os-state" style={commit(!state.busy && !!text.trim())}>
             File it as a discipline record

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { T } from "../design/tokens.js";
 import { signedIn } from "../lib/api.js";
 import { useNav } from "../lib/features.js";
-import { headerWords } from "../lib/queue.js";
+import { needsYouWords, splitForReader, verbOf } from "../lib/queue.js";
 import { profile } from "../lib/session.js";
 import { BentoCard } from "../ui/surfaces.jsx";
 import { useQueue } from "./cockpit/useQueue.js";
@@ -19,15 +19,23 @@ export const NEEDS_YOU_SHOWN = 3;
  * then results to confirm and Player of the Match to decide, then the
  * fixtures by date and team. Open rows only: a weather line is information,
  * not something that needs a person. Pure.
+ *
+ * The coach's queue (redesign slice 11, question 8): a fixture's rows that only
+ * the office can clear (nobody on record for a duty, a called-off fixture's
+ * leftovers) are left out for a reader who is not the office at that school;
+ * the match-day card says them as the office's. Each fixture row carries the
+ * fixture it is about (`where`), so two squads' rows never read alike.
  * @param {ReturnType<typeof useQueue>} q
+ * @param {any[] | null} [assignments]  the session's own, to tell who is the office where
+ * @returns {(import("../lib/queue.js").Row & {where?: string})[]}
  */
-export function needsYouRows(q) {
+export function needsYouRows(q, assignments = null) {
   const open = (/** @type {any[]} */ rows) => rows.filter((r) => r.state === "open");
   return [
     ...q.offices.flatMap((o) => open(o.rows)),
     ...(q.results ? open(q.results.rows) : []),
     ...(q.potm ? open(q.potm.rows) : []),
-    ...q.groups.flatMap((g) => open(g.rows)),
+    ...q.groups.flatMap((g) => splitForReader(g, assignments).mine.map((r) => ({ ...r, where: g.label }))),
   ];
 }
 
@@ -75,7 +83,7 @@ function SetupList({ lines, onNav }) {
           {lines.map((l) => (
             <li key={l.key} data-testid="setup-row" data-key={l.key} style={{ listStyle: "none" }}>
               <button type="button" className="os-state" data-testid={`setup-open-${l.key}`} onClick={go(l)}
-                style={{ display: "block", width: "100%", minHeight: "44px", padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
+                style={{ display: "block", width: "100%", minHeight: `${T.floor.target}px`, padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
                   background: "transparent", color: "inherit", font: "inherit", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md }}>
                 <span data-testid="setup-fact" style={{ display: "block", ...T.role.body, fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere" }}>{l.fact}</span>
                 <span style={{ display: "block", ...line }}>{l.owner}</span>
@@ -99,7 +107,7 @@ function NeedsYouRead({ role, reach, matches, onNav, matchesAnswered, players })
   const byId = useMemo(() => new Map(matches.map((m) => [m.id, m])), [matches]);
   if (!q.reader) return null;
   const doorOf = doorsFor({ nav: reach, byId, assignments, onNav });
-  const rows = needsYouRows(q);
+  const rows = needsYouRows(q, assignments);
   const failed = q.header.failed ?? 0;
   // The set-up list (Slice 6): only for a school with no fixtures, and only once the fixtures read has answered.
   const officeRowsOpen = q.offices.flatMap((o) => o.rows ?? []).filter((r) => r.state === "open");
@@ -121,25 +129,32 @@ function NeedsYouRead({ role, reach, matches, onNav, matchesAnswered, players })
     <BentoCard level="a" title="Needs you" data-testid="needs-you">
       <div style={{ display: "grid", gap: T.space.xs }}>
         <p data-testid="needs-you-header" aria-live="polite" style={{ ...line, color: T.content.primary, fontWeight: 600 }}>
-          {q.header.loading && !rows.length ? "Reading what is waiting…" : headerWords(q.header)}
+          {/* One count (DESIGN_DIRECTION §2.6): the rows below, and the same number each match-day card says. */}
+          {q.header.loading && !rows.length ? "Reading what is waiting…" : needsYouWords({ open: rows.length, failed })}
         </p>
         <ul style={{ margin: 0, padding: 0, display: "grid", gap: T.space.xs }}>
           {shown.map((r) => {
             const door = doorOf(r);
+            // The one verb (slice 11), where the door lands where it is done; otherwise the door's own words.
+            const verb = door && door.label === r.action?.label ? verbOf(r) ?? door.label : door?.label ?? null;
+            // A fixture's row names the fixture and its deadline; the office's own rows say whose and how old.
+            const under = r.where ? [r.where, r.deadline?.words ?? r.age] : [r.owner, r.deadline?.words ?? r.age];
             const inner = (
-              <>
-                <span data-testid="needs-you-fact" style={{ display: "block", ...T.role.body, fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere" }}>{r.fact}</span>
-                {(r.owner || r.deadline || r.age) && (
-                  <span style={{ display: "block", ...line }}>{[r.owner, r.deadline?.words ?? r.age].filter(Boolean).join(" · ")}</span>
-                )}
-                {door && <span data-testid="needs-you-door" style={{ display: "block", ...line, color: T.content.primary }}>{door.label} <span aria-hidden="true">›</span></span>}
-              </>
+              <span style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "center", gap: `0 ${T.space.md}` }}>
+                <span style={{ minWidth: 0 }}>
+                  <span data-testid="needs-you-fact" style={{ display: "block", ...T.role.body, fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere" }}>{r.fact}</span>
+                  {under.some(Boolean) && (
+                    <span data-testid="needs-you-line" style={{ display: "block", ...line, overflowWrap: "anywhere" }}>{under.filter(Boolean).join(" · ")}</span>
+                  )}
+                </span>
+                {verb && <span data-testid="needs-you-door" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, whiteSpace: "nowrap" }}>{verb} <span aria-hidden="true">›</span></span>}
+              </span>
             );
             return (
               <li key={r.id} data-testid="needs-you-row" data-rule={r.rule} data-kind={r.action?.kind ?? ""} data-match={r.action?.matchId ?? undefined} style={{ listStyle: "none" }}>
                 {door
                   ? <button type="button" className="os-state" data-testid={`needs-you-open-${r.id}`} onClick={door.go}
-                      style={{ display: "block", width: "100%", minHeight: "44px", padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
+                      style={{ display: "block", width: "100%", minHeight: `${T.floor.target}px`, padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
                         background: "transparent", color: "inherit", font: "inherit", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md }}>{inner}</button>
                   : <div style={{ padding: `${T.space.sm} ${T.space.md}`, border: `1px solid ${T.line.subtle}`, borderRadius: T.radius.md }}>{inner}</div>}
               </li>
@@ -148,14 +163,14 @@ function NeedsYouRead({ role, reach, matches, onNav, matchesAnswered, players })
         </ul>
         {register && (
           <button type="button" className="os-state" data-testid="needs-you-register" onClick={register.go}
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
+            style={{ minHeight: `${T.floor.target}px`, padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
               border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer", ...T.role.body }}>
             Check the clearance register <span aria-hidden="true">›</span>
           </button>
         )}
         {(rows.length > shown.length || failed > 0) && (
           <button type="button" className="os-state" data-testid="needs-you-all" onClick={() => onNav("readiness")}
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
+            style={{ minHeight: `${T.floor.target}px`, padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
               border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer", ...T.role.body, fontWeight: 600 }}>
             {rows.length > shown.length ? `See all ${rows.length} on To resolve` : "See what could not be read on To resolve"}
           </button>

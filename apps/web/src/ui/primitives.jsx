@@ -80,7 +80,7 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, ...res
   const fs  = size==="sm"?"12px":size==="lg"?"14px":"12px";
   return (
     <button onClick={onClick} disabled={disabled} className="pressBtn" {...rest} style={{
-      minHeight:"44px",padding:pad,borderRadius:D.pill,border:`1px solid ${variant==="ghost"?D.border:"transparent"}`,
+      minHeight:px(T.floor.target),padding:pad,borderRadius:D.pill,border:`1px solid ${variant==="ghost"?D.border:"transparent"}`,
       background:bg,color:col,cursor:disabled?"not-allowed":"pointer",fontFamily:D.head,
       fontSize:fs,fontWeight:700,letterSpacing:"0.04em",opacity:disabled?0.4:1,
       boxShadow:variant==="primary"?`0 2px 12px ${D.indigo}33`:"none",
@@ -202,7 +202,7 @@ const Modal = ({ title, children, onClose, width="520px" }) => {
       style={{background:D.surf1,borderRadius:D.xl,border:`1px solid ${D.borderMed}`,width:"100%",maxWidth:width,maxHeight:"90vh",overflow:"auto",outline:"none"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:`1px solid ${D.border}`}}>
         <h3 id={headingId} style={{fontFamily:D.head,fontSize:"15px",fontWeight:700,color:D.textPrimary}}>{title}</h3>
-        <button onClick={onClose} className="pressBtn" aria-label="Close dialog" style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"18px",minWidth:"44px",minHeight:"44px",margin:"-8px -10px -8px 0"}}>✕</button>
+        <button onClick={onClose} className="pressBtn" aria-label="Close dialog" style={{background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"18px",minWidth:px(T.floor.target),minHeight:px(T.floor.target),margin:"-8px -10px -8px 0"}}>✕</button>
       </div>
       <div style={{padding:"20px"}}>{children}</div>
     </div>
@@ -234,8 +234,9 @@ const Input = ({ label, value, onChange, type="text", placeholder, small, ...res
     <input id={id} type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
       {...(label ? {} : { "aria-label": placeholder })}
       {...rest}
-      style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-        color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}/>
+      // §3.5: 44px to tap (T.floor.target); a field was 39 on its padding alone.
+      style={{width:"100%",minHeight:px(T.floor.target),padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
+        color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize}}/>
   </div>
   );
 };
@@ -260,8 +261,9 @@ const Select = ({ label, value, onChange, options, ...rest }) => {
   <div style={{marginBottom:"14px"}}>
     {label&&<label htmlFor={id} style={{display:"block",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>{label}</label>}
     <select id={id} value={value} onChange={e=>onChange(e.target.value)} {...rest}
-      style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-        color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}>
+      // §3.5: 44px to tap (T.floor.target); a field was 39 on its padding alone.
+      style={{width:"100%",minHeight:px(T.floor.target),padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
+        color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize}}>
       {options.map(o=>{ const { value: v, label: l } = optionOf(o); return <option key={v} value={v}>{l}</option>; })}
     </select>
   </div>
@@ -364,7 +366,7 @@ const ReadState = ({ read, onRetry, icon, compact = false, onBoard = false, test
         <span data-testid={`${testId}-sentence`}>{sentence}</span>
         {retry && onRetry && (
           <button type="button" onClick={onRetry} data-testid={`${testId}-retry`} className="pressBtn" style={{
-            minHeight: "44px", minWidth: "44px", padding: "0 20px", borderRadius: D.pill,
+            minHeight: px(T.floor.target), minWidth: px(T.floor.target), padding: "0 20px", borderRadius: D.pill,
             border: `1px solid ${D.border}`, background: D.surf3, color: D.textPrimary,
             fontFamily: D.head, fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>Retry</button>
         )}

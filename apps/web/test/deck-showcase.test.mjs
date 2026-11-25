@@ -107,7 +107,7 @@ const day = buildDaySheet(m);
 ok("the coach's day, not the server's: live is false", day.role === "coach" && day.live === false);
 ok("the Now tile has a board from the demonstration chase", day.liveMatch?.status === "live" && !!day.board && day.board.wickets === 2, day.board?.wickets);
 ok("every section has something to draw", !!day.next && day.weekMatches.length === 2 && day.weekTraining.length === 2 && day.out.length === 2 && day.unread.length === 2);
-ok("the ground report is the one ready chip left empty", !day.dutyRows.some((r) => r.duty === "ground") && day.dutyRows.length === 3);
+ok("the ground report is the one ready chip left empty", !day.dutyRows.some((r) => r.duty === "ground") && day.dutyRows.length === 4 && ["scorer", "umpire"].every((d) => day.dutyRows.some((r) => r.duty === d)));
 ok("this week is this week: the fixtures and sessions are dated within six days of today", [...day.weekMatches, ...day.weekTraining].every((r) => {
   const d = (Date.parse(`${r.date}T00:00:00Z`) - Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`)) / 864e5;
   return d >= 0 && d <= 6;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { T } from "../design/tokens.js";
+import { T, px } from "../design/tokens.js";
 import { useTheme } from "../design/theme.js";
 import { Icon } from "../ui/icons.jsx";
 import { Sheet } from "./ui.jsx";
@@ -38,7 +38,7 @@ const choice = (/** @type {boolean} */ on) => ({
   background: on ? T.surface.raised : T.surface.interactive, border: `${on ? 2 : 1}px solid ${on ? T.content.primary : T.line.normal}`,
 });
 const small = () => ({
-  minHeight: "44px", padding: `0 ${T.space.md}`, borderRadius: T.radius.md, cursor: "pointer",
+  minHeight: px(T.floor.target), padding: `0 ${T.space.md}`, borderRadius: T.radius.md, cursor: "pointer",
   border: `1px solid ${T.line.normal}`, background: T.surface.interactive, color: T.content.primary,
   fontFamily: T.type.body, fontSize: "14px", fontWeight: 600, flexShrink: 0,
 });
@@ -69,9 +69,9 @@ export function KeeperChoices({ keeper, choices, onPick }) {
         <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Keeper not in the squad…"
           aria-label="Keeper not in the squad" data-testid="keeper-typed"
           onKeyDown={(e) => { if (e.key === "Enter" && name) onPick(name); }}
-          style={{ flex: 1, minWidth: 0, minHeight: "44px", boxSizing: "border-box", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
+          style={{ flex: 1, minWidth: 0, minHeight: px(T.floor.target), boxSizing: "border-box", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
             border: `1px solid ${T.line.normal}`, background: T.surface.interactive, color: T.content.primary,
-            fontFamily: T.type.body, fontSize: "15px" }}/>
+            fontFamily: T.type.body, fontSize:T.role.control.fontSize }}/>
         <button type="button" data-testid="keeper-typed-set" disabled={!name} onClick={() => name && onPick(name)}
           className="pressBtn os-state" style={{ ...small(), opacity: name ? 1 : 0.6, cursor: name ? "pointer" : "not-allowed" }}>
           Keeps

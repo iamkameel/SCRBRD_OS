@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { refusedWords } from "@scrbrd/policy/words";
-import { D, inkOn } from "../design/tokens.js";
+import { D, T, inkOn } from "../design/tokens.js";
 import { holdsAsHeld } from "../lib/held.js";
 import { api, signedIn } from "../lib/api.js";
 
@@ -57,7 +57,7 @@ const small = () => ({ margin: 0, fontFamily: D.body, fontSize: "13px", color: D
 const card = () => ({ borderRadius: D.lg, border: `1px solid ${D.border}`, background: D.surf1, padding: "14px 16px", display: "flex", flexDirection: "column", gap: "10px" });
 const head = () => ({ margin: 0, fontFamily: D.head, fontSize: "14px", fontWeight: 800, color: D.textPrimary });
 const field = () => ({ minHeight: "44px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "8px 10px",
-                fontFamily: D.body, fontSize: "14px", color: D.textPrimary, boxSizing: "border-box", width: "100%" });
+                fontFamily: D.body, fontSize: T.role.control.fontSize, color: D.textPrimary, boxSizing: "border-box", width: "100%" });
 const label = () => ({ display: "flex", flexDirection: "column", gap: "4px", fontFamily: D.body, fontSize: "13px", color: D.textSecondary });
 /** @param {boolean} strong @param {boolean} [tall] @param {boolean} [off] */
 const btn = (strong, tall = false, off = false) => ({

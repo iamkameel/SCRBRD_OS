@@ -322,6 +322,7 @@ const SUITES = [
   // fourteen-day fold; "N to do" and "Couldn't load X", a failed read never
   // the same as nothing; no reason, no note, no "done".
   ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["home-lead", "apps/web/test/home-lead.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
   // the route's three pre-write checks in its own codes, the codes as sentences,
   // and which boy a trigger's message names.
@@ -426,6 +427,8 @@ const SUITES = [
   // device has to resume with its unsent events, and the lines before the toss.
   ["scorer-home", "apps/web/test/scorer-home.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["scorer-day", "apps/web/test/scorer-day.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Redesign slice 13: the pad when another phone holds the match (Flow E).
+  ["other-phone", "apps/web/test/other-phone.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I07: Squad and Analytics open on the person's own side, and a gate
   // answers from the roles held, as the menu does.
   ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],

@@ -29,7 +29,7 @@ const LABEL = () => ({ display: "block", fontFamily: D.head, fontSize: "12px", f
                        letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "6px" });
 const SUB = () => ({ fontFamily: D.body, fontSize: "12px", color: D.textMuted, lineHeight: 1.5 });
 const FIELD = () => ({ width: "100%", minHeight: "44px", boxSizing: "border-box", padding: "10px 12px", background: D.surf2,
-                       border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "14px" });
+                       border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize });
 const BTN = (primary, disabled) => ({ minHeight: "44px", minWidth: "44px", padding: "0 20px", borderRadius: D.pill, cursor: disabled ? "not-allowed" : "pointer",
   fontFamily: D.head, fontSize: "13px", fontWeight: 700, letterSpacing: "0.04em", opacity: disabled ? 0.45 : 1,
   background: primary ? D.gradMain : "transparent", color: primary ? T.light.ink : D.textPrimary,

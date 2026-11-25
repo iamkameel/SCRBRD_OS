@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ROLES } from "../design/roles.js";
 import { roleGrants } from "@scrbrd/policy/roles";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive, useRows } from "../lib/live.js";
 import { isOff, useFeatures } from "../lib/features.js";
@@ -11,6 +11,8 @@ import { decideWords, decidedWords } from "../lib/decideWords.js";
 import { Icon } from "../ui/icons.jsx";
 import { PeoplePanel } from "./people.jsx";
 import { ColoursPanel } from "./colours.jsx";
+import { FORM_ON_FILE, formReady } from "../lib/ownSignin.js";
+import { FormOnFileFields } from "./enrol.jsx";
 
 // ══════════════════════════════════════════════════════
 //  MANAGEMENT VIEW
@@ -251,7 +253,7 @@ function AuditLog() {
   const note = {margin:0,fontFamily:D.body,fontSize:"14px",color:D.textMuted};
   if (!live) return <p data-testid="audit-signin" style={note}>Sign in to see the audit log.</p>;
 
-  const field = {minHeight:"44px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"6px 10px",fontFamily:D.body,fontSize:"14px",color:D.textPrimary};
+  const field = {minHeight:"44px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"6px 10px",fontFamily:D.body,fontSize: T.role.control.fontSize,color:D.textPrimary};
   const label = {display:"flex",flexDirection:"column",gap:"4px",fontFamily:D.body,fontSize:"12px",color:D.textMuted};
   return (
     <div data-testid="audit-log" style={{display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -350,6 +352,11 @@ function RequestsPanel({ role, players }) {
   const [nudge, setNudge] = useState(0);
   const [pick, setPick] = useState({});
   const [side, setSide] = useState({});
+  // db/169 (Q12, D): "The signed consent form is on file", ticked per pupil's
+  // request, with who signed it and the day: { on, by, date } by request.
+  const [form, setForm] = useState({});
+  // N12: the tick is the office's (guardian.link.manage); nobody else is shown it.
+  const isOffice = holdsCapability(role, "guardian.link.manage");
   // What the server said to each answer, by request: { ok, text }. Said
   // only after its reply; a refusal stays on the row, and a line whose row has
   // gone from the list (answered, so no longer waiting) is shown under the heading.
@@ -368,7 +375,8 @@ function RequestsPanel({ role, players }) {
     setBusy(r.id);
     setSaid((m) => { const { [r.id]: _dropped, ...rest } = m; return rest; });
     try {
-      await api(`/api/requests/${r.id}/decide`, { method: "POST", body: { grant, playerId: pick[r.id] || r.playerId || null, teamCode: team } });
+      await api(`/api/requests/${r.id}/decide`, { method: "POST", body: { grant, playerId: pick[r.id] || r.playerId || null, teamCode: team,
+        ...(grant && form[r.id]?.on === true ? { formOnFile: true, formSignedBy: (form[r.id].by ?? "").trim() || undefined, formSignedOn: form[r.id].date || undefined } : {}) } });
       setSaid((m) => ({ ...m, [r.id]: { ok: true, text: decidedWords(grant, label, team) } }));
     } catch (e) {
       setSaid((m) => ({ ...m, [r.id]: { ok: false, text: decideWords(e) } }));
@@ -379,14 +387,16 @@ function RequestsPanel({ role, players }) {
   const needsChild = (r) => ["guardian", "player", "selfaccess", "enquiry"].includes(r.role);
   // A coach is a coach of a side; a request that named none is granted by naming one here.
   const needsSide = (r) => ["coach", "assistantcoach", "teammanager"].includes(r.role) && !r.team;
-  const ready = (r) => (!needsChild(r) || pick[r.id] || r.playerId) && (!needsSide(r) || side[r.id]);
+  const ready = (r) => (!needsChild(r) || pick[r.id] || r.playerId) && (!needsSide(r) || side[r.id])
+    && (form[r.id]?.on !== true || formReady({ signedBy: form[r.id].by, signedOn: form[r.id].date }));
+  const setFormOf = (id, k, v) => setForm((m) => ({ ...m, [id]: { ...(m[id] ?? {}), [k]: v } }));
   const line = (id, x) => (
     <div key={id} role={x.ok ? "status" : "alert"} data-testid={x.ok ? `request-done-${id}` : `request-refused-${id}`}
       style={{width:"100%",fontFamily:D.body,fontSize:"13px",lineHeight:1.4,color:textOn(x.ok ? D.emerald : D.rose)}}>
       {x.text}
     </div>
   );
-  const sel = {background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 8px",minHeight:"44px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary};
+  const sel = {background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 8px",minHeight:"44px",fontFamily:D.body,fontSize: T.role.control.fontSize,color:D.textPrimary};
   return (
     <div data-testid="requests-panel" style={{border:`1px solid ${D.border}`,borderRadius:D.lg,background:D.surf1,padding:"14px"}}>
       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>{rows.length ? `Requests to answer · ${rows.length}` : "Requests answered"}</div>
@@ -406,6 +416,18 @@ function RequestsPanel({ role, players }) {
               <option value="">Which player?</option>
               {players.map((p)=><option key={p.id} value={p.id}>{p.name} · {p.team}</option>)}
             </select>
+          )}
+          {isOffice&&["player","selfaccess"].includes(r.role)&&(
+            <label title={FORM_ON_FILE.hint} style={{display:"flex",alignItems:"center",gap:"8px",minHeight:"44px",cursor:"pointer",fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>
+              <input type="checkbox" checked={form[r.id]?.on===true} data-testid={`request-form-on-file-${r.id}`}
+                onChange={(e)=>setFormOf(r.id,"on",e.target.checked)} style={{width:"20px",height:"20px",flexShrink:0}}/>
+              {FORM_ON_FILE.label}
+            </label>
+          )}
+          {isOffice&&["player","selfaccess"].includes(r.role)&&form[r.id]?.on===true&&(
+            <div style={{width:"100%"}}>
+              <FormOnFileFields by={form[r.id].by ?? ""} on={form[r.id].date ?? ""} setBy={(v)=>setFormOf(r.id,"by",v)} setOn={(v)=>setFormOf(r.id,"date",v)} testid={`request-form-${r.id}`}/>
+            </div>
           )}
           {needsSide(r)&&(
             <select value={side[r.id]||""} onChange={(e)=>setSide((p)=>({...p,[r.id]:e.target.value}))} aria-label="Which side" style={sel}>

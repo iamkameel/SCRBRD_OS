@@ -19,16 +19,45 @@
  * its lists must be empty on which screen (they all must, at 320), and the
  * exploratory runs print the lists in full so a failure can be read, not guessed.
  *
- * Everything here runs in the page. No dependency, no network.
+ * Everything here runs in the page. No dependency, no network. The two floors
+ * are the design tokens' own (T.floor.target, T.floor.read), so a walk and the
+ * screens cannot hold two different numbers.
  */
+import { T } from "../apps/web/src/design/tokens.js";
 
 export const NARROW_WIDTHS = [320, 375, 414];
+
+/**
+ * The type inside a field is at least T.floor.control (16px), so a phone does not zoom the page when
+ * one is focused. Every visible, enabled input a person types or picks in (text, email, tel, number,
+ * search, password, url, date and time), every select and every textarea, whose computed font-size is
+ * under it. A checkbox, a radio, a file picker and a button are not typed in; buttons are the 44px
+ * target floor's. Reported per screen, with its own ceiling of 0.
+ *
+ * @param {import("playwright-core").Page} page
+ * @param {{ root?: string | null, control?: number }} [opts]
+ * @returns {Promise<string[]>}
+ */
+export const smallFieldType = (page, { root = null, control = T.floor.control } = {}) => page.evaluate(({ root, control }) => {
+  const base = root ? document.querySelector(root) : document;
+  if (!base) return [];
+  const TYPED = "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=button]):not([type=submit]):not([type=reset]):not([type=range]):not([type=color]):not([type=image]), select, textarea";
+  const out = [];
+  for (const el of base.querySelectorAll(TYPED)) {
+    if (el.closest("[aria-hidden=true]") || el.disabled) continue;
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    if (r.width < 1 || r.height < 1 || cs.visibility === "hidden" || cs.display === "none") continue;
+    const size = parseFloat(cs.fontSize);
+    if (size < control) out.push(`${size}px <${el.tagName.toLowerCase()}${el.getAttribute("data-testid") ? ` ${el.getAttribute("data-testid")}` : ""}> "${(el.getAttribute("aria-label") || el.id || el.getAttribute("placeholder") || "").slice(0, 24)}"`);
+  }
+  return out;
+}, { root, control });
 
 /**
  * @param {import("playwright-core").Page} page
  * @param {{ root?: string | null, tap?: number, floor?: number }} [opts]
  */
-export const narrowAudit = (page, { root = null, tap = 44, floor = 12 } = {}) => page.evaluate(({ root, tap, floor }) => {
+export const narrowAudit = (page, { root = null, tap = T.floor.target, floor = T.floor.read } = {}) => page.evaluate(({ root, tap, floor }) => {
   const base = root ? document.querySelector(root) : document.body;
   const out = { found: !!base, sideways: [], offscreen: [], clipped: [], overlap: [], small: [], tiny: [], weak: [] };
   if (!base) return out;

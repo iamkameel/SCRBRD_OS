@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from "react";
-import { D, T, clr, inkOn, textOn } from "../design/tokens.js";
+import { D, T, clr, inkOn, px, textOn } from "../design/tokens.js";
 import { isOut } from "./format.js";
 
 /* ═══════════════════════════════════════════════════════
@@ -301,7 +301,8 @@ const Sheet = ({ children, title, accent, onClose }) => {
       {title&&(
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px 4px",flexShrink:0}}>
           <h2 id={titleId} style={{fontFamily:D.head,fontSize:"18px",fontWeight:700,color:accent||D.textPrimary,margin:0}}>{title}</h2>
-          <button onClick={onClose} aria-label={`Close ${title}`} style={{width:"44px",height:"44px",marginRight:"-10px",display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",border:"none",color:D.textSecondary,fontSize:"26px",cursor:"pointer",lineHeight:1,padding:0}}>&times;</button>
+          {/* 44 × 44 (T.floor.target) and never squeezed: beside a long title ("Innings 1 — check before closing") the row shrank it to 43. */}
+          <button onClick={onClose} aria-label={`Close ${title}`} style={{width:px(T.floor.target),height:px(T.floor.target),flexShrink:0,marginRight:"-10px",display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",border:"none",color:D.textSecondary,fontSize:"26px",cursor:"pointer",lineHeight:1,padding:0}}>&times;</button>
         </div>
       )}
       <div style={{overflow:"auto",padding:"0 24px 32px"}}>{children}</div>

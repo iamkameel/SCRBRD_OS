@@ -51,7 +51,8 @@ import { listingApi, MATCH as LISTING_MATCH } from "./a11y-listing-mock.mjs";
 import { selectionApi, OPEN as SEL_OPEN, SHUT as SEL_SHUT, UNION as SEL_UNION } from "./a11y-selection-mock.mjs";
 import { termsApi, CHILD as TERMS_CHILD } from "./a11y-terms-mock.mjs";
 import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
-import { narrowAudit } from "./a11y-narrow.mjs";
+import { narrowAudit, smallFieldType } from "./a11y-narrow.mjs";
+import { T as TOKENS } from "../apps/web/src/design/tokens.js";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
@@ -496,7 +497,7 @@ const signupServer = createServer(async (req, res) => {
 await new Promise((r) => signupServer.listen(SIGNUP_PORT, r));
 
 const browser = await chromium.launch({ ...launchOptions() });
-const measured = { floodlit: { type: {}, contrast: {}, emoji: {}, tap: {} }, daylight: { type: {}, contrast: {}, emoji: {}, tap: {} } };
+const measured = { floodlit: { type: {}, contrast: {}, emoji: {}, tap: {}, field: {} }, daylight: { type: {}, contrast: {}, emoji: {}, tap: {}, field: {} } };
 
 /** Every visible piece of text on the page: its element, size, and whether it reads. */
 const survey = (page, root = null) => page.evaluate((root) => {
@@ -590,10 +591,11 @@ const emojiInControls = (page, root = null) => page.evaluate((root) => {
 
 /**
  * Every visible thing a person taps whose box is under 44px either way
- * (§3.5): buttons, links, inputs, and anything with a control's role. What is
- * hidden from everyone (aria-hidden, display:none, a zero box) is not a target.
+ * (§3.5; the number is the tokens' T.floor.target): buttons, links, inputs, and
+ * anything with a control's role. What is hidden from everyone (aria-hidden,
+ * display:none, a zero box) is not a target.
  */
-const smallTargets = (page, root = null) => page.evaluate((root) => {
+const smallTargets = (page, root = null) => page.evaluate(({ root, tap }) => {
   const base = root ? document.querySelector(root) : document;
   if (!base) return [];
   const TAPPED = "button, a[href], input:not([type=hidden]), select, textarea, [role=button], [role=tab], [role=radio], [role=switch], [role=checkbox]";
@@ -602,10 +604,10 @@ const smallTargets = (page, root = null) => page.evaluate((root) => {
     if (el.closest("[aria-hidden=true]")) continue;
     const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
     if (r.width < 1 || r.height < 1 || cs.visibility === "hidden") continue;
-    if (r.width < 44 || r.height < 44) out.push(`${Math.round(r.width)}x${Math.round(r.height)} "${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24)}"`);
+    if (r.width < tap || r.height < tap) out.push(`${Math.round(r.width)}x${Math.round(r.height)} "${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24)}"`);
   }
   return out;
-}, root);
+}, { root, tap: TOKENS.floor.target });
 
 /** What each of narrowAudit's lists means, for the failure line. */
 const NARROW_WORDS = {
@@ -621,8 +623,16 @@ const narrowCheck = async (page, theme, screen, root = null) => {
     ok(`${T_} ${screen} @${NARROW.width}: ${NARROW_WORDS[k]}`, r[k].length === 0, `${r[k].length}: ${r[k].slice(0, 4).join(" · ")}`);
     if (process.env.A11Y_NARROW_DEBUG && r[k].length) for (const x of r[k].slice(0, 14)) console.log(`   [${screen}@${NARROW.width}] ${k}: ${x}`);
   }
+  const fieldType = await smallFieldType(page, { root });
+  ok(`${T_} ${screen} @${NARROW.width}: the type in every field is ${TOKENS.floor.control}px or more`, fieldType.length <= CONTROL_TYPE_CEILING, `${fieldType.length}: ${fieldType.slice(0, 4).join(" · ")}`);
   if (process.env.A11Y_SHOTS) await page.screenshot({ path: join(process.env.A11Y_SHOTS, `${theme}-${screen}-${NARROW.width}.png`) }).catch(() => {});
 };
+
+/**
+ * The type inside a field, per screen, at least T.floor.control (16px; a phone zooms into a smaller one).
+ * Every screen this walk measures is asked, and none is allowed one: the ceiling is 0 everywhere.
+ */
+const CONTROL_TYPE_CEILING = 0;
 
 /** Record the floor, contrast and emoji counts for one screen, and the tap floor where it is ratcheted. */
 const measure = async (page, theme, screen, root = null) => {
@@ -632,6 +642,8 @@ const measure = async (page, theme, screen, root = null) => {
   const weak = items.filter((i) => i.ratio != null && i.ratio < i.need);
   const emoji = await emojiInControls(page, root);
   const tiny = screen in TAP_FLOOR_CEILING ? await smallTargets(page, root) : [];
+  const fieldType = await smallFieldType(page, { root });
+  measured[theme].field[screen] = fieldType.length;
   measured[theme].type[screen] = small.length;
   measured[theme].contrast[screen] = weak.length;
   measured[theme].emoji[screen] = emoji.length;
@@ -639,6 +651,7 @@ const measure = async (page, theme, screen, root = null) => {
   if (process.env.A11Y_DEBUG) {
     console.log(`[debug] ${theme}/${screen}: ${items.length} texts, ${small.length} under 12px, ${weak.length} below AA, ${emoji.length} emoji in controls${screen in TAP_FLOOR_CEILING ? `, ${tiny.length} targets under 44px` : ""}`);
     for (const t of tiny.slice(0, 8)) console.log(`   small target ${t}`);
+    for (const f of fieldType.slice(0, 8)) console.log(`   field type under ${TOKENS.floor.control}px ${f}`);
     for (const w of weak.slice(0, 8)) console.log(`   weak ${w.ratio.toFixed(2)} <${w.tag}> ${w.size}px "${w.text}"`);
     for (const e of emoji.slice(0, 8)) console.log(`   emoji ${e}`);
   }
@@ -1913,6 +1926,15 @@ async function walk(theme) {
     const tapProbe = await smallTargets(page);
     await page.evaluate(() => document.body.lastElementChild.remove());
     ok("...and the tap floor sees a 30px key, not a hidden one", tapProbe.some((t) => /probe key/.test(t)) && !tapProbe.some((t) => /hidden/.test(t)), tapProbe.join(" · "));
+    // ...and the field-type floor sees a 13px input, select and textarea, and not a 16px one, a checkbox or a hidden one.
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML = '<input aria-label="probe small" style="font-size:13px"><select aria-label="probe sel" style="font-size:12px"></select><textarea aria-label="probe area" style="font-size:15px"></textarea><input aria-label="probe fine" style="font-size:16px"><input type="checkbox" style="font-size:10px"><input aria-label="probe hid" aria-hidden="true" style="font-size:10px">';
+      document.body.appendChild(d);
+    });
+    const fieldProbe = await smallFieldType(page);
+    await page.evaluate(() => document.body.lastElementChild.remove());
+    ok("...and the field-type floor sees a 13px input, select and textarea, not a 16px one", fieldProbe.length === 3 && !fieldProbe.some((t) => /probe fine|probe hid/.test(t)), fieldProbe.join(" · "));
     // "landing" is the public home page since SCRBRD-142 (home.html, at / in
     // production; this walk's server answers / with the app, so it is asked
     // for by name). The app's own first screen is the login page.
@@ -2618,6 +2640,13 @@ try {
     for (const [screen, ceiling] of Object.entries(TAP_FLOOR_CEILING)) {
       const n = measured[th].tap[screen];
       ok(`${th} ${screen}: ${n} tapped under 44px (ceiling ${ceiling})`, n != null && n <= ceiling);
+    }
+  }
+
+  group(`The type inside a field (${TOKENS.floor.control}px, so a phone does not zoom) — per screen, none allowed`);
+  for (const th of ["floodlit", "daylight"]) {
+    for (const [screen, n] of Object.entries(measured[th].field)) {
+      ok(`${th} ${screen}: ${n} fields under ${TOKENS.floor.control}px (ceiling ${CONTROL_TYPE_CEILING})`, n <= CONTROL_TYPE_CEILING);
     }
   }
 

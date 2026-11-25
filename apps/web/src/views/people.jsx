@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ROLES } from "../design/roles.js";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive } from "../lib/live.js";
 import { signedIn } from "../lib/api.js";
@@ -56,7 +56,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const today = () => new Date().toLocaleDateString("en-CA");   // YYYY-MM-DD, the reader's own day
 
 const ctl = () => ({ minHeight: "44px", boxSizing: "border-box", padding: "10px 14px", borderRadius: D.pill,
-  background: D.surf2, border: `1px solid ${D.border}`, fontFamily: D.body, fontSize: "14px", color: D.textPrimary });
+  background: D.surf2, border: `1px solid ${D.border}`, fontFamily: D.body, fontSize: T.role.control.fontSize, color: D.textPrimary });
 
 // Roles that are, by construction, about the account-holder's own record
 // (decide_role_request writes selfaccess with relationship 'self'). Display only.

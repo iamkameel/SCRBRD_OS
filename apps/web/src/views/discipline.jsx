@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { D, textOn, themed } from "../design/tokens.js";
+import { D, T, textOn, themed } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { filesConduct } from "../rbac/conduct.js";
@@ -52,7 +52,7 @@ const STATE_TONE = themed(() => ({ open: D.amber, concluded: D.emerald, withdraw
 
 const field = () => ({
   width: "100%", padding: "9px 10px", borderRadius: D.md, background: D.surf2,
-  border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.body, fontSize: "12px",
+  border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize,
   boxSizing: "border-box",
 });
 const label = () => ({ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,

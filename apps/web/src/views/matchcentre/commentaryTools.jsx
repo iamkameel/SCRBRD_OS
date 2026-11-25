@@ -78,7 +78,7 @@ function OverJump({ match, innings, groups, onJump }) {
           // A field's edge: the tertiary ink every input's border uses, 3:1 in both themes (WCAG 1.4.11).
           border: `1px solid ${T.content.tertiary}`, background: T.surface.raised, color: T.content.primary,
           // 16px: a phone does not zoom the page into a field of that size.
-          fontFamily: T.type.body, fontSize: "16px", boxSizing: "border-box", cursor: "pointer" }}>
+          fontFamily: T.type.body, fontSize:T.role.control.fontSize, boxSizing: "border-box", cursor: "pointer" }}>
         <option value="">An over…</option>
         {byInnings.map((b) => (
           <optgroup key={b.innings} label={sideOf(b.innings)}>

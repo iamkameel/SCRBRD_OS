@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import pkg from "../../package.json";
 import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY } from "../design/roles.js";
 import { boundaries, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
-import { D, T, textOn } from "../design/tokens.js";
+import { D, T, px, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { Metric, MetricGroup } from "../ui/data.jsx";
 import { useLive, useRows } from "../lib/live.js";
@@ -559,9 +559,9 @@ function PeopleTab({ users, players, staff, coaches, noAccount, noDob, linkEnded
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "10px" }}>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email or role…" aria-label="Search accounts"
                  style={{ flex: "1 1 220px", minWidth: "160px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm,
-                          padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary }}/>
+                          padding: "7px 10px", fontFamily: D.body, fontSize:T.role.control.fontSize, color: D.textPrimary }}/>
           <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Filter by role"
-                  style={{ background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary }}>
+                  style={{ background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize:T.role.control.fontSize, color: D.textPrimary }}>
             <option value="">Every role</option>
             {rolesPresent.map((r) => <option key={r} value={r}>{ROLES[r]?.label ?? r}</option>)}
           </select>
@@ -669,9 +669,9 @@ function RolesTab({ users, grantable }) {
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a role or a capability…" aria-label="Search roles"
                  style={{ flex: "1 1 220px", minWidth: "160px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm,
-                          padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary }}/>
+                          padding: "7px 10px", fontFamily: D.body, fontSize:T.role.control.fontSize, color: D.textPrimary }}/>
           <select value={family} onChange={(e) => setFamily(e.target.value)} aria-label="Filter by family"
-                  style={{ background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary, textTransform: "capitalize" }}>
+                  style={{ background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize:T.role.control.fontSize, color: D.textPrimary, textTransform: "capitalize" }}>
             <option value="">Every family</option>
             {Object.keys(ROLE_FAMILIES).map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
@@ -1169,7 +1169,8 @@ function PassportTab({ role, only = null }) {
     try { await api(`/api/passport/consent/${id}/withdraw`, { method: "POST" }); setNudge((n) => n + 1); }
     catch (e) { setSaid(e?.status === 403 ? PASSPORT_WITHDRAW_REFUSED : (e.message || "Refused.")); setNudge((n) => n + 1); }
   };
-  const sel = { background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary };
+  // §3.5: 44px to tap (T.floor.target); the two selects were 34 tall (the parent's Consents, slice 6).
+  const sel = { minHeight: px(T.floor.target), background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: T.role.control.fontSize, color: D.textPrimary };
   const open = rows.filter((r) => !r.withdrawnAt), closed = rows.filter((r) => r.withdrawnAt);
   return (
     <>
@@ -1494,7 +1495,7 @@ function ChildPicker({ players, child, onPick }) {
       <input id="who-read-search" data-testid="who-read-search" ref={next} type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off"
         aria-describedby="who-read-search-hint"
         style={{ width: "100%", minHeight: "44px", padding: "0 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
-          color: D.textPrimary, fontFamily: D.body, fontSize: "16px", boxSizing: "border-box" }}/>
+          color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, boxSizing: "border-box" }}/>
       <div id="who-read-search-hint" aria-live="polite" style={{ fontFamily: D.body, fontSize: "12px", color: D.textSecondary, marginTop: "4px" }}>
         {term.length < 2 ? "Type two letters or more of his name."
           : found.length ? `${found.length} ${found.length === 1 ? "match" : "matches"}${found.length === 8 ? " shown; type more to narrow them" : ""}.`

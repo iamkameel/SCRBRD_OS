@@ -329,7 +329,7 @@ function LoginPage({ onLogin, liveOnly = false, onBack }) {
                 placeholder={f.placeholder}
                 aria-invalid={error?true:undefined}
                 aria-describedby={error?"login-error":undefined}
-                style={{width:"100%",padding:"11px 14px",borderRadius:"10px",background:T.fill.field,border:`1px solid ${error?clr(T.semantic.critical,0.5):T.line.normal}`,fontFamily:"'DM Sans',sans-serif",fontSize:"14px",color:T.content.primary,boxSizing:"border-box"}}/>
+                style={{width:"100%",padding:"11px 14px",borderRadius:"10px",background:T.fill.field,border:`1px solid ${error?clr(T.semantic.critical,0.5):T.line.normal}`,fontFamily:"'DM Sans',sans-serif",fontSize:T.role.control.fontSize,color:T.content.primary,boxSizing:"border-box"}}/>
             </div>
           ))}
 

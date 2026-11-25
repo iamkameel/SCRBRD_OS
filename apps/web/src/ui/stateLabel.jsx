@@ -64,8 +64,10 @@ const KIND = {
  * @param {boolean} [props.compact]     12px rather than 13px (the floor is 12)
  * @param {import("react").ReactNode} [props.children]  anything that belongs on the same line (a practice match's "last saved")
  * @param {string} [props.testid]       the data-testid; defaults to `state-label-{kind}`
+ * @param {string | null} [props.words] the state said another way, where the state's caller knows more (the
+ *                                      official result waiting on its confirmer, lib/official.js WAITING_WORDS)
  */
-export function StateLabel({ kind, why = null, compact = false, children = null, testid, ...rest }) {
+export function StateLabel({ kind, why = null, compact = false, children = null, testid, words = null, ...rest }) {
   const k = KIND[kind];
   if (!k) return null;
   return (
@@ -75,7 +77,7 @@ export function StateLabel({ kind, why = null, compact = false, children = null,
       ...(kind === "demo" ? { textTransform: "uppercase", letterSpacing: "0.05em" } : null),
     }}>
       <Icon name={k.icon}/>
-      <span>{STATE_WORDS[kind]}</span>
+      <span>{words ?? STATE_WORDS[kind]}</span>
       {why && <span data-testid={`state-why-${kind}`} style={{ fontWeight: 400, textTransform: "none", letterSpacing: "normal", color: T.content.secondary }}>{`· ${why}`}</span>}
       {children}
     </p>
