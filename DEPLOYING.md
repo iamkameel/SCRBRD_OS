@@ -2754,7 +2754,7 @@ To paste, in this order:
   and `player_born_change` (ten-second `lock_timeout`, reset by its last
   statement); a paste that timed out on its lock is simply run again.
 
-Not pasted yet. Hash to check: `sha256 @SHA173@`.
+Not pasted yet. Hash to check: `sha256 b9c64f6337eddad5a3e9f1ad988d04b10aedb58fe1ae1b77ead655e3ad2993bf`.
 <!-- ── end db/173 ── -->
 
 ### 5 · Cloud Run, the first time
