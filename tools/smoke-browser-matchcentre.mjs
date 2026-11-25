@@ -1426,6 +1426,11 @@ try {
   ok("the decided fixture opens", await openMatch(pr.page, fx.live));
   ok("she is offered Confirm result (the home school's, and no hand of hers on the log)",
      await until(pr.page, () => !!document.querySelector('[data-testid="mc-official-confirm"]'), 20000));
+  // Kameel, 25 Nov ("reword the line; keep the separation"): finished, sealed and confirmed by nobody, a friendly's
+  // line says who it waits on, never "Provisional · awaiting confirmation".
+  ok(`...and the result header says who it waits on ("${await tid(pr.page, "mc-official").innerText().catch(() => "∅")}")`,
+     await until(pr.page, () => /^Official result: waiting for the director of sport$/.test(document.querySelector('[data-testid="mc-official"]')?.innerText.trim() ?? ""), 8000),
+     await tid(pr.page, "mc-official").innerText().catch(() => "∅"));
   const confirmBox = await tid(pr.page, "mc-official-confirm").boundingBox();
   ok("...a 44px target", (confirmBox?.height ?? 0) >= 44, JSON.stringify(confirmBox));
   await tid(pr.page, "mc-official-confirm").click();

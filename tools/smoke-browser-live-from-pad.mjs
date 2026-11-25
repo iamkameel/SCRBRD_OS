@@ -452,6 +452,11 @@ try {
   ok("...one audit row, the coach's, not the scorer's", fins.length === 1 && fins[0].actor_id === coachId, JSON.stringify(fins));
   ok(`his header now says Result ("${await word(co.page, "mc-status")}")`,
      await until(co.page, () => document.querySelector('[data-testid="mc-status"]')?.textContent?.trim() === "Result", 12000), await word(co.page, "mc-status"));
+  // Kameel, 25 Nov ("reword the line; keep the separation"): his confirm finished it; the official result is the
+  // director of sport's (a friendly), and the line says so, not "Provisional · awaiting confirmation".
+  ok(`...and the official result's line says who it waits on ("${await inner(co.page, "mc-official")}")`,
+     await until(co.page, () => /^Official result: waiting for the director of sport$/.test(document.querySelector('[data-testid="mc-official"]')?.innerText.trim() ?? ""), 12000),
+     await inner(co.page, "mc-official"));
   ok("no console errors (coach)", co.errors.length === 0, co.errors.join(" | "));
   await close(co);
 

@@ -676,7 +676,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         {/* CRI-1.2: where the match stands, in the sentence its card in the list says too — here on every
             tab but a live Summary, which says it under its board (EXPERIENCE_PASS §3.3), so it is said once. */}
         {!summarySays && <StatusLine st={status} except={["upcoming"]}/>}
-        {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}/>}
+        {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}
+          fixture={{ finished: match.status === "complete", competition: !!match.competition }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         {!log.demo && <StaleLine stale={log.stale} refreshing={log.refreshing} failed={log.failed} okAt={log.okAt} onRefresh={log.refresh}/>}
         {corrections.words && (

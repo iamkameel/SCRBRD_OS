@@ -55,6 +55,17 @@ export const BLOCK_WORDS = Object.freeze({
   ball_held: "a late ball is held for a decision",
 });
 
+/**
+ * Who a finished result waits on, for staff (Kameel, 25 Nov: "Reword the line; keep the separation"). The
+ * coach's confirm finishes the match; the official result stays with the competition's organiser, or for a
+ * friendly the home school's director of sport (OFFICIAL_RESULT D2, D3). Named from the fixture: a competition
+ * fixture is the organiser's, any other the director of sport's.
+ */
+export const WAITING_WORDS = Object.freeze({
+  organiser: "Official result: waiting for the organiser",
+  director: "Official result: waiting for the director of sport",
+});
+
 /** Why it was reopened, for staff (D9's reasons, and D14's withdrawal). */
 const REOPENED_BY = Object.freeze({
   correction: "reopened by a correction",
@@ -84,9 +95,11 @@ export function publicOfficial(result, status, now = Date.now()) {
  * @param {any} o  the route's answer
  * @param {{home?: string | null, away?: string | null}} [names]  the sides' labels, for "disputed by …"
  * @param {number} [now]
- * @returns {{kind: "provisional" | "review" | "official", why: string | null} | null}
+ * @param {{finished?: boolean, competition?: boolean}} [fixture]  `finished`: the match has been finished (the
+ *   coach's confirm, db/130); `competition`: it is a competition fixture. Only a finished one is reworded.
+ * @returns {{kind: "provisional" | "review" | "official", why: string | null, words?: string} | null}
  */
-export function officialWords(o, names = {}, now = Date.now()) {
+export function officialWords(o, names = {}, now = Date.now(), fixture = {}) {
   if (!o || !o.state || o.state === "not_finished") return null;
   const t = (/** @type {any} */ x) => whenWords(x, now);
   if (o.state === "official") {
@@ -111,5 +124,7 @@ export function officialWords(o, names = {}, now = Date.now()) {
     return { kind: "provisional", why: `was official ${t(o.wasOfficialAt)} · ${how} ${t(reopened)} · needs confirming again` };
   }
   const waits = BLOCK_WORDS[/** @type {keyof typeof BLOCK_WORDS} */ (o.blockedBy)];
+  // Finished, nothing in the way, and confirmed by nobody yet: say who it waits on, not "Provisional".
+  if (!waits && fixture.finished) return { kind: "provisional", why: null, words: WAITING_WORDS[fixture.competition ? "organiser" : "director"] };
   return { kind: "provisional", why: waits ? waits : "awaiting confirmation" };
 }

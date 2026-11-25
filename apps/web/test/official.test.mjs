@@ -16,7 +16,7 @@
  *   node --import ./tools/register-jsx.mjs apps/web/test/official.test.mjs
  */
 import { readFileSync } from "node:fs";
-import { publicOfficial, officialWords, whenWords, ROLE_WORDS, BLOCK_WORDS } from "../src/lib/official.js";
+import { publicOfficial, officialWords, whenWords, ROLE_WORDS, BLOCK_WORDS, WAITING_WORDS } from "../src/lib/official.js";
 import { OFFICIAL_REFUSALS } from "../src/views/matchcentre/official.jsx";
 import { isQueueReader, resultRows, resultsReader } from "../src/lib/queue.js";
 
@@ -60,6 +60,26 @@ ok("was official, reopened by a correction, needs confirming again",
      === "was official 20:15, 11 Oct · reopened by a correction 08:00 · needs confirming again");
 ok("...or the confirmation withdrawn", /the confirmation was withdrawn/.test(st({ state: "provisional", wasOfficialAt: AT, withdrawnAt: AT })?.why ?? ""));
 ok("every role word is a phrase", Object.values(ROLE_WORDS).every((w) => /^the /.test(w)));
+
+group("After the coach's confirm: who the official result waits on (Kameel, 25 Nov: reword the line, keep the separation)");
+{
+  const names = { home: "Hilton College 1XI", away: "Westville Boys' High 1XI" };
+  const at = (o, fixture) => officialWords({ staff: true, ...o }, names, LATER, fixture);
+  const friendly = at({ state: "provisional" }, { finished: true, competition: false });
+  ok("a finished friendly: \"Official result: waiting for the director of sport\", no Provisional",
+     friendly?.words === "Official result: waiting for the director of sport" && friendly.kind === "provisional" && friendly.why === null, friendly);
+  ok("a finished competition fixture: \"Official result: waiting for the organiser\"",
+     at({ state: "provisional" }, { finished: true, competition: true })?.words === WAITING_WORDS.organiser);
+  ok("before he confirms, the line is as it was", at({ state: "provisional" }, { finished: false })?.why === "awaiting confirmation"
+     && at({ state: "provisional" }, { finished: false })?.words === undefined);
+  ok("...and with no fixture said, as it was", at({ state: "provisional" })?.why === "awaiting confirmation");
+  ok("a blocker still says what it waits on, finished or not", at({ state: "provisional", blockedBy: "innings_unsealed" }, { finished: true })?.why === BLOCK_WORDS.innings_unsealed
+     && at({ state: "provisional", blockedBy: "innings_unsealed" }, { finished: true })?.words === undefined);
+  ok("a reopened result keeps its own words", /needs confirming again/.test(at({ state: "provisional", wasOfficialAt: AT, lapsedAt: AT, lapsedReason: "correction" }, { finished: true })?.why ?? ""));
+  ok("official and under review are untouched", at({ state: "official", confirmedAs: "home_school", confirmedAt: AT }, { finished: true })?.kind === "official"
+     && at({ state: "under_review", disputedAs: "away_school", disputedAt: AT }, { finished: true })?.kind === "review");
+  ok("a family or the public never reads who it waits on (D11: never who)", officialWords({ staff: false, state: "provisional" }, names, LATER, { finished: true })?.words === undefined);
+}
 
 group("Every door's refusal has words (db/114)");
 {
