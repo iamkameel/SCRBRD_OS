@@ -18,10 +18,10 @@ export const LOADING_GIVES_UP_MS = 10_000;
 /** The public home page, where today's matches are. */
 export const TODAY_HREF = "/";
 
-const linkBox = {
+const linkBox = () => ({
   minHeight: "44px", minWidth: "44px", display: "inline-flex", alignItems: "center", boxSizing: "border-box",
   textDecoration: "none", fontFamily: T.type.body,
-};
+});
 
 /** The slim header: the mark (to the home page) and "Log in" (to the app). Nothing else. */
 export function PublicHeader() {
@@ -29,9 +29,9 @@ export function PublicHeader() {
     <header data-testid="public-header" style={{ borderBottom: `1px solid ${T.line.subtle}`, background: T.surface.canvas }}>
       <div style={{ maxWidth: "960px", margin: "0 auto", padding: `0 ${T.space.md}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.md }}>
         <a href="/" data-testid="public-header-mark" aria-label="SCRBRD, home" className="pressBtn"
-          style={{ ...linkBox, fontFamily: T.type.head, fontSize: "18px", fontWeight: 800, color: T.content.primary, letterSpacing: "0.01em" }}>SCRBRD</a>
+          style={{ ...linkBox(), fontFamily: T.type.head, fontSize: "18px", fontWeight: 800, color: T.content.primary, letterSpacing: "0.01em" }}>SCRBRD</a>
         <a href="/app" data-testid="public-header-login" rel="nofollow" className="pressBtn"
-          style={{ ...linkBox, padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, border: `1px solid ${T.line.strong}`, color: T.content.primary, fontSize: "14px", fontWeight: 600 }}>Log in</a>
+          style={{ ...linkBox(), padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, border: `1px solid ${T.line.strong}`, color: T.content.primary, fontSize: "14px", fontWeight: 600 }}>Log in</a>
       </div>
     </header>
   );
@@ -41,7 +41,7 @@ export function PublicHeader() {
 export function SeeToday() {
   return (
     <a href={TODAY_HREF} data-testid="public-see-today" className="pressBtn"
-      style={{ ...linkBox, padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, border: `1px solid ${T.line.strong}`, color: T.content.primary, fontSize: "14px", fontWeight: 600 }}>
+      style={{ ...linkBox(), padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, border: `1px solid ${T.line.strong}`, color: T.content.primary, fontSize: "14px", fontWeight: 600 }}>
       See today's matches
     </a>
   );
