@@ -20,7 +20,8 @@
  *     attached, why not, and what is waiting on this phone.
  *
  * WHEN THE SCREEN SHOWS. Only on a pad opened fresh on this phone (nothing of
- * this match saved here), not attached, with nothing waiting to send or held:
+ * this match saved here) that has not held the token since it opened, not
+ * attached, with nothing waiting to send or held:
  * a phone with balls of its own keeps the pad and the banner that lists them
  * (syncBanner.jsx). And only while what it knows says another phone holds the
  * scoring: the claim was refused as `lease_active`, `handover_pending` or
@@ -63,7 +64,7 @@ export function heldByAnother(h) {
 /**
  * Does the pad open on the other-phone screen?
  * @param {{fresh: boolean, holder?: any, status?: any}} a
- *   fresh   nothing of this match was saved on this phone when the pad opened
+ *   fresh   nothing of this match was saved on this phone when the pad opened, and it has not held the token since
  *   holder  holderOf() the match_duties read, or null (not read, or no answer)
  *   status  the pad's sync status, or null before the outbox has said anything
  */

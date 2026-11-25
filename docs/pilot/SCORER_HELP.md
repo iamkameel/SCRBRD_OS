@@ -34,7 +34,7 @@ Scoring phone dead: when the lead says, the standby taps **Take over scoring**, 
 
 Outgoing: wait for **Sent**. Tap **Hand over** in the title bar, then **Hand over scoring**. Read out the six-digit code. To stop: **Cancel — keep scoring myself**.
 
-Incoming: sign in, open the same fixture, tap **Take over**, type the code, tap **Claim this match**. Type the physical scoreboard's runs, wickets, overs and balls. Tap **Confirm and take over**. A wrong figure is refused. The old phone shows **Handed over**.
+Incoming: sign in, open the same fixture, tap **Enter the handover code**, type the code, tap **Claim this match**. Type the physical scoreboard's runs, wickets, overs and balls. Tap **Confirm and take over**. A wrong figure is refused. The old phone shows **Handed over**.
 
 ## End of an innings
 

@@ -378,6 +378,9 @@ export default function SCRBRD_OS() {
         // says whether a no-ball gives a free hit (SCRBRD-113).
         ...(m.startsAt ? { startsAt: m.startsAt } : {}),
         ...(m.format ? { format: m.format } : {}),
+        // Each side named in full ("Hilton College 1XI"), where the read gives it: the other-phone screen's title (slice 13).
+        ...(m.homeLabel ? { homeLabel: m.homeLabel } : {}),
+        ...(m.awayLabel ? { awayLabel: m.awayLabel } : {}),
         ...(restored ? { restored: true } : {}),
       } });
       setScorerMatchId(m.id);

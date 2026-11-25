@@ -635,7 +635,12 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
   // nothing of it, so the pad opens on who is scoring, the handover code and
   // the score, not the toss sheet and the keys. Gone the moment this phone
   // holds the token (the code's take-over), or the server says anything else.
-  const otherPhone = fixtureLive && screen === "match" && showOtherPhone({ fresh: freshOpen, holder, status: padStatus });
+  // Once this phone has held the token, the match is partly its own: whatever
+  // happens after (a handover, a take-over, two logs), the pad and its banner
+  // say it, never this screen.
+  const [heldHere, setHeldHere] = useState(false);
+  useEffect(() => { if (padStatus?.attached) setHeldHere(true); }, [padStatus?.attached]);
+  const otherPhone = fixtureLive && screen === "match" && showOtherPhone({ fresh: freshOpen && !heldHere, holder, status: padStatus });
   // "Check again": the banner's own Try again (a plain claim, never a take-over), and the read again.
   const checkHolder = async () => {
     setCheckingHolder(true);

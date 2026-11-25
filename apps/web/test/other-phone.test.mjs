@@ -108,6 +108,8 @@ group("The screen and the pad (source)");
   ok("the pad draws it before the match screen, with only the handover sheet over it",
      /if\(otherPhone\)return \(/.test(eng) && /\{modal==="handover"&&renderModal\(\)\}/.test(eng));
   ok("the sheet opened from it is the code alone", /takeOnly=\{otherPhone\}/.test(eng));
+  ok("a pad that has held the token since it opened is never fresh again (a fork, a handover: its banner)",
+     /fresh: freshOpen && !heldHere/.test(eng) && /if \(padStatus\?\.attached\) setHeldHere\(true\)/.test(eng));
   ok("no 44px floor broken: every button sets minHeight to the floor", (src.match(/minHeight: `\$\{T\.floor\.target\}px`/g) ?? []).length === 2);
 }
 

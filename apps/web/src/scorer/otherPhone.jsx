@@ -61,7 +61,8 @@ export function OtherPhoneScreen({ match, holder, reason, onExit = null, onCode,
   const head = useRef(null);
   // Arriving here (from the pad's opening, or back from a sheet), focus goes to what the screen says.
   useEffect(() => { head.current?.focus({ preventScroll: true }); }, [say.kind]);
-  const sides = `${match?.team1 ?? "Home"} v ${match?.team2 ?? "Away"}`;
+  // Each side in full where the fixture read named it ("Hilton College 1XI"), never "1XI" alone (§2.2).
+  const sides = `${match?.homeLabel ?? match?.team1 ?? "Home"} v ${match?.awayLabel ?? match?.team2 ?? "Away"}`;
   return (
     <div data-testid="other-phone" data-kind={say.kind} style={{ minHeight: "100vh", background: T.surface.canvas }}>
       {/* The pad's own title bar: back, and which match this is. */}

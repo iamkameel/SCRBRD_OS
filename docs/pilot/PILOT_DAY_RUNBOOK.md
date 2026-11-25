@@ -58,7 +58,7 @@ These are roles, not names. The numbers for each role are on the printed card ea
 1. Agree who scores first and who stands by.
 2. Both scorers sign in again, at the gate where there is signal.
 3. The first scorer opens the fixture from **Matches** (**Resume scoring** or **Start scoring**). If no toss is recorded, the pad shows **The toss**. Answer it only when the umpires have told you the result: the side batting first opens the innings and that cannot be undone on the pad.
-4. The standby opens the same fixture afterwards. Their pad should say **Someone else is scoring this match**. Leave it. If it says **Another phone was scoring this match** with **Take over scoring**, do not press it: the scoring phone is still the scoring phone unless the lead says it is dead (see "If the scoring phone dies").
+4. The standby opens the same fixture afterwards. Their pad should open on one screen saying someone is scoring this match on another phone, with **Enter the handover code** and **Watch the score**, and no toss. Leave it. If it says **Another phone was scoring this match** with **Take over scoring**, do not press it: the scoring phone is still the scoring phone unless the lead says it is dead (see "If the scoring phone dies").
 5. Check the pavilion screen still shows **Before the toss**.
 6. Open the health address again.
 
@@ -75,7 +75,7 @@ These are roles, not names. The numbers for each role are on the printed card ea
 
 - The pavilion screen shows only what has been sent. If the pill says **No signal** or **On device**, the screen is behind until the balls go.
 - At the end of each innings the check sheet opens. Compare it with the umpires' book, then tap **That is right — close the innings**. If it is wrong, tap **Take back the last ball**. After the first innings tap **Start 2nd Innings →**.
-- A handover needs signal on both phones, because arming and claiming both call the server. The sheet will not arm while balls are unsent or a ball is half entered. Do it between balls, ideally at the end of an over. The steps are in the scorers' guide: **Hand over**, **Hand over scoring**, the six-digit code, **Take over**, **Claim this match**, then the second scorer types the physical scoreboard's figures and taps **Confirm and take over**.
+- A handover needs signal on both phones, because arming and claiming both call the server. The sheet will not arm while balls are unsent or a ball is half entered. Do it between balls, ideally at the end of an over. The steps are in the scorers' guide: **Hand over**, **Hand over scoring**, the six-digit code, **Enter the handover code** (**Take over** on a phone that scored this match before), **Claim this match**, then the second scorer types the physical scoreboard's figures and taps **Confirm and take over**.
 
 ### Rain or bad light
 
@@ -112,7 +112,8 @@ If the signal is back but the pill does not move, see 'The server or the databas
 
 ### A bar says another device holds the match
 
-- **Someone else is scoring this match** with a **Try again** button: another phone holds it. Do not score on both.
+- A screen saying who is scoring this match on another phone, with **Enter the handover code**, **Watch the score** and **Check again**: another phone holds it, and this one has nothing of the match. Do not score on both. A scorer's phone says **Someone else** where it is not given the other scorer's name.
+- **Someone else is scoring this match** with a **Try again** button: another phone holds it, and this phone has balls of its own (listed). Do not score on both.
 - **Another phone was scoring this match** with **Take over scoring**: the scoring phone has gone quiet for over a minute and a half. The bar shows when the server's last ball came in. Press it only when the lead has said the scoring phone is dead. Nothing is taken until it is pressed, and the take-over is recorded.
 - **Another device has taken over scoring this match**: the match is on another phone now. This phone sends nothing more, and the bar lists the balls it kept. Show them to the lead. **Score on this device** works only after the other phone has stopped.
 - **This match was scored on another device while this one was not sending**: the two phones both scored. The bar lists this phone's balls the server lacks, and they are already saved aside on the phone. Tap **Send them to the lead**: they go **For review**, never straight into the scorebook, and this phone then shows the server's log.
@@ -141,7 +142,7 @@ Signs: the pill stays **No signal** or **On device** although the phone has sign
 Decided by Kameel, 30 Oct 2026, for the pilot. There is no import into the middle of a live innings.
 
 1. The lead decides the scoring phone is dead (flat, broken, lost). Until then nobody takes over.
-2. The standby opens the fixture. If their phone is signed out, they phone Kameel for a sign-in code (the number is on the day sheet; Kameel issues codes by phone until stumps, decided 30 Oct 2026). After a minute and a half without the scoring phone, the bar says **Another phone was scoring this match** and when the server's last ball came in. The standby taps **Take over scoring**. (If the lead has force-released the match, the pad takes it at once.)
+2. The standby opens the fixture. If their phone is signed out, they phone Kameel for a sign-in code (the number is on the day sheet; Kameel issues codes by phone until stumps, decided 30 Oct 2026). After a minute and a half without the scoring phone (if the pad still says who is scoring on another phone, tap **Check again**), the bar says **Another phone was scoring this match** and when the server's last ball came in. The standby taps **Take over scoring**. (If the lead has force-released the match, the pad takes it at once.)
 3. The standby's pad says **You are scoring this match now** and the time of the server's last ball, with the board as the server has it. Compare that ball with the paper book.
 4. Any balls in the book after it are typed into the pad, one by one, in order, before the next ball is bowled. Then tap **Checked**.
 5. If the dead phone comes back later, it says **Another device has taken over scoring this match** and lists the balls it kept. The lead compares them with the book; they are already typed in from the book, so nothing more is sent from it.
