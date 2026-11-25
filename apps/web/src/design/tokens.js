@@ -583,8 +583,9 @@ const T = {
    * width; Syne is for the wordmark and screen titles only.
    *
    * Tokens, not yet applied: the screens move onto these in steps 2–5. The
-   * floors are what smoke-a11y ratchets towards: nothing read under 12px,
-   * nothing tapped under 16px.
+   * floors (`floor`, below) are what the walks hold every screen to: nothing
+   * read under 12px, nothing tapped under 44 × 44, and no control's type under
+   * 16px.
    */
   //
   // Each role is plain CSS, ready to spread into a style. The two sizes that
@@ -613,8 +614,18 @@ const T = {
     },
   },
 
-  /** §3.2 floors, in px: nothing read below `read`, nothing tapped below `tap`. */
-  floor: { read: 12, tap: 16, target: 44 },
+  /**
+   * The floors, in px. Each says one thing, and the walks read them from here
+   * (tools/a11y-narrow.mjs, smoke-a11y.mjs, smoke-browser-narrow.mjs):
+   *   read    nothing read is smaller (§3.2);
+   *   target  anything tapped is at least this tall AND this wide (§3.5,
+   *           "at least 44 × 44"): a button, a link, a field, a chip, a tab;
+   *   control the type inside a field or a button is at least this size, so a
+   *           phone does not zoom the page when it is focused (§3.2's "nothing
+   *           tapped is below 16px" is this, a type size; role.control above
+   *           is drawn at it). It was called `tap`, which read as the 44.
+   */
+  floor: { read: 12, control: 16, target: 44 },
 };
 
 // ══════════════════════════════════════════════════════════════════

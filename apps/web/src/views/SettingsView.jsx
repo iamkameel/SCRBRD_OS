@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import pkg from "../../package.json";
 import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY } from "../design/roles.js";
 import { boundaries, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
-import { D, T, textOn } from "../design/tokens.js";
+import { D, T, px, textOn } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { Metric, MetricGroup } from "../ui/data.jsx";
 import { useLive, useRows } from "../lib/live.js";
@@ -1169,7 +1169,8 @@ function PassportTab({ role, only = null }) {
     try { await api(`/api/passport/consent/${id}/withdraw`, { method: "POST" }); setNudge((n) => n + 1); }
     catch (e) { setSaid(e?.status === 403 ? PASSPORT_WITHDRAW_REFUSED : (e.message || "Refused.")); setNudge((n) => n + 1); }
   };
-  const sel = { background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary };
+  // §3.5: 44px to tap (T.floor.target); the two selects were 34 tall (the parent's Consents, slice 6).
+  const sel = { minHeight: px(T.floor.target), background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.sm, padding: "7px 10px", fontFamily: D.body, fontSize: "12px", color: D.textPrimary };
   const open = rows.filter((r) => !r.withdrawnAt), closed = rows.filter((r) => r.withdrawnAt);
   return (
     <>

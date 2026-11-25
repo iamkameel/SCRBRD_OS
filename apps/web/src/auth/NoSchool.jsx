@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useId, useState } from "react";
 import { PERSONA_NAV, ROLES } from "../design/roles.js";
-import { T, clr } from "../design/tokens.js";
+import { T, clr, px } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { profile } from "../lib/session.js";
@@ -65,7 +65,7 @@ function Btn({ children, kind = "quiet", style, ...rest }) {
   const main = kind === "primary";
   return (
     <button type="button" className="pressBtn" {...rest}
-      style={{ minHeight: "44px", padding: "10px 18px", borderRadius: "999px", boxSizing: "border-box",
+      style={{ minHeight: px(T.floor.target), padding: "10px 18px", borderRadius: "999px", boxSizing: "border-box",
         cursor: rest.disabled ? "not-allowed" : "pointer", opacity: rest.disabled ? 0.5 : 1,
         border: main ? "none" : `1px solid ${T.line.strong}`,
         background: main ? T.light.action : "transparent", color: main ? T.light.ink : T.content.secondary,
@@ -77,7 +77,7 @@ function Btn({ children, kind = "quiet", style, ...rest }) {
 function Choice({ on, title, hint, onClick, ...rest }) {
   return (
     <button type="button" className="pressBtn" aria-pressed={on} onClick={onClick} {...rest}
-      style={{ display: "block", width: "100%", textAlign: "left", minHeight: "44px", padding: "12px 14px", marginBottom: "8px",
+      style={{ display: "block", width: "100%", textAlign: "left", minHeight: px(T.floor.target), padding: "12px 14px", marginBottom: "8px",
         borderRadius: "12px", cursor: "pointer", boxSizing: "border-box",
         border: `1px solid ${on ? T.brand.blueText : T.line.normal}`, background: on ? clr(T.brand.blue, 0.16) : T.fill.field }}>
       <span style={{ display: "block", fontFamily: FONT.head, fontSize: "14px", fontWeight: 700, color: T.content.primary }}>{title}</span>
@@ -96,7 +96,7 @@ function Field({ label, hint, children }) {
     </div>
   );
 }
-const input = () => ({ width: "100%", minHeight: "44px", boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
+const input = () => ({ width: "100%", minHeight: px(T.floor.target), boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
   background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: "16px" });
 
 /** The Guardian's anonymous link, as the safeguarding screens carry it (GET /api/safeguarding/contacts). */
@@ -115,7 +115,7 @@ function HelpLine() {
       {url
         ? <div style={text(14)}>You do not need a school to speak up.
             <a href={url} target="_blank" rel="noopener noreferrer" data-testid="no-school-guardian"
-               style={{ display: "flex", alignItems: "center", minHeight: "44px", color: T.brand.blueText, fontWeight: 600, fontSize: "14px" }}>Report anonymously with The Guardian's app</a></div>
+               style={{ display: "flex", alignItems: "center", minHeight: px(T.floor.target), color: T.brand.blueText, fontWeight: 600, fontSize: "14px" }}>Report anonymously with The Guardian's app</a></div>
         : <div style={text(14)} data-testid="no-school-guardian-unset">The Guardian's app link has not been set on this platform yet.</div>}
     </div>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { batHandOf } from "@scrbrd/scoring";
-import { T, inkOn } from "../design/tokens.js";
+import { T, inkOn, px } from "../design/tokens.js";
 import { Board } from "../ui/board.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { didNotTravel } from "./delivery.js";
@@ -47,7 +47,7 @@ export function ExitKey({ onExit, inBar = false }) {
     <button type="button" className="os-exit-scorer pressBtn" onClick={onExit} data-testid="exit-scorer"
       aria-label={inBar ? "Back to SCRBRD OS" : undefined} title="Leave the scorer"
       style={inBar ? { position: "static", top: "auto", left: "auto", zIndex: "auto", flexShrink: 0,
-        width: "44px", height: "44px", padding: 0, justifyContent: "center", borderRadius: T.radius.md,
+        width: px(T.floor.target), height: px(T.floor.target), padding: 0, justifyContent: "center", borderRadius: T.radius.md,
         background: "transparent", border: `1px solid ${T.line.normal}`, boxShadow: "none",
         backdropFilter: "none", WebkitBackdropFilter: "none", color: T.content.primary,
         fontSize: "26px", fontWeight: 400, lineHeight: 1 } : undefined}>
@@ -204,7 +204,7 @@ export function MilestonePin({ tentative = true, size = 18 }) {
 // Styles are functions: a token is read when the key draws, never at import.
 
 const keyBase = (h) => ({
-  minHeight: h, minWidth: "44px", borderRadius: T.radius.md, cursor: "pointer",
+  minHeight: h, minWidth: px(T.floor.target), borderRadius: T.radius.md, cursor: "pointer",
   display: "flex", alignItems: "center", justifyContent: "center", gap: T.space.xs,
   padding: `${T.space.xs} ${T.space.xs}`, textAlign: "center", lineHeight: 1.15,
   fontFamily: T.type.body, fontSize: "16px", fontWeight: 500,
@@ -213,7 +213,7 @@ const keyBase = (h) => ({
 });
 
 /** One key. `say` is its name when the face is a figure or a mark. */
-function Key({ face, say, onClick, h = "44px", style, testid, pressed, disabled }) {
+function Key({ face, say, onClick, h = px(T.floor.target), style, testid, pressed, disabled }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} className="pressBtn os-state" data-testid={testid}
       aria-label={say} aria-pressed={pressed} style={{ ...keyBase(h), ...style }}>
@@ -248,7 +248,7 @@ function Stepper({ phase, values, onStep, stepperRef }) {
             <Tag {...(done ? { type: "button", onClick: () => onStep(s.n), className: "pressBtn",
                   "aria-label": `Step ${s.n}, ${s.label}: ${values[s.n - 1] ?? "none"}. Go back to it` } : {})}
               data-testid={`step-${s.n}`} aria-current={now ? "step" : undefined}
-              style={{ width: "100%", minHeight: "44px", borderRadius: T.radius.md, padding: `${T.space.xs} ${T.space.sm}`,
+              style={{ width: "100%", minHeight: px(T.floor.target), borderRadius: T.radius.md, padding: `${T.space.xs} ${T.space.sm}`,
                 display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "center", gap: "2px",
                 cursor: done ? "pointer" : "default", textAlign: "left",
                 background: now ? T.content.primary : done ? T.surface.raised : "transparent",
@@ -395,7 +395,7 @@ function OutcomeKeys({ onRun, onWicket, note, blockRef }) {
 
 // ── An extra's second tap: the runs (SCRBRD-100 item 3) ─────────
 
-const segment = (on) => ({ minHeight: "44px", padding: `0 ${T.space.xs}`, fontSize: "16px",
+const segment = (on) => ({ minHeight: px(T.floor.target), padding: `0 ${T.space.xs}`, fontSize: "16px",
   ...(on ? { background: T.content.primary, color: T.surface.canvas, border: `1px solid ${T.content.primary}`, fontWeight: 600 } : {}) });
 
 /**
@@ -439,7 +439,7 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
             {NB_TYPES.map((t) => (
               <button key={t.id} type="button" role="radio" aria-checked={nb.type === t.id} data-testid={`nb-type-${t.id}`}
                 className="pressBtn os-state" onClick={() => setNb((p) => ({ ...p, type: t.id }))}
-                style={{ ...keyBase("44px"), ...segment(nb.type === t.id) }}>{t.label}</button>
+                style={{ ...keyBase(px(T.floor.target)), ...segment(nb.type === t.id) }}>{t.label}</button>
             ))}
           </div>
           {/* Whose runs, and — off the bat — whether a four or six reached the
@@ -457,13 +457,13 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
               {NB_FROM.map((f) => (
                 <button key={f.label} type="button" role="radio" aria-checked={nb.from === f.id} data-testid={`nb-runs-${f.id ?? "bat"}`}
                   className="pressBtn os-state" onClick={() => setNb((p) => ({ ...p, from: f.id }))}
-                  style={{ ...keyBase("44px"), ...segment(nb.from === f.id), fontSize: "14px" }}>{f.label}</button>
+                  style={{ ...keyBase(px(T.floor.target)), ...segment(nb.from === f.id), fontSize: "14px" }}>{f.label}</button>
               ))}
             </div>
             {nb.from == null ? (
               <button type="button" aria-pressed={nb.notBoundary === true} data-testid="nb-not-boundary" aria-label="All run, not a boundary"
                 className="pressBtn os-state" onClick={() => setNb((p) => ({ ...p, notBoundary: !p.notBoundary }))}
-                style={{ ...keyBase("44px"), ...segment(nb.notBoundary === true), fontSize: "14px" }}>All run</button>
+                style={{ ...keyBase(px(T.floor.target)), ...segment(nb.notBoundary === true), fontSize: "14px" }}>All run</button>
             ) : <span aria-hidden="true"/>}
           </div>
           {/* No free hit in a declaration or timed match (the fold's
@@ -485,7 +485,7 @@ function ExtraRuns({ kind, onRuns, onCancel, fourth = false, freeHits = true, wi
       {/* The no-ball's seven keys (0–6) on one row on a 360px phone: at the
           usual gap they wrap to two, and with the 4th Edition's line above
           them the panel rose over the board. Each key keeps its 44px. */}
-      <div data-testid="extra-runs" style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(44px,1fr))`,
+      <div data-testid="extra-runs" style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit,minmax(${px(T.floor.target)},1fr))`,
         gap: x.runs.length > 6 ? "2px" : T.space.xs }}>
         {x.runs.map((n) => {
           const likely = n === x.likely;
