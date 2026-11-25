@@ -16,6 +16,8 @@
  *   recognised        "Your school knows this is you. A parent or guardian
  *                     needs to say yes before your own page opens."
  *   declined          the school has answered; never why
+ *   closed            (db/169) a yes was taken back: "Your own page is
+ *                     closed until a parent or guardian says yes again." 
  *
  * HOW A YES COMES, TODAY. Until the honesty model's Migration B, a parent's
  * yes is the school's signed consent form, which the office records when it
@@ -41,7 +43,7 @@ const clean = (/** @type {unknown} */ v) => String(v ?? "").replace(/\s+/g, " ")
 export const CLAIM_FORM = Object.freeze({
   title: "Tell your school who you are",
   intro: "Type your name as the school would have it. The school office checks it against the school's own list. Nothing about you is opened by this: not your team, not your matches, not your record.",
-  keep: "Sending this tells SCRBRD that this account belongs to a pupil under 18. It then asks for nothing else. It is kept for 30 days while the school office decides: your own page opens only once the office has a parent's or guardian's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.",
+  keep: "Sending this tells SCRBRD that this account belongs to a pupil under 18. It then asks for nothing else. It is kept for 30 days while the school office decides: your own page opens only once a parent or guardian says yes, in SCRBRD or on the school's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.",
   under13: "If you are under 13, Google will not give you an account: ask your school office for a sign-in code instead.",
 });
 
@@ -105,11 +107,18 @@ export function stateWords(claim) {
       return { title: "Sent to the school", line: `Somebody at ${at} will answer.`, how: null };
     case "recognised":
       return { title: "Your school knows this is you.", line: "A parent or guardian needs to say yes before your own page opens.",
-               how: `Ask a parent or guardian to give the office at ${at} the school's signed consent form, or ask the office.` };
+               how: `Ask a parent or guardian to say yes under Family in SCRBRD, or to give the office at ${at} the school's signed consent form.` };
     case "declined":
       return { title: "The school has answered", line: "Your own page will not open from this claim. If you think that is wrong, ask the school office.", how: null };
     case "open":
       return { title: "Your own page is open", line: "Sign out, then sign in again, to see it.", how: null };
+    // db/169: no yes is in force: one was taken back (a parent's "Stop his own
+    // sign-in", her withdrawal, her link ending, the office's record), or none
+    // was ever given (enrolled without the form, N8). He is not signed out. No
+    // "again": he may never have been open.
+    case "closed":
+      return { title: "Your own page is closed", line: "Your own page is closed until a parent or guardian says yes.",
+               how: `Ask a parent or guardian to open SCRBRD and look under Family, or ask the school office at ${at}.` };
     default:
       return { title: "", line: "", how: null };
   }
@@ -123,7 +132,7 @@ export function keepWords(claim) {
   if (!claim?.keepUntil) return null;
   const until = dayWords(claim.keepUntil);
   if (claim.state === "declined") return `This account is kept until ${until}, 30 days from the school's answer. Then it is removed, with the schools you follow.`;
-  return `This account is kept until ${until}, 30 days from your last claim, while the school office decides. Your own page opens only once the office has a parent's or guardian's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.`;
+  return `This account is kept until ${until}, 30 days from your last claim, while the school office decides. Your own page opens only once a parent or guardian says yes, in SCRBRD or on the school's signed consent form. If it has not opened by then, the account is removed, with the schools you follow.`;
 }
 
 /** "Remove this account" (his own way out, now): the question asked first, and the refusals. */
@@ -144,10 +153,11 @@ export const OFFICE_STATE_WORDS = Object.freeze({
   recognised: "Recognised: waiting for a parent's or guardian's yes",
   declined: "Declined",
   open: "Opened",
+  closed: "Closed: the yes for his own sign-in was taken back",
 });
 
 /** What the office is told before it decides. */
-export const OFFICE_INTRO = "A pupil under 18 signed in with Google and said he is at this school. Recognising him matches his account to his place on your list: it opens nothing, not his team, his matches or his record. His own page opens when a parent's or guardian's signed consent form is on file and you enrol his account. If you do not know him, decline: the school's safeguarding officers are told that a claim was declined, without his name. An account is kept 30 days from its last claim, or from your answer.";
+export const OFFICE_INTRO = "A pupil under 18 signed in with Google and said he is at this school. Recognising him matches his account to his place on your list: it opens nothing, not his team, his matches or his record. His own page opens when a parent or guardian says yes in SCRBRD, or when you record that the school has their signed consent form. If you do not know him, decline: the school's safeguarding officers are told that a claim was declined, without his name. An account is kept 30 days from its last claim, or from your answer.";
 
 /** Each refusal of recognise and decline, in the office's words. */
 export const OFFICE_WORDS = Object.freeze({
@@ -157,6 +167,15 @@ export const OFFICE_WORDS = Object.freeze({
   player_has_an_account: "That pupil already has an account, or another claim is recognised as him. Nothing here joins two accounts: if he is signing in with Google, his own account's request is on the Google sign-ins list.",
   player_is_an_adult: "By the school's list that pupil is 18 or older, so he needs no parent's yes. Enrol his account from People with the address shown here.",
   player_required: "Choose his place on the school's list first.",
+  not_recognised: "This claim names nobody on your list. Decline it instead.",
+});
+
+/** db/169 (S10): "This account is not him", asked first, and said after. */
+export const NOT_HIM = Object.freeze({
+  button: "This account is not him",
+  ask: "Take this account off his record? Its pupil roles end and it no longer answers as him, so his own sign-in closes; every yes given for him so far is closed too, and is asked for again. The claim is declined, and the school's safeguarding officers are told, without his name or the address.",
+  confirm: "Take it off his record",
+  done: "Taken off his record. The safeguarding officers have been told, without his name.",
 });
 const OFFICE_FALLBACK = "That did not go through. Try again.";
 

@@ -158,9 +158,27 @@ try {
   ok("a malformed email never reaches the database",
      (await enrol(registrar, body("not-an-email", "N E", SITHOLE, "U13A"))).body?.error === "email_invalid");
 
+  group("The signed form on file: who signed it, and when, if the office has them (db/169, D: optional until counsel)");
+  // A signer given is checked; one refused rolls the whole enrolment back.
+  const unsigned = await enrol(registrar, { ...body("j.sithole@example.invalid", "J Sithole", SITHOLE, "U13A"),
+                                            withCode: true, formOnFile: true, formSignedBy: "M" });
+  ok("a one-letter signer is refused", unsigned.status === 422 && unsigned.body?.error === "form_form_signer_invalid");
+  ok("...and rolls the enrolment back: no account", (await accounts("j.sithole@example.invalid")) === 0);
+  const futureForm = await enrol(registrar, { ...body("j.sithole@example.invalid", "J Sithole", SITHOLE, "U13A"),
+                                              formOnFile: true, formSignedBy: "M Sithole", formSignedOn: "2999-01-01" });
+  ok("a form dated after today is refused", futureForm.status === 422 && futureForm.body?.error === "form_form_date_invalid");
+  ok("a pupil's role naming no boy is refused before anything is asked (A)",
+     (await enrol(registrar, { email: "noboy@example.invalid", name: "No Boy", role: "player", schoolId: HIL, teamCode: "U13A" })).body?.error === "player_required");
+
   group("The code is issued once, and it works");
+  // db/169 (Q12, D): the office ticks "The signed consent form is on file" for a boy under 18, with who signed it and when.
+  const signedOn = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const withCode = await enrol(registrar, { ...body("j.sithole@example.invalid", "J Sithole", SITHOLE, "U13A"),
-                                            withCode: true });
+                                            withCode: true, formOnFile: true, formSignedBy: "M Sithole", formSignedOn: signedOn });
+  {
+    const rec = await q(`select how, form_signed_by, form_signed_on::text as d from pupil_signin_consent where player_id = $1 and answer = 'yes'`, [SITHOLE]);
+    ok("the form is on record with its signer and its day", rec.length === 1 && rec[0].how === "office" && rec[0].form_signed_by === "M Sithole" && rec[0].d === signedOn, JSON.stringify(rec));
+  }
   ok("the office asks for a code and gets one", withCode.status === 200 && typeof withCode.body?.code === "string");
   ok("...with an expiry, so a code left on a desk does not work forever", !!withCode.body?.expiresAt);
   const stored = await q(`select code_hash from login_code where user_id = $1`, [withCode.body.userId]);
@@ -176,6 +194,29 @@ try {
   const spent = await api("/api/auth/redeem", { method: "POST",
     body: { email: "j.sithole@example.invalid", code: withCode.body.code, deviceId: "another-phone" } });
   ok("...and the code cannot be spent twice", spent.status !== 200);
+
+  group("His own sign-in, as the office reads and answers it (db/169: S4, D, E, S5, S10)");
+  {
+    const st = await api(`/api/players/${SITHOLE}/own-signin`, { token: registrar });
+    ok("the office reads the form's signer and day", st.status === 200 && st.body?.ownSignIn?.office === true
+       && st.body.ownSignIn.formSignedBy === "M Sithole" && st.body.ownSignIn.formSignedOn === signedOn, JSON.stringify(st.body));
+    ok("a coach reads nothing of it", (await api(`/api/players/${SITHOLE}/own-signin`, { token: coach })).status === 403);
+    ok("a coach records no withdrawal", (await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: coach, body: { withdrawn: true } })).status === 403);
+    const wd = await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: registrar, body: { withdrawn: true } });
+    ok("the office records a withdrawal: closed", wd.status === 200 && wd.body?.inForce === false, JSON.stringify(wd.body));
+    const noSigner = await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: registrar, body: { formOnFile: true } });
+    ok("a new form, naming nobody and no day, is recorded (D is optional until counsel), and opens him again",
+       noSigner.status === 200 && noSigner.body?.inForce === true && noSigner.body?.held === null, JSON.stringify(noSigner.body));
+    const st2 = await api(`/api/players/${SITHOLE}/own-signin`, { token: registrar });
+    ok("...and the office reads it as recorded without them", st2.body?.ownSignIn?.yesHow === "office" && st2.body.ownSignIn.formSignedBy === null && st2.body.ownSignIn.formSignedOn === null, JSON.stringify(st2.body));
+    const again = await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: registrar,
+      body: { formOnFile: true, formSignedBy: "M Sithole", formSignedOn: signedOn } });
+    ok("a form named and dated is recorded beside it", again.status === 200 && again.body?.inForce === true && again.body?.held === null, JSON.stringify(again.body));
+    const retry = await api(`/api/players/${SITHOLE}/own-signin/office`, { method: "POST", token: registrar, body: { retry: true } });
+    ok("trying again with nothing waiting is answered, not refused", retry.status === 200 && retry.body?.inForce === true);
+    ok("'This account is not him' is the office's: a coach is refused",
+       (await api(`/api/pupil-claims/00000000-0000-4000-8000-000000000001/not-him`, { method: "POST", token: coach })).status === 403);
+  }
 
   group("Enrolling without a code still makes a real account");
   const noCode = await enrol(registrar, body("b.khumalo@example.invalid", "B Khumalo", KHUMALO, "U13A"));
