@@ -301,6 +301,22 @@ CREATE OR REPLACE FUNCTION family_link_ended_on(p_player uuid, p_person uuid) RE
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION family_link_ended_on(uuid,uuid) FROM PUBLIC;
 
+-- Q5 (Kameel, 26 Nov 2026): is this address a pupil's own at this school?
+-- (an account it belongs to is a pupil's, person_is_pupil(), and his roster
+-- row, his claim or a pupil's role is at this school). Asked of this school
+-- only, so a refusal says nothing of another school's children; a pupil of
+-- another school is refused at the claim instead (family_register_try()).
+CREATE OR REPLACE FUNCTION family_address_pupil_here(p_email text, p_school uuid) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM family_address_accounts(p_email) a(id)
+     WHERE person_is_pupil(a.id)
+       AND (EXISTS (SELECT 1 FROM app_user u JOIN player p ON p.id = u.player_id WHERE u.id = a.id AND p.school_id = p_school)
+            OR EXISTS (SELECT 1 FROM pupil_claim c WHERE c.user_id = a.id AND c.school_id = p_school)
+            OR EXISTS (SELECT 1 FROM role_assignment r WHERE r.person_id = a.id AND r.role IN ('player', 'selfaccess')
+                                                         AND r.school_id = p_school)))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_address_pupil_here(text,uuid) FROM PUBLIC;
+
 -- Does this person hold a live guardian link to this child already?
 CREATE OR REPLACE FUNCTION family_link_live(p_player uuid, p_person uuid) RETURNS boolean AS $$
   SELECT EXISTS (SELECT 1 FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id
@@ -337,7 +353,13 @@ REVOKE ALL ON FUNCTION family_register_notice(uuid,text,text) FROM PUBLIC;
 --              player_is_an_adult · player_has_an_account · already_linked ·
 --              link_revoked · valid_until_invalid · valid_until_past ·
 --              valid_until_too_far · valid_until_required ·
---              duplicate_in_file · already_listed · warning_not_acknowledged
+--              duplicate_in_file · already_listed · warning_not_acknowledged ·
+--              born_unconfirmed (Q4: a pupil row for a boy of 18, or 18
+--              within 60 days, waits for "Confirm his date") ·
+--              shared_address (Q5: the same address as a parent's and as the
+--              pupil's own for one child, in the file or open on the list) ·
+--              pupil_address (Q5: a parent's row whose address is a pupil's
+--              own at this school)
 --   a warning  link_ended: this child has a guardian link that ended
 --              (ended_on), and `ack`, the key the commit must carry
 --   the call   not_permitted · no_rows · too_many_rows (line 0)
@@ -424,6 +446,18 @@ BEGIN
     -- Refused: this address's own link to this child was ended.
     ELSIF EXISTS (SELECT 1 FROM family_address_accounts(v_email) a(id) WHERE family_link_ended_on(v_player, a.id) IS NOT NULL) THEN
       v_problem := 'link_revoked';
+    -- Q4: an adult's own row, or one who is 18 within 60 days, only on a date
+    -- the office has confirmed (db/173's player_born_confirmed()).
+    ELSIF v_kind = 'pupil' AND majority_on(v_born) <= sa_today() + 60 AND NOT coalesce(player_born_confirmed(v_player), false) THEN
+      v_problem := 'born_unconfirmed';
+    -- Q5: a parent's row on a pupil's own address at this school.
+    ELSIF v_kind = 'guardian' AND family_address_pupil_here(v_email, p_school) THEN
+      v_problem := 'pupil_address';
+    -- Q5: one child's address as a parent's and as his own, already open here.
+    ELSIF EXISTS (SELECT 1 FROM family_register g
+                   WHERE g.school_id = p_school AND g.player_id = v_player AND g.email = v_email AND g.kind <> v_kind
+                     AND g.claimed_at IS NULL AND g.withdrawn_at IS NULL AND g.redacted_at IS NULL AND g.valid_until >= sa_today()) THEN
+      v_problem := 'shared_address';
     END IF;
 
     IF v_problem IS NULL THEN
@@ -450,6 +484,10 @@ BEGIN
       v_key := v_player::text || '|' || v_email || '|' || v_kind;
       IF v_seen ? v_key THEN
         v_problem := 'duplicate_in_file'; v_detail := v_seen->>v_key;
+      -- Q5, in the file: the same child and address under the other kind.
+      ELSIF v_seen ? (v_player::text || '|' || v_email || '|' || CASE v_kind WHEN 'guardian' THEN 'pupil' ELSE 'guardian' END) THEN
+        v_problem := 'shared_address';
+        v_detail := v_seen->>(v_player::text || '|' || v_email || '|' || CASE v_kind WHEN 'guardian' THEN 'pupil' ELSE 'guardian' END);
       ELSE
         v_seen := v_seen || jsonb_build_object(v_key, v_line);
       END IF;
@@ -1077,7 +1115,7 @@ DECLARE
                              'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                              'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
                              'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
-                             'family_register_after_end(uuid,text)'];
+                             'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)'];
 BEGIN
   FOREACH f IN ARRAY v_doors LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure);
@@ -1177,7 +1215,7 @@ BEGIN
                                'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                                'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
                                'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
-                               'family_register_after_end(uuid,text)']) LOOP
+                               'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/174: % does not pin its search_path', f;

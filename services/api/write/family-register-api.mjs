@@ -78,6 +78,10 @@ export const FAMILY_PROBLEM_WORDS = {
   duplicate_in_file:        (d) => `the same child, address and kind is on row ${d}.`,
   already_listed:           (d) => `already listed, open until ${dayWords(d)}.`,
   warning_not_acknowledged: () => "tick the warning to list this row anyway.",
+  // Kameel, 26 Nov 2026 (Q4, Q5): the words name the step.
+  born_unconfirmed:         () => "Confirm his date first. He is 18, or will be within 60 days, so his own row waits for the office to confirm his date of birth on his profile.",
+  shared_address:           (d) => `the same address is listed as a parent's and as the pupil's own for this child${d ? ` (row ${d})` : ""}. Link this family by hand.`,
+  pupil_address:            () => "that address is a pupil's own at your school, so it is not listed as a parent's. Link this family by hand.",
 };
 
 /** The call's own refusals (line 0). @type {Record<string, [number, string]>} */

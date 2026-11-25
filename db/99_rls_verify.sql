@@ -18252,6 +18252,13 @@ CREATE OR REPLACE FUNCTION _v174_boy(p_tag text, p_years integer, p_days integer
           (sa_today() - make_interval(years => p_years, days => p_days))::date)
   RETURNING id
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A Westville boy, as the owner (the case cannot read another school's roster).
+CREATE OR REPLACE FUNCTION _v174_wes_boy(p_tag text) RETURNS uuid AS $$
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES ('22222222-2222-2222-2222-222222222222', 'U15A', 'Verify Onesevenfour ' || initcap(p_tag), 'Onesevfour', 174, 'batter',
+          (sa_today() - make_interval(years => 14, days => 40))::date)
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 CREATE OR REPLACE FUNCTION _v174_born(p_player uuid) RETURNS date AS $$
   SELECT born FROM player WHERE id = p_player
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -18388,6 +18395,24 @@ CREATE OR REPLACE FUNCTION _v174_no_child_role() RETURNS text AS $$
   SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'school_register'::regclass AND conname = 'no_child_role'
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
+-- The office's "Confirm his date" (db/173), as p_as: ok or the refusal.
+CREATE OR REPLACE FUNCTION _v174_confirm(p_as uuid, p_player uuid) RETURNS text AS $$
+DECLARE v text; was text := current_setting('app.user_id', true);
+BEGIN
+  PERFORM set_config('app.user_id', p_as::text, true);
+  SELECT CASE WHEN c.ok THEN 'ok' ELSE c.reason END INTO v FROM player_born_confirm(p_player) c;
+  PERFORM set_config('app.user_id', coalesce(was, ''), true);
+  RETURN v;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- A pupil's own account at Hilton, enrolled with a Google sign-in (his
+-- roster link), as the office's enrolment leaves one.
+CREATE OR REPLACE FUNCTION _v174_pupil_account(p_tag text, p_player uuid) RETURNS uuid AS $$
+DECLARE u uuid;
+BEGIN
+  u := _v174_google(p_tag);
+  UPDATE app_user SET player_id = p_player, school_id = '11111111-1111-1111-1111-111111111111' WHERE id = u;
+  RETURN u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- One row listed, as p_as (the application under his session): 'ok' and
 -- the row's id in p_row, or the row's problem (or the call's, line 0).
 CREATE OR REPLACE FUNCTION _v174_list(p_as uuid, p_player uuid, p_email text, p_kind text DEFAULT 'guardian',
@@ -18662,6 +18687,7 @@ BEGIN
     PERFORM _assert(r.result = 'player_has_an_account', format('§149 (pupil): a row for a boy with an account answered %s', r.result));
     -- A boy of 18: his own request for player, with the date.
     BOY := _v174_boy(T || 'e', 18, 60);
+    PERFORM _assert(_v174_confirm(REG, BOY) = 'ok', '§149 (pupil): the office could not confirm his date');
     U := _v174_google(T || '.e');
     SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.e@example.invalid', 'pupil'); ROW_ := r.row_id;
     SELECT * INTO r FROM _v174_ask(U, 'player', _v174_born(BOY));
@@ -18759,7 +18785,7 @@ BEGIN
     PERFORM _assert(n = 0, '§149 (upload): a file with bad rows committed its good one');
     PERFORM set_config('app.user_id', '', true);
     -- A child of Westville, by id: no child here.
-    SELECT p.id INTO BOY2 FROM player p WHERE p.school_id = '22222222-2222-2222-2222-222222222222' LIMIT 1;
+    BOY2 := _v174_wes_boy(T || 'wes');
     SELECT * INTO r FROM _v174_list(REG, BOY2, 'v174.' || T || '.wes@example.invalid');
     PERFORM _assert(r.result = 'player_unknown', format('§149 (upload): a Westville boy answered %s', r.result));
     -- An adult's guardian row, a child with no date of birth.
@@ -18987,6 +19013,7 @@ BEGIN
     -- (pupilend) A boy of 18 the list let in holds `player` and his own
     -- record's role; End role on the row's `player` ends both.
     BOY := _v174_boy(T, 18, 60); U := _v174_google(T || '.e');
+    PERFORM _assert(_v174_confirm(REG, BOY) = 'ok', '§149 (pupilend): the office could not confirm his date');
     SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.e@example.invalid', 'pupil');
     SELECT * INTO r FROM _v174_ask(U, 'player', _v174_born(BOY));
     PERFORM _assert(r.answer = 'in', format('§149 (pupilend): the list did not let him in: %s', r.answer));
@@ -18997,6 +19024,55 @@ BEGIN
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert(Q IS NOT NULL AND NOT _v174_live(Q) AND _v92_held(U, HIL) = '',
       format('§149 (pupilend): ending player left him holding %s', _v92_held(U, HIL)));
+
+  ELSIF p_case = 'adult' THEN
+    -- (adult) Q4 (Kameel, 26 Nov 2026): a pupil row for a boy who is 18, or
+    -- turns 18 within 60 days, waits for "Confirm his date"; once the office
+    -- has confirmed it, it lists. A boy 18 in more than 60 days lists as before.
+    BOY := _v174_boy(T || 'a', 18, 10);
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.a@example.invalid', 'pupil');
+    PERFORM _assert(r.result = 'born_unconfirmed', format('§149 (adult): an 18-year-old''s unconfirmed row answered %s', r.result));
+    BOY2 := _v174_boy(T || 'soon', 17, 365 - 30);
+    SELECT * INTO r FROM _v174_list(REG, BOY2, 'v174.' || T || '.soon@example.invalid', 'pupil');
+    PERFORM _assert(r.result = 'born_unconfirmed', format('§149 (adult): a boy 18 within 60 days answered %s', r.result));
+    PERFORM _assert(_v174_confirm(REG, BOY) = 'ok', '§149 (adult): the office could not confirm his date');
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.a@example.invalid', 'pupil');
+    PERFORM _assert(r.result = 'ok', format('§149 (adult): a confirmed date''s row answered %s', r.result));
+    BOY2 := _v174_boy(T || 'young', 17, 100);
+    SELECT * INTO r FROM _v174_list(REG, BOY2, 'v174.' || T || '.young@example.invalid', 'pupil');
+    PERFORM _assert(r.result = 'ok', format('§149 (adult): a boy 18 in over 60 days answered %s', r.result));
+
+  ELSIF p_case = 'mailbox' THEN
+    -- (mailbox) Q5 (Kameel, 26 Nov 2026): one child's address as a parent's
+    -- and as the pupil's own is refused, in the file and against the list;
+    -- a parent's row on a pupil's own address at this school is refused; a
+    -- pupil of another school's address is not spoken of at upload (the
+    -- claim refuses him).
+    BOY := _v174_boy(T, 14);
+    PERFORM _as(REG);
+    SELECT string_agg(coalesce(u.problem, 'ok'), ',' ORDER BY u.line) INTO v FROM family_register_upload(HIL, jsonb_build_array(
+      jsonb_build_object('player_id', BOY, 'email', 'v174.' || T || '.shared@example.invalid', 'kind', 'guardian', 'relationship', 'parent'),
+      jsonb_build_object('player_id', BOY, 'email', 'v174.' || T || '.shared@example.invalid', 'kind', 'pupil')), false) u;
+    PERFORM _assert(v = 'ok,shared_address', format('§149 (mailbox): one address twice in a file reads %s', v));
+    PERFORM set_config('app.user_id', '', true);
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.shared@example.invalid', 'pupil');
+    PERFORM _assert(r.result = 'ok', format('§149 (mailbox): his own row was refused: %s', r.result));
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.shared@example.invalid');
+    PERFORM _assert(r.result = 'shared_address', format('§149 (mailbox): a parent''s row on his listed address answered %s', r.result));
+    -- A pupil's own account at this school.
+    BOY2 := _v174_boy(T || 'own', 15);
+    U := _v174_pupil_account(T || '.pupil', BOY2);
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.pupil@example.invalid');
+    PERFORM _assert(r.result = 'pupil_address', format('§149 (mailbox): a parent''s row on a pupil''s address answered %s', r.result));
+    -- A pupil of Westville's: nothing said of him at Hilton's upload; his claim is refused.
+    BOY2 := _v174_wes_boy(T || 'wes');
+    U := _v174_google(T || '.wes');
+    PERFORM _v174_has_account(U, BOY2);
+    PERFORM _assert(_v174_player_of(U) = BOY2, '§149 (mailbox): the Westville pupil has no account (the case proves nothing)');
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.wes@example.invalid');
+    PERFORM _assert(r.result = 'ok', format('§149 (mailbox): another school''s pupil was spoken of at upload: %s', r.result));
+    SELECT * INTO r FROM _v174_ask(U, 'guardian', _v174_born(BOY));
+    PERFORM _assert(r.answer = 'sent' AND _v174_link(U, BOY) = '', format('§149 (mailbox): a pupil''s account was linked as a parent: %s', r.answer));
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The doors are scrbrd_app's alone; the rest, nobody's.
@@ -19014,7 +19090,7 @@ BEGIN
                              'family_register_try(uuid,uuid,text,date,uuid)', 'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                              'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
                              'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
-                             'family_register_after_end(uuid,text)'] LOOP
+                             'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)'] LOOP
       PERFORM _assert(_v168_acl(v) = '', format('§149 (grants): %s is granted %s', v, _v168_acl(v)));
     END LOOP;
   ELSE
@@ -51628,6 +51704,10 @@ $m130$;
   --   (perchild) list-made is per child: a hand-made child on the same
   --              assignment keeps the rule
   --   (pupilend) End role on a pupil's list-made player ends his selfaccess too
+  --   (adult)    Q4: a pupil row for a boy of 18, or 18 within 60 days,
+  --              waits for "Confirm his date"
+  --   (mailbox)  Q5: one address as a parent's and the pupil's own refused;
+  --              a parent's row on a pupil's address here refused
   --   (grants)   ACLs of every function
   -- Broken by hand (25 Nov 2026), each went red for its own reason:
   --   the uploader's authority not asked        → (departed) red: linked
@@ -51640,6 +51720,11 @@ $m130$;
   --   any provider's sign-in matched, not Google's only → (address) red: linked
   --   list-made asked of the assignment, not the child → (perchild) red
   --   a pupil's selfaccess not ended with his player   → (pupilend) red
+  --   the adult row's "Confirm his date" not asked → (adult) red
+  --   the 60 days not counted                       → (adult) red
+  --   a parent's row on a pupil's address let in     → (mailbox) red
+  --   the shared address let in, in the file          → (mailbox) red
+  --   the shared address let in, against the list     → (mailbox) red
   --   the revoked address let into the upload   → (revoked) red
   --   the requester shown her own line          → (date) red
   --   a pupil under 18 let in on player         → (pupil) red: in
@@ -51662,6 +51747,8 @@ $m130$;
   PERFORM _v174_case('revoke');
   PERFORM _v174_case('perchild');
   PERFORM _v174_case('pupilend');
+  PERFORM _v174_case('adult');
+  PERFORM _v174_case('mailbox');
   PERFORM _v174_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/174 (section 149) ─────────────────────────────────────────
