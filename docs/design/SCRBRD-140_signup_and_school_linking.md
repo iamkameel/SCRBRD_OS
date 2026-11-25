@@ -10,6 +10,8 @@ school-provided register." Added to Fable's list the same day: "security isn't c
 - A disable keeps the school's yes (13:37; account lifecycle D1). Switching a boy's account off and on again does not end it. His account ending, his roster link moving, or leaving the school (a move to another school included) still end it.
 - Date of birth (13:38): the office corrects it, and every change is audited. His note: "Date of birth should be match with an ID No." db/169 leaves the date as today; a follow-up, db/172, logs each correction (old date, new date, who) and refuses a date that disagrees with the ID number, on the server.
 - Slice 5, the parent's terms screen (18:06): Kameel's six calls decided "All six as recommended"; it is built after the 25 Nov reset.
+- Migration B (db/169) pasted on the demo and production on 25 Nov 2026 from commit 7a93c9a6, hash-checked (#376, merge 2ca38815). Kameel (25 Nov, 07:08): db/169 to db/171, "Yes: all three in order, demo first; count first". The read-only count before the paste found 0 accounts that would close on either database (demo 0 of 4 pupil accounts, production 0 of 1).
+- db/172, date of birth (Kameel, 25 Nov, all six as recommended): the owner's own writes keep their exemption; the office only corrects; a wrong ID number is corrected by hand for the pilot; a parent's link end dates follow a correction (a follow-up); the change history joins the audit log for audit readers; a correction carries a required reason.
 
 What this document reads from, by name, is in Appendix A. Opus builds from it; the lead
 numbers the migration, the `db/99` section and the phases at build.

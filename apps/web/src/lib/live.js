@@ -81,6 +81,10 @@ function asMatch(r) {
     season: r.season ?? null,
     overs: r.overs,
     format: r.format,
+    // What the fixture asks the pad to declare at the toss (db/170): "full"
+    // is Pro mode, the shot and the field on every ball; null asks nothing,
+    // and the pad scores one tap a ball (redesign slice 3).
+    captureProfile: r.capture_profile ?? null,
     schoolId: r.school_id,
     // The away side's school, where it is a school on SCRBRD: a fixture between
     // two of one school's own teams is a scorebook's "both sides ours" (SCRBRD-120).

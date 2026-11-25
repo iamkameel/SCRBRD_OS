@@ -24,6 +24,7 @@ import { endOf, fixturesOf, opponentOf } from "../../lib/family.js";
 import { bandLine, bandOfTeam, captaincyOf, currentSchoolSeason, ordinal, pitchWords, planLine, planOf, planRead, sheetOf, termsOf } from "../../lib/captain.js";
 import { conditionsWords } from "../../scorer/conditionsLine.jsx";
 import { Action, Card, Line, whenOf } from "./parts.jsx";
+import { MatchCard } from "../../ui/matchCard.jsx";
 
 /**
  * Is he the captain, for this season? `season` undefined is "the current
@@ -61,43 +62,69 @@ const startOf = (m) => Date.parse(m.startsAt ?? `${m.date}T${m.time ?? "00:00"}:
 // ── C1 · The Home card ─────────────────────────────────
 
 /**
+ * The fixture the card is about: his side's live one, else the next within
+ * seven days (§3.2); null for neither, and the card is not drawn.
+ * @param {any} me  @param {any[]} matches  @param {number} now
+ */
+export function captainFixture(me, matches, now) {
+  const { live, upcoming } = fixturesOf(matches, me, now);
+  const soon = upcoming[0] && startOf(upcoming[0]) - now <= DAY7 ? upcoming[0] : null;
+  return live[0] ?? soon ?? null;
+}
+
+/**
  * Under his next fixture, only while the gate passes and a fixture of his
  * side is live or within seven days (§3.2). The label is the honour's:
  * "Vice-captain" for that kind. Names nobody on the side; the count is the
  * sheet's, not an answer anybody gave.
- * @param {{ me: any, role: string, matches: any[], now: number, onOpen: (m: any, kind: "fixture" | "match") => void }} p
+ *
+ * Where it sits (redesign slice 8, Kameel's question 5 (a), 19 Nov): `place`
+ *   "card"   C1 as designed, under his next fixture, on any day but his match day
+ *   "lead"   his match day, before play: his Home leads with it, and the
+ *            fixture's own match card is drawn inside it in place of the
+ *            fixture line, so the match is said once (the next-fixture card
+ *            under it then leaves its own out)
+ *   "under"  once his match is live: inside the board's lead, under it, with no
+ *            fixture line (the board says the match)
+ * The content is C1's in every place, and nothing more: the label, the count
+ * of the side, the plan's one line, one action. `cap` is the Home's own
+ * useCaptaincy() answer, so the gate is read once.
+ * @param {{ cap: any, me: any, role: string, matches: any[], now: number, place?: "card" | "lead" | "under",
+ *           onOpen: (m: any, kind: "fixture" | "match") => void }} p
  */
-export function CaptainCard({ me, role, matches, now, onOpen }) {
-  const { cap } = useCaptaincy(me, role, undefined);
-  const { live, upcoming } = fixturesOf(matches, me, now);
-  const soon = upcoming[0] && startOf(upcoming[0]) - now <= DAY7 ? upcoming[0] : null;
-  const next = live[0] ?? soon;
+export function CaptainCard({ cap, me, role, matches, now, onOpen, place = "card" }) {
+  const next = captainFixture(me, matches, now);
   if (!cap || !next) return null;
-  return <CaptainCardFor cap={cap} next={next} me={me} role={role} onOpen={onOpen}/>;
+  return <CaptainCardFor cap={cap} next={next} me={me} role={role} onOpen={onOpen} place={place} now={now}/>;
 }
 
-function CaptainCardFor({ cap, next, me, role, onOpen }) {
+function CaptainCardFor({ cap, next, me, role, onOpen, place, now }) {
   const { rows: sheet } = useLive("match_squad", role, 0, { matchId: next.id });
   // Phase B (§5.3): the coach's plan for this fixture and his side, if one is live.
   const { rows: news } = useLive("news", role, 0, planRead(next.id));
   const named = sheet.filter((r) => r.side === endOf(next, me)).length;
   const plan = planOf(news, next.id, { school: me.school ?? null, team: me.team ?? null });
-  return <CaptainCardView cap={cap} next={next} me={me} named={named} plan={plan} onOpen={onOpen}/>;
+  return <CaptainCardView cap={cap} next={next} me={me} named={named} plan={plan} onOpen={onOpen} place={place} now={now}/>;
 }
 
 /**
  * The card, from what it was given (pure, so the test can draw it with and
- * without a plan). The plan's line is drawn only with a live plan, after the
- * count of the side; the card's one action opens the fixture, where the block
- * is. The card draws when it did, so the line goes when the card goes.
+ * without a plan, in each place). The plan's line is drawn only with a live
+ * plan, after the count of the side; the card's one action opens the fixture,
+ * where the block is, or the match once it is live. The card draws when it
+ * did, so the line goes when the card goes.
  */
-export function CaptainCardView({ cap, next, me, named, plan, onOpen }) {
+export function CaptainCardView({ cap, next, me, named, plan, onOpen, place = "card", now }) {
   const isLive = next.status === "live";
-  return (
-    <Card label={`${cap.label} · ${[me.schoolName, me.team].filter(Boolean).join(" ")}`} testid="captain-card">
-      <p data-testid="captain-card-fixture" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>
-        v {opponentOf(next, me)} ({endOf(next, me)}) · {isLive ? "live now" : whenOf(next)}
-      </p>
+  const label = `${cap.label} · ${[me.schoolName, me.team].filter(Boolean).join(" ")}`;
+  const body = (
+    <>
+      {place === "card" && (
+        <p data-testid="captain-card-fixture" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>
+          v {opponentOf(next, me)} ({endOf(next, me)}) · {isLive ? "live now" : whenOf(next)}
+        </p>
+      )}
+      {place === "lead" && <MatchCard size="card" match={next} ownEnd={endOf(next, me)} now={now ?? Date.now()} testid="captain-card-match" statusTestid="captain-card-status"/>}
       <Line quiet testid="captain-card-side">{named ? `${named} named in the side` : "The side is not out yet"}</Line>
       {plan && <Line testid="captain-card-plan">{planLine(plan)}</Line>}
       <div>
@@ -105,8 +132,19 @@ export function CaptainCardView({ cap, next, me, named, plan, onOpen }) {
           {isLive ? "Open the match" : "Match day"}
         </Action>
       </div>
-    </Card>
+    </>
   );
+  // Under the board: a part of the lead, a hairline above it, not a second card.
+  if (place === "under") {
+    return (
+      <section data-testid="captain-card" data-place="under" aria-label={label}
+        style={{ borderTop: `1px solid ${T.line.normal}`, paddingTop: T.space.md, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.sm }}>
+        <h2 style={{ ...T.role.label, color: T.content.secondary, margin: 0 }}>{label}</h2>
+        {body}
+      </section>
+    );
+  }
+  return <Card label={label} testid="captain-card" weight={place === "lead" ? "lead" : "standard"}>{body}</Card>;
 }
 
 // ── C2 · The fixture's Captain section ─────────────────

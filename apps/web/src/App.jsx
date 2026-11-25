@@ -378,6 +378,9 @@ export default function SCRBRD_OS() {
         // says whether a no-ball gives a free hit (SCRBRD-113).
         ...(m.startsAt ? { startsAt: m.startsAt } : {}),
         ...(m.format ? { format: m.format } : {}),
+        // Pro mode (db/170): the fixture's coach asked for the shot and the
+        // field, so the first innings is declared full at the toss.
+        ...(m.captureProfile ? { captureProfile: m.captureProfile } : {}),
         // Each side named in full ("Hilton College 1XI"), where the read gives it: the other-phone screen's title (slice 13).
         ...(m.homeLabel ? { homeLabel: m.homeLabel } : {}),
         ...(m.awayLabel ? { awayLabel: m.awayLabel } : {}),
