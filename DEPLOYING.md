@@ -2720,13 +2720,16 @@ the lines that would make a boy 18: the office commits them on its tick of that
 count; anyone else's are left out with one sentence. `pupil_signin_carry_over()`
 carries over only own links stamped before db/169's first paste. The seeded
 test account (spectator@example.invalid) is no longer let through the sign-in
-gate by its id, and its live `player` assignment is ended. Its proof is db/99
-§148.
+gate by its id, and its live `player` assignment is ended. Before her "Allow his
+own sign-in", a guardian reads what the recognised account typed (its name and
+year) and the day the office recognised it (`pupil_signin_account()`, Q3); a
+claim held for a safeguarding concern reads as none, and a yes no longer opens
+that account. Its proof is db/99 §148.
 
 To paste, in this order:
 
 1. **db/169, then db/170, db/171 and db/172**, each as its own section says.
-   db/173 replaces two functions of db/172 and two of db/169 whole, and patches
+   db/173 replaces two functions of db/172 and three of db/169 whole, and patches
    `audit_log()` by needle, each only over the body that file left (or its own,
    on a second paste): anything else fails the paste loudly, changing nothing.
 2. **db/173 as one transaction:** the SQL Editor's single run, or `psql -1 -v

@@ -17887,6 +17887,11 @@ CREATE OR REPLACE FUNCTION _v173_pupil_roles(p_account uuid) RETURNS integer AS 
   SELECT count(*)::int FROM role_assignment a
    WHERE a.person_id = p_account AND a.active AND a.role IN ('player', 'selfaccess')
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The first guardian linked to a boy, past row security.
+CREATE OR REPLACE FUNCTION _v169_guardian_of_first(p_boy uuid) RETURNS uuid AS $$
+  SELECT a.person_id FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id
+   WHERE s.player_id = p_boy AND a.role = 'guardian' AND s.consent_state = 'granted' ORDER BY s.created_at, s.id LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A function's body, owner-only to read in general.
 CREATE OR REPLACE FUNCTION _v173_body(p_fn text) RETURNS text AS $$
   SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure(p_fn)
@@ -17914,7 +17919,7 @@ DECLARE
   B       date := make_date(extract(year FROM sa_today())::int - 14, 5, 17);
   IDN     text := to_char(make_date(extract(year FROM sa_today())::int - 14, 5, 17), 'YYMMDD') || '5173084';
   IDA     text := to_char((sa_today() - interval '19 years')::date, 'YYMMDD') || '5173084';
-  BOY uuid; BOY2 uuid; BOY3 uuid; K uuid; SUP uuid; v text; v2 text; n int; ok_ boolean; why text; r record;
+  BOY uuid; BOY2 uuid; BOY3 uuid; K uuid; K1 uuid; SUP uuid; v text; v2 text; n int; ok_ boolean; why text; r record;
 BEGIN
   PERFORM set_config('app.user_id', '', true);
 
@@ -18117,6 +18122,60 @@ BEGIN
     -- The seed's team-mate (mate@), who names his boy, reads the side.
     PERFORM _assert(_v169_open('88888888-0000-0000-0000-000000000173'), '§148 (gate): the seed''s team-mate is closed');
 
+  ELSIF p_case = 'account' THEN
+    -- (account) Q3 (Kameel, 25 Nov 2026): before her yes, his guardian reads
+    -- what the account the office recognised as him typed (name, year) and
+    -- the day it was recognised; nothing else of it, never its email. Another
+    -- boy's guardian, one who has not agreed the terms, the office, the
+    -- account itself and the seed's pupil read nothing. A claim held for a
+    -- safeguarding concern reads as none, and her yes does not open it.
+    BOY := _v168_boy(HIL, 'v173acct', 14);
+    K := _v168_account('v173acct'); K1 := K;
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Typedname', 'Grade 9');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), BOY);
+    PERFORM set_config('app.user_id', '', true);
+    SUP := _v169_guardian(BOY, 'v173acct', true);
+    PERFORM _as(SUP);
+    SELECT count(*) INTO n FROM pupil_signin_account(BOY);
+    SELECT * INTO r FROM pupil_signin_account(BOY);
+    PERFORM _assert(n = 1 AND r.typed_name = 'Verify Typedname' AND r.typed_year = 'Grade 9' AND r.recognised_on = sa_today(),
+                    format('§148 (account): his guardian reads %s rows: %s', n, row_to_json(r)));
+    PERFORM _assert(row_to_json(r)::text !~ '@' AND row_to_json(r)::text !~* 'v163',
+                    format('§148 (account): the read carries more than the three: %s', row_to_json(r)));
+    PERFORM _assert((SELECT array_to_string(p.proargnames, ',') FROM pg_proc p WHERE p.oid = 'pupil_signin_account(uuid)'::regprocedure)
+                    = 'p_player,typed_name,typed_year,recognised_on', '§148 (account): the read answers more than the three');
+    BOY2 := _v168_boy(HIL, 'v173other', 14);
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH K IN ARRAY ARRAY[_v169_guardian(BOY2, 'v173other', true), _v169_guardian(BOY, 'v173notagreed', false),
+                             REG, K, '88888888-0000-0000-0000-000000000009'::uuid] LOOP
+      PERFORM _as(K);
+      SELECT count(*) INTO n FROM pupil_signin_account(BOY);
+      PERFORM _assert(n = 0, format('§148 (account): %s reads %s rows', K, n));
+    END LOOP;
+    -- A second boy whose account is not held: her yes opens it (the control).
+    BOY3 := _v168_boy(HIL, 'v173open', 14);
+    K := _v168_account('v173open');
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Openname', NULL);
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), BOY3);
+    PERFORM set_config('app.user_id', '', true);
+    SUP := _v169_guardian(BOY3, 'v173open', true);
+    PERFORM _as(SUP); PERFORM pupil_signin_consent_set(BOY3, true);
+    PERFORM _assert(_v168_claim(K) LIKE 'open|%', format('§148 (account): the control''s yes left his claim %s', _v168_claim(K)));
+    -- The first boy's account raises a concern: it reads as none, and her yes leaves it shut.
+    K := K1;
+    PERFORM _as(K);
+    SELECT x.ok INTO ok_ FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
+      'Verify 173: somebody at nets keeps shouting at me.', 'victim') x;
+    PERFORM _assert(ok_, '§148 (account): he could not raise his concern');
+    PERFORM set_config('app.user_id', '', true);
+    SUP := _v169_guardian_of_first(BOY);
+    PERFORM _as(SUP);
+    SELECT count(*) INTO n FROM pupil_signin_account(BOY);
+    PERFORM _assert(n = 0, format('§148 (account): a held claim reads %s rows', n));
+    PERFORM pupil_signin_consent_set(BOY, true);
+    PERFORM _assert(_v168_claim(K) LIKE 'recognised|%' AND _v173_pupil_roles(K) = 0,
+                    format('§148 (account): her yes opened a held claim''s account: %s, %s roles', _v168_claim(K), _v173_pupil_roles(K)));
+
   ELSIF p_case = 'grants' THEN
     -- (grants) The office's two doors are the application's; the two
     -- readers they stand on nobody's; definer throughout, the check as the
@@ -18125,7 +18184,8 @@ BEGIN
       ('player_born_confirm(uuid)', 'scrbrd_app:EXECUTE', true), ('born_unconfirmed(uuid)', 'scrbrd_app:EXECUTE', true),
       ('player_born_confirmed(uuid)', '', true), ('pupil_signin_first_paste()', '', false),
       ('pupil_signin_carry_over()', '', false), ('pupil_signin_open(uuid)', '', true),
-      ('player_born_checked()', '', false), ('player_born_record()', '', true)) AS t(fn, acl, definer) LOOP
+      ('player_born_checked()', '', false), ('player_born_record()', '', true),
+      ('pupil_signin_account(uuid)', 'scrbrd_app:EXECUTE', true), ('pupil_signin_after_yes(uuid,text)', '', true)) AS t(fn, acl, definer) LOOP
       PERFORM _assert(_v168_acl(r.fn) IS NOT DISTINCT FROM r.acl, format('§148 (grants): %s is granted %s', r.fn, coalesce(_v168_acl(r.fn), 'NULL (missing)')));
       PERFORM _assert(_v172_definer(r.fn) IS NOT DISTINCT FROM r.definer, format('§148 (grants): %s definer is %s', r.fn, _v172_definer(r.fn)));
     END LOOP;
@@ -50685,12 +50745,17 @@ $m130$;
   --             re-dated to 15) not carried
   --   (gate)    the seeded test account: no pupil's role; given one, closed;
   --             the gate does not name it; the seed's team-mate open
+  --   (account) Q3: his guardian reads the three fields and no more, never
+  --             an email; another boy's guardian, one not agreed, the office,
+  --             the account and a pupil nothing; a held claim reads as none
+  --             and her yes does not open it, while a control's yes does
   --   (grants)  ACLs and definer/invoker
   PERFORM _v173_case('first');
   PERFORM _v173_case('idnum');
   PERFORM _v173_case('coming');
   PERFORM _v173_case('carry');
   PERFORM _v173_case('gate');
+  PERFORM _v173_case('account');
   PERFORM _v173_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/173 (section 148) ─────────────────────────────────────────

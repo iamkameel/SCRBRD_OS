@@ -64,6 +64,17 @@
 --   ~ pupil_signin_open() (db/169), replaced whole, guarded: no account is let
 --       through by its id. An account holding a pupil's role that names no boy
 --       is closed, the seeded test account included (Kameel, 20 Nov, A).
+--   + pupil_signin_account(player)  Q3 (Kameel, 25 Nov 2026): before her
+--       "Allow his own sign-in", a guardian reads what the account the office
+--       recognised as him typed (its name and its year) and the day the office
+--       recognised it. Those three and nothing else: never its email or its
+--       own name. Only for her own live, verified, agreed link; nothing for
+--       a pad, a support hour, a platform-wide key, a child's own account, or
+--       a claim held for a safeguarding concern (pupil_claim_held(), db/168),
+--       which reads as none so nothing tips anyone off.
+--   ~ pupil_signin_after_yes() (db/169), replaced whole, guarded: a yes does
+--       not open the account of a claim held for a safeguarding concern; it
+--       answers as if nothing waits (the yes itself stands on record).
 --   ~ The seeded test account's live `player` assignment (app_user
 --       88888888-0000-0000-0000-000000000001, spectator@example.invalid) is
 --       ended: active = false, as db/77 and tools/sql/fix-player-without-team
@@ -87,8 +98,12 @@ BEGIN
      OR to_regprocedure('player_born_checked()') IS NULL OR to_regprocedure('player_born_record()') IS NULL
      OR to_regprocedure('player_born_office(uuid)') IS NULL OR to_regprocedure('majority_on(date)') IS NULL
      OR to_regprocedure('pupil_signin_open(uuid)') IS NULL OR to_regprocedure('pupil_signin_carry_over()') IS NULL
+     OR to_regprocedure('pupil_signin_after_yes(uuid,text)') IS NULL OR to_regprocedure('pupil_signin_my_link(uuid)') IS NULL
+     OR to_regprocedure('pupil_signin_child_account(uuid)') IS NULL OR to_regprocedure('pupil_claim_held(uuid)') IS NULL
+     OR to_regprocedure('lift_cuts_ok(uuid)') IS NULL OR to_regprocedure('app_pad_scoped()') IS NULL
+     OR to_regprocedure('sa_date(timestamptz)') IS NULL OR to_regclass('pupil_claim') IS NULL
      OR to_regprocedure('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)') IS NULL THEN
-    RAISE EXCEPTION 'db/173: db/172 (player_born_change, its triggers) or db/169 (the gate, the carry-over) is missing; apply them first';
+    RAISE EXCEPTION 'db/173: db/172 (player_born_change, its triggers), db/169 (the gate, the carry-over, the yes) or db/168 (the claim) is missing; apply them first';
   END IF;
 END $guard$;
 
@@ -108,6 +123,7 @@ INSERT INTO _v173_bodies VALUES
   ('player_born_record()',      'd2e91ecba68ca5f7529024903431b250', 'fbeb052c372cedb0ae34bcf4c676c724', 'db/172'),
   ('pupil_signin_carry_over()', '9aa438021d787f69337360a57554b5ff', 'a83fd786dea8ab57e4d9a83d96c11eb3', 'db/169'),
   ('pupil_signin_open(uuid)',   '8fb155c9ca0bcc28ee7d2436f4f69675', '9f48a4d15b197910c45640601d96c889', 'db/169'),
+  ('pupil_signin_after_yes(uuid,text)', '605c5b3a4c0139b7089f64973ccf51ba', 'cfcbb747f0588ed8b2cce73bc0781c18', 'db/169'),
   ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
                                 '25f7df23628e41c73c4e9575e8eb37a3', '5323dd10910de37e623e80302ea9cf93','db/172');
 DO $bodies$
@@ -396,6 +412,72 @@ END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pu
    COST 500;
 REVOKE ALL ON FUNCTION pupil_signin_open(uuid) FROM PUBLIC;
 
+
+-- ── 9b · Q3: what the recognised account typed, for her yes ────────
+-- Her own live, verified guardian link, agreed to the terms (as
+-- pupil_signin_state() asks before it offers her the yes), and the account
+-- her yes would open: the one recognised as him, still active, and not held
+-- for a safeguarding concern. Its name and year as typed, and the day
+-- (Johannesburg's) the school recognised it. Nothing else of the account.
+CREATE OR REPLACE FUNCTION pupil_signin_account(p_player uuid)
+RETURNS TABLE (typed_name text, typed_year text, recognised_on date) AS $$
+DECLARE v_me uuid := app_user_id(); v_school uuid; l record;
+BEGIN
+  IF v_me IS NULL OR coalesce(app_pad_scoped(), false) OR pupil_signin_child_account(v_me) THEN RETURN; END IF;
+  SELECT x.school_id INTO v_school FROM player x WHERE x.id = p_player;
+  IF NOT FOUND OR NOT lift_cuts_ok(v_school) THEN RETURN; END IF;
+  SELECT * INTO l FROM pupil_signin_my_link(p_player);
+  IF l.link_id IS NULL OR NOT coalesce(l.agreed, false) THEN RETURN; END IF;
+  RETURN QUERY
+    SELECT c.typed_name, c.typed_year, sa_date(c.known_at)
+      FROM pupil_claim c JOIN app_user u ON u.id = c.user_id
+     WHERE c.player_id = p_player AND c.state = 'recognised' AND u.active
+       AND NOT pupil_claim_held(c.user_id);
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION pupil_signin_account(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION pupil_signin_account(uuid) TO scrbrd_app;
+
+-- db/169's, with one test more: a held claim's account is not opened.
+CREATE OR REPLACE FUNCTION pupil_signin_after_yes(p_player uuid, p_version text) RETURNS text AS $$
+DECLARE c pupil_claim%ROWTYPE; v_user uuid; v_req uuid; v_ok boolean; v_why text; v_decider uuid;
+BEGIN
+  IF NOT pupil_signin_in_force(p_player) THEN RETURN 'not_in_force'; END IF;
+  UPDATE assignment_subject g
+     SET consent_state = 'granted', consent_version = coalesce(p_version, pupil_signin_terms_version()), consent_at = now()
+   WHERE g.player_id = p_player AND g.relationship = 'self'
+     AND g.verification_state = 'verified' AND g.consent_state = 'pending'
+     AND (g.valid_until IS NULL OR g.valid_until > sa_today());
+  -- N14: the claim's own advisory lock first, as db/168's doors take it.
+  SELECT x.user_id INTO v_user FROM pupil_claim x WHERE x.player_id = p_player AND x.state = 'recognised';
+  -- db/173: the account of a claim held for a safeguarding concern is not
+  -- opened by a yes; nothing waits, as far as anyone is told.
+  IF v_user IS NULL OR pupil_claim_held(v_user) THEN RETURN NULL; END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('pupil_claim:' || v_user::text, 163));
+  SELECT * INTO c FROM pupil_claim x WHERE x.player_id = p_player AND x.state = 'recognised' FOR UPDATE;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  IF NOT EXISTS (SELECT 1 FROM app_user u WHERE u.id = c.user_id AND u.active) THEN RETURN 'account_shut'; END IF;
+  IF pupil_signin_is_pupils(c.user_id) THEN
+    -- Already enrolled by the office (today's path): the yes opened him.
+    UPDATE pupil_claim SET state = 'open' WHERE id = c.id;
+    RETURN NULL;
+  END IF;
+  v_decider := CASE WHEN pupil_claim_office(c.school_id) THEN app_user_id() ELSE coalesce(c.known_by, app_user_id()) END;
+  BEGIN
+    INSERT INTO role_request (person_id, role, school_id, player_id, note)
+    VALUES (c.user_id, 'player', c.school_id, p_player, 'His own sign-in: a yes on record')
+    RETURNING id INTO v_req;
+    SELECT d.ok, d.reason INTO v_ok, v_why
+      FROM role_request_grant_as(v_req, v_decider, 'His own sign-in: a yes on record', p_player, NULL) d;
+    IF NOT coalesce(v_ok, false) THEN
+      RAISE EXCEPTION 'pupil_signin_open_refused:%', coalesce(v_why, 'refused') USING ERRCODE = 'check_violation';
+    END IF;
+    UPDATE pupil_claim SET state = 'open' WHERE id = c.id;
+  EXCEPTION WHEN check_violation OR unique_violation OR foreign_key_violation THEN
+    RETURN coalesce(substring(SQLERRM FROM 'pupil_signin_open_refused:(.*)'), 'refused');
+  END;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION pupil_signin_after_yes(uuid, text) FROM PUBLIC;
 
 -- ── 10 · The seeded test account's `player` role, ended ────────────
 -- Ended, not deleted: the row, its dates and who made it stay on the record
