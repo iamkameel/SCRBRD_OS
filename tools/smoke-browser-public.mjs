@@ -495,6 +495,10 @@ try {
     ok("a withdrawn fixture, a missing one and a never-published one: 404, the same page",
        gone.res?.status() === 404 && missing.res?.status() === 404 && unseeded.res?.status() === 404 && g === m && m === u);
     ok("...which says it is not available, and says noindex", /not available/.test(await text(gone.page)) && /noindex/.test(gone.res?.headers()["x-robots-tag"] ?? ""));
+    ok("...with the public header (the mark to the home page, Log in) and \"See today's matches\", to the home page",
+       await gone.page.locator('[data-testid="public-header"] a[href="/"]').count() === 1
+       && await gone.page.locator('[data-testid="public-header"] a[href="/app"]').count() === 1
+       && await gone.page.locator('[data-testid="public-see-today"][href="/"]').count() === 1);
     for (const x of [gone, missing, unseeded]) await x.ctx.close();
   }
 
