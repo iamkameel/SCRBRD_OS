@@ -3299,20 +3299,25 @@ try {
       await st("nav-children").click({ timeout: 6000 }).catch(() => {});
       await S.page.waitForTimeout(1500);
       await st(`child-chip-${KD}`).click({ timeout: 4000 }).catch(() => {});
-      const kd = await settled(S.page);
-      const kdCard = await todo(S.page).innerText().catch(() => "");
-      ok("K Dlamini's card: 'To do for K Dlamini', one row, for his own side's Kearsney fixture", /To do for K Dlamini/i.test(kdCard) && kd === "1 to do"
-         && await st(`todo-row-${KEARSNEY}`).count() === 1 && /v Kearsney/.test(kdCard), kdCard);
+      // Redesign slice 8 (§2.6): each boy's one owed answer is his next fixture's, asked in its own card, the lead;
+      // the list would only count it, so it is not drawn, and the row is not repeated.
+      await S.page.waitForTimeout(1500);
+      const kdCard = (await st("family-home-body").innerText().catch(() => ""));
+      ok("K Dlamini's Home: his own side's Kearsney fixture leads, his answer owed in it, and not asked a second time",
+         /v Kearsney|Kearsney/.test(await st("next-fixture").innerText().catch(() => "")) && await st("next-fixture").getAttribute("data-weight") === "lead"
+         && /No answer yet/.test(await st("next-fixture").innerText().catch(() => "")) && await todo(S.page).count() === 0 && await st(`todo-row-${KEARSNEY}`).count() === 0, kdCard.slice(0, 300));
       ok("...and no row of D Mkhize's: not his Westville fixture, not his name", await st(`todo-row-${DMF}`).count() === 0 && !/Westville|Mkhize/.test(kdCard), kdCard);
-      ok("COACH-PARENT: her coach's read of K Dlamini's fixture returned the side (more than one boy), yet the card shows one row and no other boy",
-         sideRows.some((rows) => rows.length >= 2 && rows.some((x) => x.player_id === WHITFIELD)) && !/Whitfield/.test(kdCard) && await todo(S.page).locator('[data-testid^="todo-row-"]').count() === 1,
+      ok("COACH-PARENT: her coach's read of K Dlamini's fixture returned the side (more than one boy), yet his Home shows his answer alone and no other boy",
+         sideRows.some((rows) => rows.length >= 2 && rows.some((x) => x.player_id === WHITFIELD))
+         && !/Whitfield/.test(await st(`availability-${KD}`).innerText().catch(() => "Whitfield?")) && await st(`availability-state-${KD}`).count() === 1 && await st(`availability-state-${WHITFIELD}`).count() === 0,
          sideRows.map((r) => r.length));
       await st(`child-chip-${DM}`).click({ timeout: 4000 }).catch(() => {});
       await S.page.waitForTimeout(600);
-      const dm = await settled(S.page);
-      const dmCard = await todo(S.page).innerText().catch(() => "");
-      ok("D Mkhize's card is his own list: 'To do for D Mkhize', one row, for his Westville fixture", /To do for D Mkhize/i.test(dmCard) && dm === "1 to do"
-         && await st(`todo-row-${DMF}`).count() === 1 && /Verify GA-I20 Westville XI/.test(dmCard), dmCard);
+      await S.page.waitForTimeout(1500);
+      const dmCard = await st("next-fixture").innerText().catch(() => "");
+      ok("D Mkhize's Home is his own: his Westville fixture leads, his answer owed in it, and not asked a second time",
+         /Verify GA-I20 Westville XI/.test(await st("next-fixture").innerText().catch(() => "")) && /No answer yet/.test(await st("next-fixture").innerText().catch(() => ""))
+         && await todo(S.page).count() === 0 && await st(`todo-row-${DMF}`).count() === 0, dmCard.slice(0, 300));
       ok("...and no row of K Dlamini's: not the Kearsney fixture, not his name; the two counts are never one", await st(`todo-row-${KEARSNEY}`).count() === 0
          && !/Kearsney|Dlamini|Whitfield/.test(dmCard) && !/2 to do/.test(await st("family-home-body").innerText().catch(() => "")), dmCard);
       ok("no scoping refusals or page errors for her", S.refusals.length === 0 && S.errors.length === 0, S.errors.join(" | "));
@@ -3486,9 +3491,11 @@ try {
          kd === "1 to do" && dm === "1 to do" && !/2 to do/.test(await st("family-file").innerText()), [kd, dm]);
       await st(`family-todo-${DM}`).click({ timeout: 4000 }).catch(() => {});
       await S.page.waitForSelector('[data-testid="family-child"]', { timeout: 8000 }).catch(() => {});
-      await settled(S.page);
-      const dmHome = [(await st("family-child").innerText().catch(() => "")).trim(), (await todo(S.page).locator("h2").first().innerText().catch(() => "")).trim()];
-      ok("D Mkhize's count opens D Mkhize's Home", dmHome[0] === "D Mkhize" && /To do for D Mkhize/i.test(dmHome[1]), [...dmHome, (await text(S.page)).slice(0, 300)]);
+      await afterReads(S.page, 1500);
+      // Slice 8 (§2.6): his one owed answer is his next fixture's, asked in the lead; the list would only count it, so it is not drawn.
+      const dmHome = [(await st("family-child").innerText().catch(() => "")).trim(), (await st("next-fixture").innerText().catch(() => "")).trim()];
+      ok("D Mkhize's count opens D Mkhize's Home, where the one thing owed leads: his fixture, his answer not yet given", dmHome[0] === "D Mkhize"
+         && await st("next-fixture").getAttribute("data-weight") === "lead" && /No answer yet/.test(dmHome[1]) && await todo(S.page).count() === 0, [...dmHome, (await text(S.page)).slice(0, 300)]);
       ok("no scoping refusals or page errors for her", S.refusals.length === 0 && S.errors.length === 0, S.errors.join(" | "));
       await S.ctx.close();
 

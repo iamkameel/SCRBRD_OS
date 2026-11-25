@@ -310,6 +310,16 @@ try {
   ok("no team-mate's answer, reason or name is on his Home",
      !/Whitfield|Bekker|Naidoo|funeral|family/i.test(home) && await tid(s.page, `availability-state-${WHITFIELD}`).count() === 0, home.slice(0, 300));
   ok("what the coach and the school posted is on his Home (§1.2 job 6)", await tid(s.page, "news-card").count() === 1);
+  // Redesign slice 8, Kameel's question 6 (a): his open injury is one line, "Injured · back …", no diagnosis on Home.
+  {
+    const own = await q(`select injury_type, rtw_date from injury where player_id = $1 and phase <> 'cleared'`, [PILLAY]);
+    const line = (await tid(s.page, "home-injury").innerText({ timeout: 4000 }).catch(() => "")).replace(/\s+/g, " ").trim();
+    const homeNow = await inner(s.page, "pupil-home");
+    ok("his open injury: one line under his name, 'Injured', with the return date where there is one",
+       own.length > 0 ? /^Injured( · back \w{3} \d{1,2} \w{3})?\b/.test(line) : await tid(s.page, "home-injury").count() === 0, [own.length, line]);
+    ok("...and no diagnosis on Home: not the injury's name, anywhere on it",
+       own.every((r) => !r.injury_type || !new RegExp(String(r.injury_type).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(homeNow)) && !/hamstring|strain|Grade 2/i.test(homeNow), homeNow.match(/hamstring|strain|Grade 2/i)?.[0]);
+  }
   const fh = await floors(s.page);
   ok(`Home at phone width: nothing read under 12px (${fh.small.length})`, fh.small.length === 0, fh.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fh.tiny.length})`, fh.tiny.length === 0, fh.tiny.slice(0, 4).join(" · "));
@@ -326,8 +336,12 @@ try {
     await tid(s.page, "todo-later").click({ timeout: 4000 }).catch(() => {});
     await s.page.waitForTimeout(300);
     const rows = await s.page.$$eval('[data-testid="todo-card"] [data-testid^="todo-row-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
-    ok("...unfolded: one row per fixture, each his own answer (R1), worded to him", rows.includes(`todo-row-${NEXT}`) && rows.every((r) => !/^todo-row-R\d/.test(r))
-       && /Answer for \w{3} v Verify Pupil XI/.test(await inner(s.page, `todo-row-${NEXT}`)) && /you or your parents/.test(await inner(s.page, `todo-row-${NEXT}`)), rows);
+    // Redesign slice 8 (§2.6): the next fixture's answer is in its own card above, so it is not asked a second time here.
+    const others = rows.filter((r) => r !== `todo-row-${NEXT}`);
+    ok("...unfolded: one row per later fixture, each his own answer (R1), worded to him", others.length > 0 && rows.every((r) => !/^todo-row-R\d/.test(r))
+       && /Answer for \w{3} v /.test(await inner(s.page, others[0])) && /you or your parents/.test(await inner(s.page, others[0])), rows);
+    ok("...and not his next fixture's: its answer is asked once, in its own card (slice 8)", !rows.includes(`todo-row-${NEXT}`)
+       && /No answer yet/.test(await inner(s.page, "next-fixture")) && await tid(s.page, "next-fixture-open").count() === 1, rows);
     ok("no lift, consent or contact row, and no 'What you have agreed' card", !/seat|lift|consent|public pages|Health monitoring|number|ring/i.test(await inner(s.page, "todo-card"))
        && await tid(s.page, "todo-record").count() === 0);
     ok("...and his list never asked for a contact count, a lift, a driver's requests or the public-name answer",
@@ -744,12 +758,17 @@ try {
   const c = await open();
   ok("R Pillay signs in", await signInAs(c.page, "pillay@example.invalid"));
   await afterReads(c.page, 1200);
-  ok("his next fixture is still first, ahead of the card",
-     await c.page.$$eval('[data-testid="next-fixture"], [data-testid="captain-card"]', (els) => els.map((e) => e.getAttribute("data-testid")).join()) === "next-fixture,captain-card");
+  // Redesign slice 8, Kameel's question 5 (a): once his match is live the board leads, his captain's block under it.
+  ok("his match live: the board leads his Home, his captain's block inside it, under the board, and his next fixture after",
+     await c.page.$$eval('[data-testid="live-card"], [data-testid="captain-card"], [data-testid="next-fixture"]', (els) => els.map((e) => e.getAttribute("data-testid")).join()) === "live-card,captain-card,next-fixture"
+     && await c.page.locator('[data-testid="live-card"] [data-testid="captain-card"][data-place="under"]').count() === 1
+     && await c.page.locator('[data-testid="pupil-home"] > *').first().evaluate((e) => e.tagName === "HEADER")
+     && (await c.page.$$eval('[data-testid="pupil-home"] > [data-testid]', (els) => els.map((e) => e.getAttribute("data-testid"))))[0] === "live-card");
   const card = await inner(c.page, "captain-card");
   const dbg = (t, v) => { if (process.env.CAPTAIN_DEBUG) console.log(`\n--- ${t}\n${v}`); };
   dbg("CARD", card);
-  ok("the Home card says Captain, his side, and the match live now", /^CAPTAIN/i.test(card) && /1XI/i.test(card) && /live now/.test(card) && /v Westville/.test(card), card);
+  ok("the block says Captain and his side; the board above it says the match, so the block does not again", /^CAPTAIN/i.test(card) && /1XI/i.test(card)
+     && !/live now|v Westville/.test(card) && /Westville/.test(await inner(c.page, "live-card")) && /Open the match/.test(card), card);
   ok("...a count of the side and no name on it", /\d+ named in the side/.test(card) && !/Whitfield|Bekker|Naidoo|Seven|Mate Six/.test(card), card);
   ok("...no plan line while no plan is out, and no place held for one", !/plan/i.test(card) && await tid(c.page, "captain-card-plan").count() === 0);
   const f1 = await floors(c.page);
