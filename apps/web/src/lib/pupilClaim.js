@@ -72,6 +72,7 @@ export function buildClaim(schoolId, f = {}) {
 export const CLAIM_WORDS = Object.freeze({
   name_required: "Type your name, as the school would have it.",
   year_too_long: "Keep your year or team to 20 letters or fewer.",
+  born_invalid: "That date of birth cannot be a pupil's. Check it, or leave it out.",
   no_such_school: "That school could not be chosen. Choose it again from the list.",
   request_cooldown: "This account can't send anything to a school yet. Ask the school office.",
   ask_your_school_office: "This account cannot send a pupil's claim. Ask your school office.",

@@ -13,7 +13,7 @@ import { PeoplePanel } from "./people.jsx";
 import { ColoursPanel } from "./colours.jsx";
 import { FORM_ON_FILE, formReady } from "../lib/ownSignin.js";
 import { FormOnFileFields } from "./enrol.jsx";
-import { familyLine } from "../lib/familyList.js";
+import { familyLineWords } from "../lib/familyList.js";
 
 // ══════════════════════════════════════════════════════
 //  MANAGEMENT VIEW
@@ -413,7 +413,7 @@ function RequestsPanel({ role, players }) {
                 bundle, not the role's name (§21.1): the role that reads every side's posts. */}
             {roleGrants(r.role, "news.team.read")&&<div data-testid={`request-spectator-reach-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>He'll see every match and every team's posts, but no player's stats or passport.</div>}
             {/* db/174: what the family list found, for the office. Never the date she typed. */}
-            {familyLine(r.familyLine)&&<div data-testid={`request-family-line-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{familyLine(r.familyLine)}</div>}
+            {familyLineWords(r.familyLine)&&<div data-testid={`request-family-line-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary}}>{familyLineWords(r.familyLine)}</div>}
             {r.askedUnverified&&<div data-testid={`request-unverified-${r.id}`} style={{fontFamily:D.body,fontSize:"12px",color:D.roseText}}>Asked before the email was verified: check with them before granting.</div>}
           </div>
           {needsChild(r)&&(

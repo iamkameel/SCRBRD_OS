@@ -23,7 +23,7 @@ export const FAMILY_LINE_WORDS = Object.freeze({
 });
 
 /** @param {unknown} code @returns {string | null} */
-export const familyLine = (code) => (typeof code === "string" && code in FAMILY_LINE_WORDS
+export const familyLineWords = (code) => (typeof code === "string" && code in FAMILY_LINE_WORDS
   ? FAMILY_LINE_WORDS[/** @type {keyof typeof FAMILY_LINE_WORDS} */ (code)] : null);
 
 export const FAMILY_INTRO = "List a parent's or guardian's email address against a child on your roster, or a pupil's own. When that person signs in with Google at that address and types the child's date of birth, the list confirms them. Each row is used once.";
@@ -46,7 +46,7 @@ export function rowStateWords(r) {
   if (r?.state === "open") return "Open";
   if (r?.outcome === "granted") return r?.kind === "pupil" ? "Claimed: his account opened" : "Claimed: linked";
   if (r?.outcome === "recognised") return "Claimed: recognised, waiting for a parent's yes";
-  return familyLine(r?.outcome_reason === "uploader_authority_lapsed" ? "uploader_lapsed"
+  return familyLineWords(r?.outcome_reason === "uploader_authority_lapsed" ? "uploader_lapsed"
     : r?.outcome_reason === "not_switched_on" ? "details_agree" : r?.outcome_reason) ?? "Claimed";
 }
 

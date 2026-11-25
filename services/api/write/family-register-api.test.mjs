@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FAMILY_PROBLEM_WORDS, bornOf, familyClaim } from "./family-register-api.mjs";
-import { FAMILY_LINE_WORDS, familyLine } from "../../../apps/web/src/lib/familyList.js";
+import { FAMILY_LINE_WORDS, familyLineWords } from "../../../apps/web/src/lib/familyList.js";
 
 let pass = 0, fail = 0;
 /** @param {string} n @param {unknown} c */
@@ -41,11 +41,11 @@ group("B. The office's Requests line: one sentence per code family_register_line
   const body = SQL.slice(SQL.indexOf("CREATE OR REPLACE FUNCTION family_register_line("));
   const codes = [...new Set([...body.slice(0, body.indexOf("$$ LANGUAGE")).matchAll(/THEN '([a-z_]+)'|ELSE '([a-z_]+)'/g)].map((m) => m[1] ?? m[2]))];
   ok("db/174 answers five codes", codes.length === 5);
-  for (const c of codes) ok(`${c} has a line`, typeof familyLine(c) === "string");
+  for (const c of codes) ok(`${c} has a line`, typeof familyLineWords(c) === "string");
   ok("the design's sentence, word for word", FAMILY_LINE_WORDS.details_disagree === "On the family list. The details did not agree."
      && FAMILY_LINE_WORDS.uploader_lapsed === "On the family list. The person who listed it can no longer make this link.");
   ok("no line holds a date or a digit", Object.values(FAMILY_LINE_WORDS).every((w) => !/\d/.test(w)));
-  ok("an unknown code is no line", familyLine("weird") === null && familyLine(null) === null);
+  ok("an unknown code is no line", familyLineWords("weird") === null && familyLineWords(null) === null);
 }
 
 group("C. The date she typed: shape only, and only for a guardian or a pupil's own request");

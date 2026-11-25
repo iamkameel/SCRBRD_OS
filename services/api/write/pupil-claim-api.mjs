@@ -58,6 +58,8 @@ export const PUPIL_CLAIM_STATUS = Object.freeze({
   no_such_school: 404,
   name_required: 422,
   year_too_long: 422,
+  // db/174: a date of birth he typed that cannot be a pupil's (five to twenty-five).
+  born_invalid: 422,
   already_recognised: 409,
   already_answered: 409,
   player_not_at_that_school: 422,
