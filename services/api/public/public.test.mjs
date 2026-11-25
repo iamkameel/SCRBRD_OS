@@ -522,6 +522,9 @@ async function serve(o) {
   const s = await off.get(`/live/${M1}`);
   ok("off (the default): a published fixture's read is the one 404", r.status === 404 && r.body === NOT_FOUND);
   ok("off: its shell is a 404 too", s.status === 404 && /not available/.test(s.body));
+  ok("off: the not-available page still leads somewhere: the header, Log in, and \"See today's matches\"",
+     s.body.includes('data-testid="public-header"') && s.body.includes('href="/app"') && /href="\/"[^>]*data-testid="public-see-today">See today's matches</.test(s.body));
+  ok("off: ...in the reader's theme, and no word on whether a match exists", s.body.includes("scrbrd:theme") && !/no such match|does not exist/i.test(s.body));
   ok("off: nothing was read", seen.reads === 0);
   ok("a path that is not public is not answered", (await off.get("/api/health")).status === 599);
   await off.close();
