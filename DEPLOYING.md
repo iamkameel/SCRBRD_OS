@@ -2641,7 +2641,7 @@ To paste:
   superuser login can do. On the managed host it is skipped and says so; it runs
   locally and on CI.
 
-Not pasted yet. Hash to check: `sha256 20039ba004f82e8754dc5d53caf6ab535586ea043b40692e388c8c142b3503af`.
+Not pasted yet. Hash to check: `sha256 273369f0c7f68464f33493b461f24a5ec4562d406dc09a0c36111102a136f68a`.
 <!-- ── end db/172 ── -->
 
 ### 5 · Cloud Run, the first time
