@@ -174,7 +174,7 @@ export const STATE_WORDS = Object.freeze({
   handover:    { label: "Live · a handover is under way",    action: "Open the pad",
                  note: "Enter the handover code on the pad to take over." },
   lapsed:      { label: "Live · no device is scoring now",   action: "Open the pad",
-                 note: "The last device stopped sending. Opening the pad here takes the scoring." },
+                 note: "The other phone has gone quiet. Open the pad to take over scoring." },
   live:        { label: "Live",                              action: "Open the pad",  note: null },
   provisional: { label: "Your part is done · the coach confirms the result", action: null,
                  note: "The score reads provisional until then." },
