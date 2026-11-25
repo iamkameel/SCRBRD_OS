@@ -97,7 +97,12 @@ Brought in 2026-09-27 (Kameel), with cost still a constraint:
   5.2"; one design pass, sections 1 and 2 of docs/redesign/EXPERIENCE_PASS.md
   only: where every destination lives, per persona, with the menus before and
   after; and the first run per role, step by step, with what is asked and
-  when; the rest of the document is Opus's, and Opus reviews it).
+  when; the rest of the document is Opus's, and Opus reviews it)
+  and what re-dating a boy changes (added 2026-11-25, Kameel: "Yes, after
+  the red-team"; a corrected date of birth that moves a boy across 18 or
+  into another age group: the guardian's yes, his sign-in, what may be
+  public, the side he may play for, and when his parents' links end; it
+  starts when the red-team before Westville reports).
   A new problem joins this list
   only with Kameel's say.
 - **The output is a design document** for Kameel's review. Opus builds from
