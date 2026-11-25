@@ -17840,8 +17840,8 @@ BEGIN
   PERFORM set_config('app.born_how', '', true);
   RETURN b::text;
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
--- A door that adds a boy for whoever calls it, asking nothing: a definer
--- under the caller's session, as the owner. Throwaway, here only: his id, or
+-- A door that adds a boy for whoever calls it, asking nothing: a definer,
+-- as the owner, under the caller's login and session. Throwaway, here only: his id, or
 -- "sqlstate:message".
 CREATE OR REPLACE FUNCTION _v173_door_add(p_tag text, p_born date) RETURNS text AS $$
 DECLARE b uuid; st text; msg text;
@@ -17929,11 +17929,26 @@ BEGIN
     PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s adult date: %s', v));
     v := _v173_add('first today', TODAY18, NULL);
     PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s date of 18 today: %s', v));
-    -- Through a door under his session (a definer, as the owner): the same.
-    v := _v173_door_add('first door', ADULT);
-    PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s adult date through a door: %s', v));
-    PERFORM _assert(_v173_named('first adult') = 0 AND _v173_named('first today') = 0 AND _v173_named('first door') = 0,
-                    '§148 (first): a refused boy landed');
+    -- Logged in as the application, through a door (a definer, as the owner):
+    -- the same, under his session and under none. Needs a superuser login to
+    -- log in as the application for a moment, as §147 (definer) does.
+    IF _v172_super() THEN
+      PERFORM set_config('app.user_id', '', true);
+      SET SESSION AUTHORIZATION scrbrd_app;
+      PERFORM _as(DOS);
+      v := _v173_door_add('first door', ADULT);
+      PERFORM set_config('app.user_id', '', true);
+      v2 := _v173_door_add('first door nobody', ADULT);
+      RESET SESSION AUTHORIZATION;
+      SET ROLE scrbrd_app;
+      PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s adult date through a door: %s', v));
+      PERFORM _assert(v2 = '42501:born_needs_the_office', format('§148 (first): the application''s adult date through a door, no one signed in: %s', v2));
+    ELSE
+      RAISE NOTICE '§148 (first): the door case skipped, this login cannot log in as the application';
+    END IF;
+    PERFORM _as(DOS);
+    PERFORM _assert(_v173_named('first adult') = 0 AND _v173_named('first today') = 0 AND _v173_named('first door') = 0
+                    AND _v173_named('first door nobody') = 0, '§148 (first): a refused boy landed');
     BOY := _v173_add('first tomorrow', TOMORROW18, NULL)::uuid;
     PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:f', TOMORROW18, DOS), format('§148 (first): 18 tomorrow, recorded %s', _v173_rows(BOY)));
     BOY := _v173_add('first minor', B, NULL)::uuid;

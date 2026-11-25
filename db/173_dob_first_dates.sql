@@ -25,16 +25,16 @@
 -- ── WHAT MOVES ─────────────────────────────────────────────────────
 --   ~ player_born_checked() (db/172's BEFORE trigger on player), replaced
 --       whole, only over db/172's body or this file's (folded md5, §0).
---       Two new rules, asked first, for every write made by or for a
---       signed-in person (the application role, or a door under a session:
---       the same test db/172's ID check makes):
+--       Two new rules, asked first, for every write the application makes
+--       (logged in as scrbrd_app, directly or through any door: the same
+--       test db/172's office rule makes):
 --         born_needs_the_office       a first date (an INSERT with a date,
 --             or none becoming a date) that makes him 18 today, from anyone
 --             but the office of his school;
 --         id_number_needs_the_office  a first ID number (an INSERT with one,
 --             or none becoming one), from anyone but the office.
---       Both insufficient_privilege. The owner with no one signed in (the SQL
---       Editor, a seed) is let through, as before, and recorded as 'owner'.
+--       Both insufficient_privilege. The owner's own write (the SQL Editor, a
+--       seed) is let through, as before, and recorded as 'owner'.
 --       db/172's four rules stand as they were, after these.
 --   ~ player_born_record() (db/172's AFTER trigger), replaced whole, likewise
 --       guarded, and the trigger fires AFTER INSERT too: a new boy written with
@@ -104,7 +104,7 @@ $$ LANGUAGE sql STABLE;
 DROP TABLE IF EXISTS pg_temp._v173_bodies;
 CREATE TEMP TABLE _v173_bodies (fn text PRIMARY KEY, shipped text, mine text, file text);
 INSERT INTO _v173_bodies VALUES
-  ('player_born_checked()',     '4214f377cb5bdeade6c1c13ef06a2955', 'a6a1aff5c6a13d13aa288d2a3fb1823a', 'db/172'),
+  ('player_born_checked()',     '4214f377cb5bdeade6c1c13ef06a2955', '98bf4060429e9677f7eb291dcee6bd24', 'db/172'),
   ('player_born_record()',      'd2e91ecba68ca5f7529024903431b250', 'fbeb052c372cedb0ae34bcf4c676c724', 'db/172'),
   ('pupil_signin_carry_over()', '9aa438021d787f69337360a57554b5ff', 'a83fd786dea8ab57e4d9a83d96c11eb3', 'db/169'),
   ('pupil_signin_open(uuid)',   '8fb155c9ca0bcc28ee7d2436f4f69675', '9f48a4d15b197910c45640601d96c889', 'db/169'),
@@ -147,16 +147,13 @@ DECLARE
   -- as the owner, so current_user alone would not say; the login role does,
   -- and no definer changes it).
   v_app boolean := current_user = 'scrbrd_app' OR session_user = 'scrbrd_app';
-  -- Written by or for a signed-in person: the application, or any door under
-  -- a session. Only the owner's own write, no one signed in, is neither.
-  v_person boolean := current_user = 'scrbrd_app' OR session_user = 'scrbrd_app' OR app_user_id() IS NOT NULL;
   -- The school whose record it is: OLD's, as db/172's office rule reads it.
   v_school uuid := CASE WHEN TG_OP = 'INSERT' THEN NEW.school_id ELSE OLD.school_id END;
 BEGIN
   -- db/173 (Kameel, 25 Nov 2026): a first date that makes him 18 today is
   -- the office's to write. Asked before the ID number is read, so the answer
   -- is the same whatever is on file.
-  IF v_person AND NEW.born IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.born IS NULL)
+  IF v_app AND NEW.born IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.born IS NULL)
      AND majority_on(NEW.born) <= sa_today() AND NOT player_born_office(v_school) THEN
     RAISE EXCEPTION 'born_needs_the_office'
       USING ERRCODE = 'insufficient_privilege',
@@ -164,7 +161,7 @@ BEGIN
   END IF;
   -- db/173: an ID number, first or not, is the office's to write (a change
   -- to one on file is db/172's rule below).
-  IF v_person AND NEW.id_number IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.id_number IS NULL)
+  IF v_app AND NEW.id_number IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.id_number IS NULL)
      AND NOT player_born_office(v_school) THEN
     RAISE EXCEPTION 'id_number_needs_the_office'
       USING ERRCODE = 'insufficient_privilege',
