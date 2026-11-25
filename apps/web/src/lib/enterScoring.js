@@ -63,3 +63,31 @@ export function mayEnterScoring(assignments, match, at = new Date()) {
   if (!resource) return false;
   return authorize({ assignments: assignments ?? [], capability: ENTER_SCORING_CAPABILITY, resource, at }).allowed;
 }
+
+/**
+ * Is he scoring this fixture (redesign slice 10; DESIGN_DIRECTION question 7,
+ * Kameel, 19 Nov: "'Open scorer' only for whoever is scoring")? Asked only of a
+ * reader whose page leads with the Coach tab: every coach may score his own
+ * side's fixtures (roles.mjs), so "may score" alone would offer it to every
+ * coach. He is scoring it where:
+ *   - this phone holds the fixture's log (`onThisPhone`: the pad saved one
+ *     here, lib/persist.js loadMatch), or
+ *   - one of his assignments is narrowed to THIS fixture and may score it (an
+ *     appointment, lib/scorerHome.js appointmentOf's `byAssignment`), or
+ *   - the office's duty roster names him this fixture's scorer, a duty not
+ *     paused (`appointedByDuty`: appointmentOf's `byDuty`, from the officials
+ *     read; Kameel, 25 Nov).
+ * Never wider than mayEnterScoring(): it is that check first, then narrower.
+ * A coach who will score but has not yet opened the pad here starts from the
+ * Matches list's "Start scoring", which this does not touch.
+ * @param {import("@scrbrd/policy/authorize").Assignment[] | null | undefined} assignments
+ * @param {any} match
+ * @param {{onThisPhone?: boolean, appointedByDuty?: boolean, at?: Date | string | number}} [o]
+ * @returns {boolean}
+ */
+export function scoresItHere(assignments, match, { onThisPhone = false, appointedByDuty = false, at = new Date() } = {}) {
+  if (!mayEnterScoring(assignments, match, at)) return false;
+  if (onThisPhone || appointedByDuty) return true;
+  const appointed = (assignments ?? []).filter((a) => a?.fixture != null && a.fixture === match?.id);
+  return appointed.length > 0 && mayEnterScoring(appointed, match, at);
+}

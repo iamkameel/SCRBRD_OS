@@ -23,7 +23,7 @@
  *      post to the route is a 403 with the side untouched; signed out, a 401.
  *   7. Floors: nothing read under 12px, nothing tapped under 44px, at 1280
  *      (Floodlit) and 390 (Daylight), nothing wider than the screen.
- *   8. PLAYING UP: "Add a boy from another team" finds the school's boys on other
+ *   8. PLAYING UP: "Add a boy from other sides" finds the school's boys on other
  *      teams. A U13 boy added to the U14A side is saved (the database holds him,
  *      marked from U13A when reopened); a boy too old, added from another team,
  *      is refused in the trigger's words beside him and nothing is saved; another
@@ -437,7 +437,7 @@ try {
   ok("the dialog opens", await dialog(u.page));
   ok("the other team's boys are not in the list until the coach asks", await tid(u.page, `pick-${UP}`).count() === 0 && await tid(u.page, `pick-${ELDER}`).count() === 0);
   const openBtn = (await inner(u.page, "pick-other-open")).trim();
-  ok("a secondary control says what it does", openBtn === "Add a boy from another team", openBtn);
+  ok("a secondary control says what it does", openBtn === "Add a boy from other sides", openBtn);
   await tid(u.page, "pick-other-open").click();
   await tid(u.page, "pick-other-search").fill("verify up");
   await u.page.waitForTimeout(300);
