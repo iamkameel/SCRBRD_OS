@@ -139,9 +139,18 @@ function PlayerAnswer({ role, match, upcoming, onPick, player }) {
 /** One fixture's answers, read for this caller alone. */
 function AvailabilityList({ role, match, upcoming, onPick }) {
   const [nonce, setNonce] = useState(0);
-  const [said, setSaid] = useState({ id: null, text: "" });
+  const [said, setSaid] = useState({ id: null, text: "", ok: false });
   const read = useLive("availability", role, nonce, { matchId: match.id });
-  const { rows: answers } = read;
+  // A tap that changes a row never moves it (the role reviews' direction §2.3,
+  // redesign slice 9). The server sorts the silent boys first; answering one
+  // here would send his row down the list from under the thumb. So the panel
+  // keeps the order it first read for as long as it is open (it is keyed on
+  // the fixture), and a boy new to the read joins the end. The next visit
+  // reads the server's order afresh.
+  const [order, setOrder] = useState(/** @type {string[]} */ ([]));
+  const fresh = read.rows.map((r) => r.playerId).filter((id) => !order.includes(id));
+  if (fresh.length) setOrder([...order, ...fresh]);
+  const answers = useMemo(() => [...read.rows].sort((a, b) => order.indexOf(a.playerId) - order.indexOf(b.playerId)), [read.rows, order]);
   // "No one to show" is said only of a read that answered (GA-I08). Retry bumps
   // this panel's nonce: the same read, with the same matchId.
   const readSaid = readState(read, { what: "the availability answers" });
@@ -149,12 +158,14 @@ function AvailabilityList({ role, match, upcoming, onPick }) {
   const asking = answers.filter((r) => r.needsReconfirming).length;
 
   const answer = async (playerId, status, reasonKind = null) => {
-    setSaid({ id: playerId, text: "" });
+    setSaid({ id: playerId, text: "", ok: false });
     try {
       await declare(match.id, playerId, status, reasonKind);
       setNonce((n) => n + 1);
+      // Said on the row, where it is (§2.3).
+      setSaid({ id: playerId, text: "Saved", ok: true });
     } catch (e) {
-      setSaid({ id: playerId, text: e.message || "Refused." });
+      setSaid({ id: playerId, text: e.message || "Refused.", ok: false });
     }
   };
 
@@ -209,7 +220,8 @@ function AvailabilityList({ role, match, upcoming, onPick }) {
                   </div>
                 )}
                 {said.id === r.playerId && said.text && (
-                  <div role="alert" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginTop: "4px" }}>{said.text}</div>
+                  <div role={said.ok ? "status" : "alert"} data-testid={`availability-saved-${r.playerId}`}
+                    style={{ fontFamily: D.body, fontSize: "12px", color: said.ok ? D.textSecondary : textOn(D.rose), marginTop: "4px" }}>{said.text}</div>
                 )}
               </div>
               {mayDeclare && (

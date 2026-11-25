@@ -19,7 +19,7 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { leadOf, onTheDay } from "../src/lib/homeLead.js";
 import { SHOWN_ROWS, owes, todoOf, underLead } from "../src/lib/todo.js";
-import { homeInjuryRows, injuredLine } from "../src/lib/injury.js";
+import { homeInjuryRows, injuredAnswer, injuredLine } from "../src/lib/injury.js";
 import { humanDate } from "../src/lib/format.js";
 import { NEVER_ON_THE_TAB } from "../src/lib/captain.js";
 import { CaptainCardView } from "../src/views/family/captain.jsx";
@@ -109,6 +109,22 @@ group("injuredLine: his open injury in one line, no diagnosis, and nobody else's
   const cards = readFileSync(new URL("../src/views/family/cards.jsx", import.meta.url), "utf8");
   const fn = cards.slice(cards.indexOf("export function InjuryLine"));
   ok("the Home's card draws the line alone: it reads no injury field itself", /injuredLine\(rows, child, humanDate\)/.test(fn) && !/\.(type|severity|notes|physio)\b/.test(fn));
+}
+
+group("injuredAnswer: a fixture before his return suggests Not available; a suggestion, never a write (question 6 (a), slice 9)");
+{
+  const inj = (o) => ({ id: o.id ?? "i1", player: ME.id, type: "Hamstring", phase: "rehab", restricted: true, rtw: "2026-12-04", severity: "moderate",
+    notes: "notes", physio: "Physio", leftSchool: null, ...o });
+  const A = (rows, day) => injuredAnswer(rows, ME, day);
+  ok("a fixture before his return: Not available, with the day he is back", JSON.stringify(A([inj({})], "2026-11-28")) === JSON.stringify({ status: "unavailable", back: "2026-12-04" }));
+  ok("the day he is back, or after it: nothing suggested", A([inj({})], "2026-12-04") === null && A([inj({})], "2026-12-12") === null);
+  ok("cleared, a status-only row not restricted, a team-mate's row, or left the school: nothing",
+     [inj({ phase: "cleared" }), inj({ phase: null, restricted: false }), inj({ player: "p-mate" }), inj({ leftSchool: true })].every((r) => A([r], "2026-11-28") === null));
+  ok("an open injury with no return date: nothing suggested (when he is back is not known)", A([inj({ rtw: null })], "2026-11-28") === null
+     && A([inj({ id: "a" }), inj({ id: "b", rtw: null })], "2026-11-28") === null);
+  ok("two open: judged against the later return", A([inj({ id: "a", rtw: "2026-11-25" }), inj({ id: "b", rtw: "2026-12-11" })], "2026-12-05")?.back === "2026-12-11");
+  ok("no fixture day: nothing", A([inj({})], null) === null && A([inj({})], undefined) === null);
+  ok("what it returns carries no injury's name, severity or note", Object.keys(A([inj({})], "2026-11-28") ?? {}).sort().join() === "back,status");
 }
 
 group("The captain's block: C1's facts in each of its three places, and nothing more (SCRBRD-138 §3.2, §4)");

@@ -161,8 +161,7 @@ function Umpires({ match, role }) {
  * P3 · Fixture — where, when, how, and the declaration. The answer is given
  * here, beside the bus time (§2.1: "the declaration belongs beside it").
  */
-export function FixtureDetail({ match, child, role, self = false, onBack }) {
-  const name = child.knownAs || child.name;
+export function FixtureDetail({ match, child, role, self = false, onBack, backLabel = "Matches" }) {
   // SCRBRD-138: a captain's section, only for the pupil himself and only while
   // his own honour passes the gate for this fixture's season. Everyone else
   // sees the fixture exactly as it was.
@@ -171,7 +170,8 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
   const postponed = match.status === "postponed";
   return (
     <>
-      <Back onClick={onBack}>Matches</Back>
+      {/* Back names where she came from (the role reviews' direction §2.1): "Home" from a Home, "Matches" from the list. */}
+      <Back onClick={onBack}>{backLabel}</Back>
       <header style={{ display: "grid", gap: T.space.xs }} data-testid="fixture-detail" data-match={match.id}>
         <span style={{ ...T.role.label, color: T.content.secondary }}>{whenOf(match)}</span>
         <Title testid="fixture-title">v {opponentOf(match, child)} ({endOf(match, child)})</Title>
@@ -196,7 +196,7 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
       {!postponed && <BusCard match={match} role={role}/>}
       {!postponed && <FixtureLifts match={match} child={child}/>}
       {!postponed && (
-        <Card label={self ? "You" : name} testid="fixture-availability">
+        <Card testid="fixture-availability">
           <AvailabilityBlock match={match} child={child} role={role} self={self}/>
         </Card>
       )}
@@ -212,12 +212,12 @@ export function FixtureDetail({ match, child, role, self = false, onBack }) {
 }
 
 /** P4 · The match, live or past: the Match Centre in family mode (G13). */
-export function MatchFor({ match, child, role, self = false, matches, onBack }) {
+export function MatchFor({ match, child, role, self = false, matches, onBack, backLabel = "Matches" }) {
   // SCRBRD-138: the Captain tab, for the pupil himself while his honour passes the gate.
   const { cap } = useCaptaincy(self ? child : null, role, match.season ?? null);
   return (
     <MatchView match={match} role={role} onClose={onBack} matches={matches}
-      focus={[child.id]} focusLabel={self ? "You" : "Your child"} backLabel="Matches"
+      focus={[child.id]} focusLabel={self ? "You" : "Your child"} backLabel={backLabel}
       captain={cap ? { label: cap.label, me: child } : null}/>
   );
 }

@@ -8,6 +8,7 @@
  *
  *   node --import ./tools/register-jsx.mjs apps/web/test/family.test.mjs
  */
+import { readFileSync } from "node:fs";
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { inningsStart, batters, bowler, ball, deriveInnings, BALL_TYPE } from "@scrbrd/scoring";
@@ -20,7 +21,7 @@ import { TermsGate } from "../src/views/family/terms.jsx";
 import { asLink } from "../src/lib/live.js";
 import { todoOf, countWords } from "../src/lib/todo.js";
 import { tenantWords } from "../src/lib/words.js";
-import { ChildSwitcher, answerVerb, isHisRow, stateWords } from "../src/views/family/parts.jsx";
+import { AvailabilityBlock, ChildSwitcher, isHisRow, stateWords } from "../src/views/family/parts.jsx";
 import { basisWords } from "../src/lib/compare.js";
 import { ScorecardTab } from "../src/views/matchcentre/scorecard.jsx";
 import { AnalyticsTab } from "../src/views/matchcentre/tabs.jsx";
@@ -515,13 +516,26 @@ group("Q16's exception: a pupil outside the pupil's app keeps his consent in Set
   ok("a parent, or a coach, does not", !keepsConsentInSettings([{ role: "guardian" }], "family") && !keepsConsentInSettings([{ role: "coach" }], null));
 }
 
-group("C16: the button says Answer until there is an answer");
+group("Slice 9: the answer stays pressed, confirms in place, and a suggestion is never a write");
 {
-  ok("no answer: Answer", answerVerb(null) === "Answer");
-  ok("asked to reconfirm: Answer", answerVerb("needs_reconfirming") === "Answer");
-  ok("answered: Change", ["available", "doubtful", "unavailable"].every((s) => answerVerb(s) === "Change"));
-  ok("not known yet: neither", answerVerb(undefined) === "Open the fixture");
   ok("'No answer yet' is still the state's word", stateWords(null).word === "No answer yet");
+  ok("the third answer is 'Not available' (§3.1 Flow A 1)", stateWords("unavailable").word === "Not available");
+  ok("Doubtful carries a neutral mark, not the warning triangle (§3.1 Flow A 3)", stateWords("doubtful").icon === "circle-help" && stateWords("needs_reconfirming").icon === "triangle-alert");
+  const draw = (child, role = "guardian", self = false) => renderToStaticMarkup(h(AvailabilityBlock, { match: { id: "m-s9", date: "2026-11-28" }, child, role, self }));
+  const kid = { id: "p-s9", name: "R Pillay" };
+  const parent = draw(kid), own = draw(kid, "player", true);
+  ok("one label: 'Your answer' on his own, the child's name on his parent's", /Your answer/.test(own) && !/You:/.test(own) && /R Pillay&#x27;s answer|R Pillay's answer/.test(parent));
+  ok("three keys, each saying whether it is pressed, one group named by the label",
+     ["available", "doubtful", "unavailable"].every((v) => new RegExp(`data-testid="availability-set-p-s9-${v}"[^>]*aria-pressed|aria-pressed="(true|false)"[^>]*data-testid="availability-set-p-s9-${v}"`).test(parent))
+     && /role="group" aria-labelledby="availability-label-p-s9-m-s9"/.test(parent));
+  ok("the line under the keys is always drawn, and says nothing has been answered", /data-testid="availability-by-p-s9"[^>]*>No answer yet</.test(parent));
+  const src = readFileSync(new URL("../src/views/family/parts.jsx", import.meta.url), "utf8");
+  const block = src.slice(src.indexOf("export function AvailabilityBlock"), src.indexOf("// ── The team sheet line"));
+  ok("no answer is written without a tap: the block has no effect, and its one POST carries the answer, a reason and a note alone",
+     !/useEffect/.test(block) && (block.match(/method: "POST"/g) ?? []).length === 1 && /body: \{ playerId: pid, status, reasonKind: reasonKind \|\| null, note: text \|\| null \}/.test(block));
+  ok("the suggestion reads only whose, open and the return date: no injury's name, severity, notes or physio",
+     /injuredAnswer\(injuries\.rows, child, match\.date\)/.test(block) && !/\.(type|severity|notes|physio)\b/.test(block));
+  ok("a key is never disabled while an answer is on its way (a faded key is not a pressed one)", !/disabled=\{(busy|sending)/.test(block));
 }
 
 group("Q10 (Kameel, 15 Nov): the eleven, her child's row marked");
