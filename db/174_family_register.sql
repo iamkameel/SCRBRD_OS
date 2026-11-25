@@ -489,7 +489,9 @@ END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, 
 
 -- ── 5 · The match: one go ───────────────────────────────────────────
 -- Internal. Under the caller's lock on the claimant. The open rows for any
--- of his live verified addresses at the school, locked. No date: nothing
+-- of his live verified addresses at the school, locked. Google's only
+-- (condition 1): auth_identity also takes microsoft.com and emailLink sign-ins
+-- (db/81), and the list's match is the address Google verified. No date: nothing
 -- tried, nothing used (no row). A date that agrees with no row of this kind:
 -- every open row for those addresses at the school used up, and one row
 -- answered with why = 'details_disagree'. A date that agrees: the first
@@ -509,7 +511,7 @@ BEGIN
   FOR g IN
     SELECT r.id, r.player_id, r.kind, r.uploaded_by, r.uploaded_at, p.born,
            (SELECT x.id FROM auth_identity x
-             WHERE x.user_id = p_user AND x.revoked_at IS NULL AND lower(x.email_at_link) = r.email
+             WHERE x.user_id = p_user AND x.provider = 'google.com' AND x.revoked_at IS NULL AND lower(x.email_at_link) = r.email
              ORDER BY x.linked_at, x.id LIMIT 1) AS identity_id
       FROM family_register r
       LEFT JOIN player p ON p.id = r.player_id AND p.school_id = r.school_id
@@ -517,7 +519,7 @@ BEGIN
        AND r.claimed_at IS NULL AND r.withdrawn_at IS NULL AND r.redacted_at IS NULL
        AND r.valid_until >= sa_today()
        AND r.email IN (SELECT lower(x.email_at_link) FROM auth_identity x
-                        WHERE x.user_id = p_user AND x.revoked_at IS NULL AND x.email_at_link IS NOT NULL)
+                        WHERE x.user_id = p_user AND x.provider = 'google.com' AND x.revoked_at IS NULL AND x.email_at_link IS NOT NULL)
      ORDER BY r.uploaded_at, r.id
        FOR UPDATE OF r
   LOOP
@@ -535,14 +537,14 @@ BEGIN
     UPDATE family_register r
        SET claimed_at = now(), claimed_by = p_user,
            claimed_identity = (SELECT x.id FROM auth_identity x
-                                WHERE x.user_id = p_user AND x.revoked_at IS NULL AND lower(x.email_at_link) = r.email
+                                WHERE x.user_id = p_user AND x.provider = 'google.com' AND x.revoked_at IS NULL AND lower(x.email_at_link) = r.email
                                 ORDER BY x.linked_at, x.id LIMIT 1),
            claimed_request = p_request, outcome = 'requested', outcome_reason = 'details_disagree'
      WHERE r.school_id = p_school
        AND r.claimed_at IS NULL AND r.withdrawn_at IS NULL AND r.redacted_at IS NULL
        AND r.valid_until >= sa_today()
        AND r.email IN (SELECT lower(x.email_at_link) FROM auth_identity x
-                        WHERE x.user_id = p_user AND x.revoked_at IS NULL AND x.email_at_link IS NOT NULL);
+                        WHERE x.user_id = p_user AND x.provider = 'google.com' AND x.revoked_at IS NULL AND x.email_at_link IS NOT NULL);
     RETURN QUERY SELECT NULL::uuid, NULL::uuid, NULL::uuid, NULL::timestamptz, NULL::uuid, 'details_disagree'::text;
     RETURN;
   END IF;

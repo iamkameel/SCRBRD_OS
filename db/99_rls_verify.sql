@@ -17805,6 +17805,17 @@ CREATE OR REPLACE FUNCTION _v174_identity(p_user uuid, p_tag text) RETURNS void 
   INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how)
   VALUES (p_user, 'google.com', 'v174-' || p_tag, 'v174.' || p_tag || '@example.invalid', 'new_account')
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A sign-in from another provider db/81 allows (microsoft.com, emailLink),
+-- at an address of this section's: not Google's word for the address.
+CREATE OR REPLACE FUNCTION _v174_other_provider(p_tag text, p_provider text) RETURNS uuid AS $$
+DECLARE u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES (NULL, 'v174.' || p_tag || '.typed@example.invalid', 'V174 Other', 'none') RETURNING id INTO u;
+  INSERT INTO auth_identity (user_id, provider, provider_uid, email_at_link, linked_how)
+  VALUES (u, p_provider, 'v174-' || p_tag, 'v174.' || p_tag || '@example.invalid', 'new_account');
+  RETURN u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- An account the office typed an address on, with no Google sign-in at all.
 CREATE OR REPLACE FUNCTION _v174_typed_only(p_tag text) RETURNS uuid AS $$
   INSERT INTO app_user (school_id, email, name, role)
@@ -18046,6 +18057,15 @@ BEGIN
     SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.nogoogle@example.invalid'); ROW2 := r.row_id;
     SELECT * INTO r FROM _v174_ask(U2, 'guardian', B);
     PERFORM _assert(r.answer = 'sent' AND _v174_row(ROW2) = 'open:-:-', format('§149 (address): no sign-in answered %s / %s', r.answer, _v174_row(ROW2)));
+    -- A sign-in from another provider (Microsoft, an email link) at a listed
+    -- address matches nothing either: the list's match is Google's (M2).
+    FOREACH v IN ARRAY ARRAY['microsoft.com', 'emailLink'] LOOP
+      U2 := _v174_other_provider(T || '.' || lower(v), v);
+      SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.' || lower(v) || '@example.invalid'); ROW2 := r.row_id;
+      SELECT * INTO r FROM _v174_ask(U2, 'guardian', B);
+      PERFORM _assert(r.answer = 'sent' AND _v174_link(U2, BOY) = '' AND _v174_row(ROW2) = 'open:-:-',
+        format('§149 (address): a %s sign-in at a listed address answered %s / %s', v, r.answer, _v174_row(ROW2)));
+    END LOOP;
     -- With the condition back (her verified address listed), she is linked:
     -- she withdraws the waiting request, as POST /api/requests/:id/withdraw does, and asks again.
     SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.google@example.invalid');
@@ -51100,6 +51120,7 @@ $m130$;
   --   the cooldown not asked                    → (paused) red: linked
   --   the row's dates and withdrawal not asked  → (open) red: the claim raised
   --   the typed address matched as well         → (address) red: linked
+  --   any provider's sign-in matched, not Google's only → (address) red: linked
   --   the revoked address let into the upload   → (revoked) red
   --   the requester shown her own line          → (date) red
   --   a pupil under 18 let in on player         → (pupil) red: in
