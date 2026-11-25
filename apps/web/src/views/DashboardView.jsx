@@ -569,8 +569,9 @@ function DashboardView({ role, onNav, onOpenScorer }) {
       onNav={onNav} onOpenScorer={onOpenScorer} chipDoor={chipDoor}
       // The set-up list leads Needs you for a school with no fixtures (Slice 6), from the fixtures and players read here,
       // once both have answered whole: a read still out, or failed, draws no list rather than one that is wrong.
-      // His side plays today and has not started: the match card leads, and Needs you sits under it (§3.3).
-      needsYouAfterNext={!!(signedIn() && next && !liveMatch && isMatchDay(next, Date.now()) && cockpitGate(assignments, next))}
+      // His side plays today and has not started: the match card leads, and Needs you sits under it (§3.3). A match
+      // already live keeps its board above both.
+      needsYouAfterNext={!!(signedIn() && next && isMatchDay(next, Date.now()) && cockpitGate(assignments, next))}
       needsYou={signedIn() ? <NeedsYou role={role} matches={MATCHES} onNav={onNav} players={PLAYERS}
         matchesAnswered={[matchesRead, playersRead].every((r) => r.live && !r.loading && !r.error)}/> : null}
       nextFold={signedIn() && next ? <MatchDayCard matches={MATCHES} onNav={onNav} only={next.id}/> : null}

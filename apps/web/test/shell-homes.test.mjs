@@ -113,7 +113,7 @@ group("The day sheet (§3.10)");
       return html.indexOf('data-testid="needs-you-mark"') < html.indexOf('data-testid="day-next"') ? "needs-you first" : "match first"; };
     ok("on his match day the next fixture leads and Needs you sits under it; on any other day Needs you leads, as before",
        order(true) === "match first" && order(false) === "needs-you first", [order(true), order(false)]);
-    ok("...and DashboardView sets it only for his side's fixture today, not live", /needsYouAfterNext=\{!!\(signedIn\(\) && next && !liveMatch && isMatchDay\(next, Date\.now\(\)\) && cockpitGate\(assignments, next\)\)\}/.test(readFileSync(new URL("../src/views/DashboardView.jsx", import.meta.url), "utf8")));
+    ok("...and DashboardView sets it only for his side's fixture today (a live board stays above both)", /needsYouAfterNext=\{!!\(signedIn\(\) && next && isMatchDay\(next, Date\.now\(\)\) && cockpitGate\(assignments, next\)\)\}/.test(readFileSync(new URL("../src/views/DashboardView.jsx", import.meta.url), "utf8")));
   }
   const slots = [{ key: "a", on: (has) => has("a") }, { key: "b", on: (has) => has("b") }, { key: "c", on: (has) => has("c") }];
   {
