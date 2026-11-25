@@ -83,7 +83,7 @@ function SetupList({ lines, onNav }) {
           {lines.map((l) => (
             <li key={l.key} data-testid="setup-row" data-key={l.key} style={{ listStyle: "none" }}>
               <button type="button" className="os-state" data-testid={`setup-open-${l.key}`} onClick={go(l)}
-                style={{ display: "block", width: "100%", minHeight: "44px", padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
+                style={{ display: "block", width: "100%", minHeight: `${T.floor.target}px`, padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
                   background: "transparent", color: "inherit", font: "inherit", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md }}>
                 <span data-testid="setup-fact" style={{ display: "block", ...T.role.body, fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere" }}>{l.fact}</span>
                 <span style={{ display: "block", ...line }}>{l.owner}</span>
@@ -154,7 +154,7 @@ function NeedsYouRead({ role, reach, matches, onNav, matchesAnswered, players })
               <li key={r.id} data-testid="needs-you-row" data-rule={r.rule} data-kind={r.action?.kind ?? ""} data-match={r.action?.matchId ?? undefined} style={{ listStyle: "none" }}>
                 {door
                   ? <button type="button" className="os-state" data-testid={`needs-you-open-${r.id}`} onClick={door.go}
-                      style={{ display: "block", width: "100%", minHeight: "44px", padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
+                      style={{ display: "block", width: "100%", minHeight: `${T.floor.target}px`, padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",
                         background: "transparent", color: "inherit", font: "inherit", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md }}>{inner}</button>
                   : <div style={{ padding: `${T.space.sm} ${T.space.md}`, border: `1px solid ${T.line.subtle}`, borderRadius: T.radius.md }}>{inner}</div>}
               </li>
@@ -163,14 +163,14 @@ function NeedsYouRead({ role, reach, matches, onNav, matchesAnswered, players })
         </ul>
         {register && (
           <button type="button" className="os-state" data-testid="needs-you-register" onClick={register.go}
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
+            style={{ minHeight: `${T.floor.target}px`, padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
               border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer", ...T.role.body }}>
             Check the clearance register <span aria-hidden="true">›</span>
           </button>
         )}
         {(rows.length > shown.length || failed > 0) && (
           <button type="button" className="os-state" data-testid="needs-you-all" onClick={() => onNav("readiness")}
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
+            style={{ minHeight: `${T.floor.target}px`, padding: `0 ${T.space.lg}`, justifySelf: "start", background: "transparent", color: T.content.primary,
               border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer", ...T.role.body, fontWeight: 600 }}>
             {rows.length > shown.length ? `See all ${rows.length} on To resolve` : "See what could not be read on To resolve"}
           </button>

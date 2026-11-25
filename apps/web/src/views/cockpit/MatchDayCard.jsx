@@ -91,7 +91,7 @@ export function MatchDayCard({ matches, onNav, only = null, skip = null }) {
 const assignmentsOf = () => (signedIn() ? profile()?.assignments ?? null : null);
 
 // A function, not a constant: the theme's tokens are read when drawn, never at import.
-const btn = () => ({ minHeight: "44px", padding: `0 ${T.space.lg}`, background: "transparent", color: T.content.primary,
+const btn = () => ({ minHeight: `${T.floor.target}px`, padding: `0 ${T.space.lg}`, background: "transparent", color: T.content.primary,
   border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 });
 
 /** @param {{match: any, gate: any, onNav: (page: string) => void, now: number, title: string, named: boolean, folded?: boolean}} p */
