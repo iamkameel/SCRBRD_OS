@@ -371,6 +371,8 @@ try {
   await keepsFloors("The correction", page, "edit-dob-correct");
   const offBy = `${bek.b.slice(0, 8)}${bek.b.slice(8) === "01" ? "02" : "01"}`;
   await tid(page, "edit-dob-correct-born").fill(offBy);
+  ok("...and it waits for a reason (Kameel, 25 Nov 2026)", await tid(page, "edit-dob-correct-save").isDisabled());
+  await tid(page, "edit-dob-correct-reason").fill("Birth certificate seen");
   await tid(page, "edit-dob-correct-save").click();
   ok("a date his ID number does not carry is refused in words, from the server",
      await wait(page, "edit-dob-correct-said") && /different date of birth/.test(await inner(page, "edit-dob-correct-said")),
@@ -379,6 +381,7 @@ try {
      (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [BEKKER]))[0].b === bek.b
      && (await q(`select count(*)::int n from player_born_change where player_id = $1`, [BEKKER]))[0].n === 0);
   await tid(page, "edit-dob-correct-born").fill(bek.b);
+  await tid(page, "edit-dob-correct-reason").fill("Birth certificate seen");
   await tid(page, "edit-dob-correct-save").click();
   await afterReads(page, 1200);
   ok("the date already on record is said to be so", /already on record/.test(await inner(page, "edit-dob-correct-said")),

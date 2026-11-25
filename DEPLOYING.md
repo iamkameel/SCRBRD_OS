@@ -2601,14 +2601,18 @@ birth should be match with an ID No."). A date of birth that disagrees with the
 ID number on his record is refused in the database, whoever writes it through
 the application. A recorded date, and an ID number on file, are the school
 office's alone to change. Every change to a date is written to
-`player_born_change` (before, after, who, when, how), which the office reads on
-Edit Profile. The roster import's silent overwrite is folded into the same rule.
-Its proof is db/99 §147.
+`player_born_change` (before, after, who, when, how, and for a correction its
+required reason, Kameel 25 Nov 2026), which the office reads on Edit Profile;
+the changes join `audit_log()` as the kind `dob` for its readers (the dates to
+a reader of the boy's age, never the reason). The roster import's silent
+overwrite is folded into the same rule. Its proof is db/99 §147.
 
 To paste:
 
 - **After db/171.** It needs db/168's `pupil_claim_office()` and re-emits no
-  function of db/169, db/170 or db/171. It matters more once db/169 is in,
+  function of db/169, db/170 or db/171. It patches `audit_log()` in place, and
+  only over db/148's body (the last to touch it) or its own: anything else
+  fails the paste loudly, changing nothing. It matters more once db/169 is in,
   because db/169 opens a pupil's own sign-in by the date on his record.
 - **Read its NOTICE.** The paste counts the rows whose date already disagrees
   with their ID number, and names the count, never a boy. Nothing fails because
