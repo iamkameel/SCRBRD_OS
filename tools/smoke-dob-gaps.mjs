@@ -225,10 +225,11 @@ try {
   ok("the wrong shape is refused before the database is asked",
      (await correct(P_U16, registrar, { born: "2011/04/07", reason: WHY })).body?.error === "born_must_be_yyyy_mm_dd");
   ok("...and a date outside a pupil's age", (await correct(P_U16, registrar, { born: "1970-01-01", reason: WHY })).body?.error === "born_not_plausible_for_a_school_pupil");
-  for (const [label, reason] of [["none", undefined], ["blank", "   "], ["over 200 characters", "x".repeat(201)]]) {
+  for (const [label, reason] of [["none", undefined], ["blank", "   "], ["invisible", "\u200b"], ["over 200 characters", "x".repeat(201)]]) {
     const r = await correct(P_U16, registrar, { born: u16New, reason });
-    ok(`a correction with its reason ${label} is refused before the database is asked`,
-       r.status === 400 && r.body?.error === (label.startsWith("over") ? "reason_too_long" : "reason_required"), JSON.stringify(r.body));
+    const long = label.startsWith("over");
+    ok(`a correction with its reason ${label} is refused`,
+       r.status === (long ? 400 : 422) && r.body?.error === (long ? "reason_too_long" : "reason_required"), JSON.stringify(r.body));
   }
   ok("a player id that is not one is not found", (await correct("not-a-player", registrar, { born: u16New, reason: WHY })).status === 404);
   const fixed = await correct(P_U16, registrar, { born: u16New, reason: WHY });
