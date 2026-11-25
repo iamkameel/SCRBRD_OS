@@ -2573,8 +2573,9 @@ Recorded in `db/SHIPPED.sha256` by #371 (df071d36).
 `db/169_pupil_signin_gate.sql` (PR #376, `claude/wip-hm-b`; SCRBRD-140 honesty
 model, Migration B, on Kameel's answers of 18 and 20 Nov). A pupil under 18
 reads his own page only while a yes is in force: a guardian's "Allow his own
-sign-in", or the office's record that the signed consent form is on file. Not
-yet pasted. Before it, on each database:
+sign-in", or the office's record that the signed consent form is on file.
+Pasted on the demo and production, 25 Nov 2026, from 7a93c9a6, after the
+read-only count (0 accounts closed on either). Before it, on each database:
 
 1. `db/168` is pasted first (`--apply`'s predecessor check and db/169's §0
    both refuse otherwise).
@@ -2617,7 +2618,7 @@ To paste:
 - It resets `lock_timeout` with its last statement, so a pooled SQL Editor
   connection is handed back as it came.
 
-Not pasted yet.
+Pasted on the demo and production, 25 Nov 2026, from c07f97ec.
 <!-- ── end db/170 ── -->
 
 ### 5 · Cloud Run, the first time
