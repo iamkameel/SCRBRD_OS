@@ -1926,6 +1926,15 @@ async function walk(theme) {
     const tapProbe = await smallTargets(page);
     await page.evaluate(() => document.body.lastElementChild.remove());
     ok("...and the tap floor sees a 30px key, not a hidden one", tapProbe.some((t) => /probe key/.test(t)) && !tapProbe.some((t) => /hidden/.test(t)), tapProbe.join(" · "));
+    // ...and the field-type floor sees a 13px input, select and textarea, and not a 16px one, a checkbox or a hidden one.
+    await page.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML = '<input aria-label="probe small" style="font-size:13px"><select aria-label="probe sel" style="font-size:12px"></select><textarea aria-label="probe area" style="font-size:15px"></textarea><input aria-label="probe fine" style="font-size:16px"><input type="checkbox" style="font-size:10px"><input aria-label="probe hid" aria-hidden="true" style="font-size:10px">';
+      document.body.appendChild(d);
+    });
+    const fieldProbe = await smallFieldType(page);
+    await page.evaluate(() => document.body.lastElementChild.remove());
+    ok("...and the field-type floor sees a 13px input, select and textarea, not a 16px one", fieldProbe.length === 3 && !fieldProbe.some((t) => /probe fine|probe hid/.test(t)), fieldProbe.join(" · "));
     // "landing" is the public home page since SCRBRD-142 (home.html, at / in
     // production; this walk's server answers / with the app, so it is asked
     // for by name). The app's own first screen is the login page.
