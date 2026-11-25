@@ -19020,6 +19020,17 @@ CREATE OR REPLACE FUNCTION _v175_notice(p_boy uuid, p_recipient uuid, p_kind tex
     FROM player p WHERE p.id = p_boy
   RETURNING id
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A notice route added later that forgets the gate (owner): a permissive
+-- read of every notice addressed to the reader, on or off. db/99 runs in one
+-- transaction that is rolled back, so it never outlives the case.
+CREATE OR REPLACE FUNCTION _v175_route_added_later(p_on boolean) RETURNS void AS $$
+BEGIN
+  IF p_on THEN
+    CREATE POLICY _v175_later ON notification FOR SELECT USING (recipient_id = app_user_id());
+  ELSE
+    DROP POLICY IF EXISTS _v175_later ON notification;
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The record of a link's agreements, oldest first (owner): "state/version/how;…".
 CREATE OR REPLACE FUNCTION _v175_record(p_link uuid) RETURNS text AS $$
   SELECT coalesce(string_agg(r.state || '/' || coalesce(r.version, '-') || '/' || r.how, ';' ORDER BY r.seq), '')
@@ -19285,6 +19296,14 @@ BEGIN
     PERFORM _as(P1);
     PERFORM _assert(_v175_reads(ARRAY[n1]) = 0, '§150 (notices): P1 reads a notice about him before she agrees');
     PERFORM _assert((SELECT count(*) FROM my_notifications m WHERE m.id = n1) = 0, '§150 (notices): my_notifications lists it to P1');
+    -- A route added later that reads every notice addressed to her, and asks
+    -- nothing of him: the notice's own policy still holds his from her, and
+    -- still lets her read the agreed boy's (the control: P2's, below).
+    PERFORM _v175_route_added_later(true);
+    PERFORM _assert(_v175_reads(ARRAY[n1]) = 0, '§150 (notices): a route added later reads P1 a notice about him before she agrees');
+    PERFORM _as(P2);
+    PERFORM _assert(_v175_reads(ARRAY[n2]) = 1, '§150 (notices): with the route added later, P2 does not read hers');
+    PERFORM _v175_route_added_later(false);
     PERFORM _as(P2);
     PERFORM _assert(_v175_reads(ARRAY[n2]) = 1, '§150 (notices): P2, agreed, does not read the notice about him');
 
@@ -52033,6 +52052,19 @@ $m130$;
   --   (self)     a boy's own link is not this gate's
   --   (record)   the paste's carry-over left no link unrecorded
   --   (grants)   ACLs
+  -- Broken by hand (25 Nov 2026), each went red for its own reason:
+  --   the predicate out of app_can()             → (gate) red: P1 reaches 21 capabilities
+  --   the predicate out of is_family_of()        → (gate) red: family
+  --   <> 'pending' read as = 'granted'           → (gate) red: P3, withdrawn, closed
+  --   the role and relationship scoping dropped  → (self) red: an adult's own link closed
+  --   the test on any of her links, not his      → (children) red: one son opened the other
+  --   the consent door behind the gate           → (agree) red: she cannot agree
+  --   my_terms_due() without the caller          → (due) red: another family's rows
+  --   the notice policy off                      → (notices) red: a route added later reads it
+  --   the DSO's notice policy off                → (open) red: the DSO's notice held
+  --   my_alert_choices(), my_health_consents()   → (gate) red: alerts, health
+  --   pupil_signin_my_link() ungated             → (writes) red: terms_not_agreed, not the gate
+  --   the public-name or health writer ungated   → (writes) red: she answered for him
   PERFORM _v175_case('gate');
   PERFORM _v175_case('writes');
   PERFORM _v175_case('agree');
