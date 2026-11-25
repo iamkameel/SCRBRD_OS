@@ -533,7 +533,8 @@ try {
   // live lead. S15_SHOTS=<dir> keeps a picture of each, at 390 and 1366, in both themes.
   group("Slice 15: the spectator's Today");
   {
-    const dayWords = await (async () => { const d = new Date(); return `${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]} ${d.getDate()} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]}`; })();
+    // The Home dates its day in Johannesburg (UTC+2, no summer time), so the walk does too, whatever the runner's clock.
+    const dayWords = await (async () => { const d = new Date(Date.now() + 2 * 3600e3); return `${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getUTCDay()]} ${d.getUTCDate()} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getUTCMonth()]}`; })();
     const shotsDir = process.env.S15_SHOTS;
     if (shotsDir) await (await import("node:fs/promises")).mkdir(shotsDir, { recursive: true });
     const visit = async (/** @type {number} */ width, /** @type {"light" | "dark"} */ scheme, /** @type {boolean} */ empty, /** @type {boolean} */ sunny = false) => {
@@ -556,7 +557,7 @@ try {
       next: await tid(s.page, "day-next").count(), all: await inner(s.page, "day-sheet") });
 
     for (const [name, setup] of [["nothing", null], ["later", async () => { const [m] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
-        values ($1, '1XI', 'Slice 15 Later XI', now() + interval '40 minutes', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL]); made.matches.push(m.id); }],
+        values ($1, '1XI', 'Slice 15 Later XI', now() + least(interval '40 minutes', (((date_trunc('day', now() at time zone 'Africa/Johannesburg') + interval '1 day') at time zone 'Africa/Johannesburg') - now()) / 2), 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL]); made.matches.push(m.id); }],
         ["live", async () => { const [m] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
         values ($1, '1XI', 'Slice 15 Live XI', now() - interval '20 minutes', 'cricket', 'T20', 20, 'live') returning id`, [HIL]); made.matches.push(m.id); }]]) {
       if (setup) await setup();
