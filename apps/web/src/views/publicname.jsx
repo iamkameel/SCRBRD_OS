@@ -141,7 +141,7 @@ const tLine = (quiet) => ({ ...T.role.body, margin: 0, color: quiet ? T.content.
 export const dHead = () => ({ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 6px" });
 export const dNote = (bad) => ({ fontFamily: D.body, fontSize: "12px", lineHeight: 1.5, margin: "4px 0 0", color: bad ? textOn(D.rose) : D.textSecondary });
 export const dField = () => ({ width: "100%", minHeight: "44px", padding: "9px 12px", background: D.surf2, boxSizing: "border-box",
-  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "14px" });
+  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize });
 export function DBtn({ children, onClick, disabled, testid, quiet = false, type = "button" }) {
   return (
     <button type={type} className="pressBtn" disabled={disabled} onClick={onClick} data-testid={testid}

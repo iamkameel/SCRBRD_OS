@@ -237,11 +237,17 @@ try {
   // my_pupil_state(), the office's pupil_claims() and its decisions, the
   // purge), which decide who sees a row.
   // No policy, by design, like pending_claim and school_register.
+  // pupil_signin_consent (db/169, SCRBRD-140 Migration B) is every yes and
+  // no for a pupil's own sign-in, append-only: RLS on, nothing granted to
+  // scrbrd_app, written by pupil_signin_consent_set(), the office's
+  // pupil_signin_office_set(), the terms trigger and the paste's carry-over,
+  // read only by db/169's SECURITY DEFINER question and pupil_signin_state(),
+  // which decide who reads what of it. No policy, by design (db/81's shape).
   const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
                                           "auth_identity", "pending_claim", "auth_epoch", "auth_session",
                                           "school_register", "request_cooldown", "passport_union_read",
                                           "milestone_family_notice", "recognition_audit", "ball_log_pin",
-                                          "pupil_claim"]);
+                                          "pupil_claim", "pupil_signin_consent"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

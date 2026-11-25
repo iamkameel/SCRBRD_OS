@@ -2567,6 +2567,58 @@ Hash-checked:
 `sha256 7c80311d0d67f811b3717c0d70024a7e19993b746a52262170482fc15abcebd2`.
 Recorded in `db/SHIPPED.sha256` by #371 (df071d36).
 <!-- ── end db/168 ── -->
+<!-- ── db/169: "Allow his own sign-in", and the gate ── -->
+#### "Allow his own sign-in", and the gate (db/169)
+
+`db/169_pupil_signin_gate.sql` (PR #376, `claude/wip-hm-b`; SCRBRD-140 honesty
+model, Migration B, on Kameel's answers of 18 and 20 Nov). A pupil under 18
+reads his own page only while a yes is in force: a guardian's "Allow his own
+sign-in", or the office's record that the signed consent form is on file. Not
+yet pasted. Before it, on each database:
+
+1. `db/168` is pasted first (`--apply`'s predecessor check and db/169's §0
+   both refuse otherwise).
+2. Run `psql "$DATABASE_URL" -X -f tools/pupil-signin-count.sql` as the owner
+   and read every column, not only `would_close`: `no_date_of_birth`,
+   `no_consent`, `left_school`, `no_boy_named` and `also_holds_another_role`.
+   Kameel sees each account the second and third results list, by id, before
+   the paste.
+3. Paste it as one transaction, outside a match: the SQL Editor runs
+   `--apply`'s script as one implicit transaction, or `psql -1 -v
+   ON_ERROR_STOP=1`. It is safe run any other way, and a second paste
+   finishes what a stopped one left.
+4. After it, `SELECT count(*) FROM app_user u WHERE u.active AND NOT
+   pupil_signin_open(u.id);` equals step 2's `would_close`.
+
+Hash to check: `sha256 018d2aea510b97a90503c61e8d45194034b791ccd3623055aea93194ed22f9a0`.
+<!-- ── end db/169 ── -->
+<!-- ── db/170: Pro mode per fixture ── -->
+#### Pro mode per fixture (db/170)
+
+`db/170_fixture_pro_mode.sql` (PR #377, branch claude/wip-promode): the
+redesign's question 1. It adds `match.capture_profile`, the fixture's request to
+the pad (`full` is Pro mode; NULL asks nothing, and the pad scores one tap a
+ball), and `match_capture_request()`, the coach's or the office's door. The
+request is fixed once the toss is in. Its proof is db/99 §145.
+
+To paste:
+
+- **Between matches, with no match live.** `ADD COLUMN` and `ADD CONSTRAINT`
+  take ACCESS EXCLUSIVE on `match` until the paste commits. While the paste
+  waits for that lock (up to its own `lock_timeout`, ten seconds), every read of
+  `match` queues behind it, and a live pad's sync stalls for up to ten seconds
+  and then retries.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  170, and the API refuses to start on a database without it.
+- **It can be pasted again.** A second paste changes nothing (the dump is
+  identical), so a paste that timed out on its lock is simply run again.
+- **It doesn't depend on db/169.** Its guard asks for db/02, db/07, db/09 and
+  db/157 only. Only its place in `expected-migrations.json` follows 169's.
+- It resets `lock_timeout` with its last statement, so a pooled SQL Editor
+  connection is handed back as it came.
+
+Not pasted yet.
+<!-- ── end db/170 ── -->
 
 ### 5 · Cloud Run, the first time
 
@@ -2796,7 +2848,10 @@ run twice".
    how many went. It never removes an opened account, or one a safeguarding concern names.
    **An account later enrolled as an adult** (say, a pupil who turned 18 and now coaches) is
    still treated as a pupil while its claim exists: no requests of its own, initials in
-   the audit log. Until Migration B gives the office a "withdraw this claim", the owner
+   the audit log. Migration B (db/169) gives the office two doors, neither of them this:
+   a guardian may stop the yes the school carried over for her son herself, and the
+   office's "This account is not him" takes a wrongly recognised account off a boy's
+   record (it declines the claim, which stays). So for an adult's claim the owner still
    deletes the claim by its id, once the office has confirmed that the account holds a
    non-pupil role. Do not do this for an account that is a concern's reporter: ask the
    DSO first.

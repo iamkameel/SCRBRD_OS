@@ -136,6 +136,8 @@
 
 *20 Nov 2026 (18:06):* slice 5, the parent's terms screen: Kameel's six calls decided "All six as recommended"; it is built after the 25 Nov reset.
 
+*25 Nov 2026:* slice 5, the parent's terms screen, merged (#380, merge 12699232; no migration).
+
 The version stays `popia-2026-01`: the text above, with Q2 and Q5, is that version. Any later edit is a new version (§4).
 
 ---

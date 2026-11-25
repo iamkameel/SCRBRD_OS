@@ -16,7 +16,7 @@ import { ASK_INTRO, ASK_PUPIL, ASK_STATE_WORDS, JOBS, NAME_MAX, TOWN_MAX, askSen
 const FONT = { head: "'Syne',sans-serif", body: "'DM Sans',sans-serif" };
 const text = (size = 14, color = T.content.secondary) => ({ fontFamily: FONT.body, fontSize: `${size}px`, lineHeight: 1.5, color });
 const input = () => ({ width: "100%", minHeight: px(T.floor.target), boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
-  background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: "16px" });
+  background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: T.role.control.fontSize });
 const label = () => ({ display: "block", fontFamily: FONT.head, fontSize: "12px", fontWeight: 700, color: T.content.secondary, marginBottom: "6px" });
 
 // A server refusal about one field, and that field.

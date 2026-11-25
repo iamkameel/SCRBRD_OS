@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
 import { useFeatures } from "../lib/features.js";
@@ -84,7 +84,7 @@ const EMPTY_FORM = {
 
 const fieldStyle = () => ({
   padding: "7px 10px", borderRadius: D.md, background: D.surf2, border: `1px solid ${D.border}`,
-  color: D.textPrimary, fontFamily: D.body, fontSize: "12px", width: "100%",
+  color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize, width: "100%",
 });
 
 function Field({ text, children }) {

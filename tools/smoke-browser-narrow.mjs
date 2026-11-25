@@ -35,7 +35,7 @@ import { join, extname } from "node:path";
 import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildMatchCentreFixture } from "./fixture-matchcentre.mjs";
-import { narrowAudit, tabPath } from "./a11y-narrow.mjs";
+import { narrowAudit, smallFieldType, tabPath } from "./a11y-narrow.mjs";
 import { T } from "../apps/web/src/design/tokens.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
@@ -362,6 +362,10 @@ try {
             seen.push([key, tiny]);
             ok(`@${width} ${key}: nothing tapped under 44px (ceiling ${TAP_CEILING[key] ?? 0})`, tiny.length <= (TAP_CEILING[key] ?? 0), `${tiny.length}: ${tiny.slice(0, 4).join(" · ")}`);
             if (DEBUG && tiny.length) for (const x of tiny) console.log(`   [@${width} ${key}] ${x}`);
+            // The type in a field is 16px or more (T.floor.control), so a phone does not zoom on focus. None allowed.
+            const fieldType = await smallFieldType(page);
+            ok(`@${width} ${key}: the type in every field is ${T.floor.control}px or more (ceiling 0)`, fieldType.length === 0, `${fieldType.length}: ${fieldType.slice(0, 4).join(" · ")}`);
+            if (DEBUG && fieldType.length) for (const x of fieldType) console.log(`   [@${width} ${key}] ${x}`);
           };
           await judge("first");
           for (const n of await bar(page)) {

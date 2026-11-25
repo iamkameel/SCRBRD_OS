@@ -19,6 +19,10 @@
  *                                 …/guardians/:link/revoke, under
  *                                 user.role.assign or guardian.link.manage:
  *                                 familylinks.jsx (db/109)
+ *   - his own sign-in              GET/POST /api/players/:id/own-signin[/office],
+ *                                 under guardian.link.manage: the form on
+ *                                 file (who signed it, when), a withdrawal,
+ *                                 or opening him now: ownsignin.jsx (db/169)
  *
  * Name, squad number, playing role and the rest have no route, so they have no
  * field here. The first two need player.profile.manage, the third
@@ -29,7 +33,7 @@
  * Floors: nothing read under 12px, nothing pressed under 44px.
  */
 import { useId, useMemo, useState } from "react";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useRows } from "../lib/live.js";
 import { holdsCapability } from "../rbac/index.js";
@@ -39,6 +43,7 @@ import { WhoToRing } from "./family/childfile.jsx";
 import { PublicNameStaff } from "./publicname.jsx";
 import { GuardianLinks } from "./guardianlink.jsx";
 import { FamilyLinks, mayFamilyLinks } from "./familylinks.jsx";
+import { OfficeOwnSignIn } from "./ownsignin.jsx";
 import { holds } from "../lib/family.js";
 
 /** Does this person hold anything Edit Profile could offer? Signed out: nothing. */
@@ -63,7 +68,7 @@ const words = (e) => e?.detail || SAY[e?.code] || BIRTH_DATE_MESSAGE[e?.code] ||
 
 const heading = () => ({ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 6px" });
 const field = () => ({ width: "100%", minHeight: "44px", padding: "9px 12px", background: D.surf2, boxSizing: "border-box",
-  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "14px" });
+  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize });
 const note = (bad) => ({ fontFamily: D.body, fontSize: "12px", margin: "6px 0 0", color: bad ? textOn(D.rose) : D.textSecondary });
 
 function Go({ children, disabled, onClick, testid }) {
@@ -91,6 +96,7 @@ export function EditProfile({ role, player, teams, onMoved }) {
       )}
       {mayFamilyLinks(role) && <FamilyLinks role={role} player={player}/>}
       {holdsCapability(role, "guardian.link.manage") && <GuardianLinks role={role} player={player}/>}
+      {holdsCapability(role, "guardian.link.manage") && <OfficeOwnSignIn player={player}/>}
       {mayPublicName(role) && <PublicNameStaff player={player}/>}
     </div>
   );

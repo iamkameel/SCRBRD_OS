@@ -12,13 +12,13 @@
  * Type is 12px at the smallest and every control 44px tall.
  */
 import { useId, useRef, useState } from "react";
-import { D, textOn, inkOn } from "../design/tokens.js";
+import { D, T, textOn, inkOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { GROUND_NAME_MAX, GROUND_SURFACE_MAX, fieldsOf, groundBody, groundFormReady, groundRefusal } from "../lib/listing.js";
 
 const label = () => ({ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.04em", margin: "10px 0 4px" });
 const field = () => ({ width: "100%", minHeight: "44px", padding: "9px 12px", background: D.surf2, boxSizing: "border-box",
-  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "14px" });
+  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize });
 const note = (bad) => ({ fontFamily: D.body, fontSize: "12px", lineHeight: 1.5, margin: "8px 0 0", color: bad ? textOn(D.rose) : D.textSecondary });
 const pill = (quiet, disabled) => ({ minHeight: "44px", padding: "8px 16px", borderRadius: D.pill, cursor: disabled ? "not-allowed" : "pointer",
   background: quiet ? "transparent" : D.sky, border: `1px solid ${quiet ? D.border : "transparent"}`, color: quiet ? D.textPrimary : inkOn(D.sky),
