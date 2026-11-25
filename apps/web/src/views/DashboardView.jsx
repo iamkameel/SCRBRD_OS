@@ -484,11 +484,10 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
 
 /**
  * The spectator's news (§3.5): the three latest headlines of the posts his school's feed already gives him, the same
- * read the Newsfeed makes (news.read, which a spectator holds). Titles and days only; nothing is opened from here, as
- * his menu is Today and Matches. Not drawn while it is read or when there is nothing; a failed read is said, with Retry.
- * @param {{role: string, nonce: number}} p
+ * read the Newsfeed makes (news.read, which a spectator holds). Titles and days, and one link to the news section of his Today. Not drawn while it is read or when there is nothing; a failed read is said, with Retry.
+ * @param {{role: string, nonce: number, onNav?: ((page: string) => void) | null}} p
  */
-function FanNews({ role, nonce }) {
+function FanNews({ role, nonce, onNav }) {
   const [again, setAgain] = useState(0);
   const read = useLive("news", role, nonce + again);
   const state = readState(read, { what: "the news" });
@@ -507,6 +506,13 @@ function FanNews({ role, nonce }) {
           </li>
         ))}
       </ul>
+      {onNav && (
+        <button type="button" className="pressBtn" data-testid="day-news-all" onClick={() => onNav("news")}
+          style={{ minHeight: T.floor.target, marginTop: T.space.sm, padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, border: `1px solid ${T.line.normal}`,
+            background: "transparent", color: T.content.primary, fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, cursor: "pointer" }}>
+          All news <span aria-hidden="true">›</span>
+        </button>
+      )}
     </BentoCard>
   );
 }
@@ -656,7 +662,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     {followedFirst && !fan && followedBlock}
     <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
       liveInnings={liveInnings} liveResult={signedIn() ? liveScore.result : null} liveConditions={signedIn() ? liveScore.conditions : null} nowLine={nowLine} nowAction={nowAction} openMatch={openMatch} liveAt={liveScore.at}
-      news={fan && signedIn() ? <FanNews role={role} nonce={nonce}/> : null}
+      news={fan && signedIn() ? <FanNews role={role} nonce={nonce} onNav={onNav}/> : null}
       lead={fan && followedFirst && followedBlock ? <div data-testid="today-followed"><FollowedSchools followed={followed} lead/></div> : null}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
