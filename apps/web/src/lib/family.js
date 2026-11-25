@@ -16,6 +16,7 @@ import { sidesOf } from "./matchCentre.js";
 // A day in words, and her own links that are not live in words: their own leaf module, so the
 // no-school home reads them without the match centre (lib/linkWords.js); the same functions here.
 import { linkWords, longDate } from "./linkWords.js";
+import { healthPromptKey } from "./childKeys.js";
 export { linkWords, longDate };
 
 /**
@@ -167,6 +168,42 @@ export function recallChild() {
 }
 export function rememberChild(id) {
   try { if (id) globalThis.localStorage?.setItem(KEY, id); } catch { /* private window */ }
+}
+
+/**
+ * Is this child's section closed until she agrees the school's terms on her
+ * own link (GA-I20 D7; Kameel, 18 Nov 2026: "Server withholds his data until
+ * she agrees")? Read from HER link's own consent_state, as my_children returns
+ * it, never from whether a read of him returned rows: a parent who is also
+ * staff reads her side whatever her link says, and that reach must never fill
+ * his family section.
+ *
+ * Closed on "never agreed" only. A withdrawn link keeps sight of his record
+ * (the approved terms: "you keep sight of his record"), and a link agreed
+ * under an older version keeps reading while it is asked to agree again; both
+ * decided 20 Nov 2026. Anything that is not one of those two answers is read
+ * as not agreed: the column allows only pending, granted and withdrawn.
+ * @param {{ consent?: string | null } | null | undefined} child  a my_children row (lib/live.js asChild)
+ */
+export function termsGated(child) {
+  if (!child) return false;
+  return child.consent !== "granted" && child.consent !== "withdrawn";
+}
+
+/**
+ * Forget what this device keeps under a child whose section is closed: the
+ * child chosen on Home, health monitoring's "Not now", and a door from the
+ * list into his card. The server answers for what it sends; what a phone
+ * already holds, only the phone can drop. Storage may be refused; that is fine.
+ * @param {string} childId
+ * @param {Storage | null} [store]
+ */
+export function forgetChild(childId, store) {
+  if (!childId) return;
+  const s = store !== undefined ? store : (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();
+  try { if (s?.getItem(KEY) === childId) s.removeItem(KEY); } catch { /* storage blocked */ }
+  try { s?.removeItem(healthPromptKey(childId)); } catch { /* storage blocked */ }
+  if (_door?.childId === childId) _door = null;
 }
 
 

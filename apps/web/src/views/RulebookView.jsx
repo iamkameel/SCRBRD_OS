@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { D, themed } from "../design/tokens.js";
+import { D, T, px, themed } from "../design/tokens.js";
 import { Badge } from "../ui/primitives.jsx";
 import { useLive } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
@@ -132,8 +132,9 @@ function RulebookView({ role }) {
   // Laws crib when there are none (signed out, or nothing on the server).
   const open = chosen ?? (categories.length ? `cat:${categories[0]}` : "scoring");
   const tab = (id, label) => (
-    <button key={id} onClick={()=>setChosen(id)} className="pressBtn" data-testid={`rulebook-tab-${id}`} style={{
-      display:"flex",alignItems:"center",gap:"6px",padding:"7px 14px",borderRadius:D.pill,
+    <button key={id} type="button" onClick={()=>setChosen(id)} className="pressBtn" data-testid={`rulebook-tab-${id}`} style={{
+      // §3.5: 44px to tap (T.floor.target); the chips were 30 tall.
+      display:"flex",alignItems:"center",gap:"6px",minHeight:px(T.floor.target),padding:"0 14px",borderRadius:D.pill,
       cursor:"pointer",border:`1px solid ${open===id?D.amber+"66":D.border}`,
       background:open===id?`${D.amber}18`:"transparent",
       fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.05em",

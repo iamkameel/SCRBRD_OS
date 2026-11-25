@@ -914,3 +914,21 @@ INSERT INTO app_user (id, school_id, email, name, role) VALUES
 INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000057', '88888888-0000-0000-0000-000000000057', 'dso',
    '11111111-1111-1111-1111-111111111111', NULL);
+
+-- db/169 (SCRBRD-140 Migration B): the seed's pupils were enrolled the way a
+-- school's were before db/169, so their own links' "granted" stamp is
+-- carried over as the office's yes, exactly as db/169 §6 does on a live
+-- database at the paste. The seed runs after the migrations, so it asks for
+-- the carry-over itself.
+--
+-- The seeded spectator@ account holds `player` on the 1st XI and names no
+-- boy: the seeded test account (production and the demo hold the same row,
+-- tools/sql/fix-player-without-team.sql). db/169 closes such an account
+-- (Kameel, 20 Nov, A) but not this one, by its id: it is the test cast's,
+-- not a child's, and the walks read the 1st XI as it.
+DO $seed164$
+BEGIN
+  IF to_regprocedure('pupil_signin_carry_over()') IS NOT NULL THEN
+    PERFORM pupil_signin_carry_over();
+  END IF;
+END $seed164$;

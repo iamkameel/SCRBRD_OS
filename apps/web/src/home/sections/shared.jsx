@@ -1,4 +1,4 @@
-import { T, clr } from "../../design/tokens.js";
+import { T, clr, px } from "../../design/tokens.js";
 
 /**
  * What every section of the public home page shares (SCRBRD-142 §6.1).
@@ -61,7 +61,7 @@ export function Seam() {
 }
 
 const btn = () => ({
-  minHeight: "44px", minWidth: "44px", padding: "0 20px", borderRadius: T.radius.pill, boxSizing: "border-box",
+  minHeight: px(T.floor.target), minWidth: px(T.floor.target), padding: "0 20px", borderRadius: T.radius.pill, boxSizing: "border-box",
   fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, textDecoration: "none", cursor: "pointer",
   display: "inline-flex", alignItems: "center", justifyContent: "center",
 });
@@ -83,7 +83,7 @@ export function LinkButton({ href, solid, children, testId, rel, tone }) {
 /** A plain text link, 44px tall so it can be tapped. */
 export const textLink = () => ({
   ...homeBody(), fontSize: "14px", color: T.brand.blueText, textDecoration: "underline", textUnderlineOffset: "3px",
-  display: "inline-flex", alignItems: "center", minHeight: "44px",
+  display: "inline-flex", alignItems: "center", minHeight: px(T.floor.target),
 });
 
 const SA = "Africa/Johannesburg";

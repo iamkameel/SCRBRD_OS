@@ -349,6 +349,10 @@ try {
     await o.page.waitForSelector('[data-testid="pupil-claims-done"]', { timeout: 6000 }).catch(() => {});
     ok("recognised, in words", /Recognised Sipho Walker\. Nothing about him is opened by it\./.test(await tid(o.page, "pupil-claims-done").innerText().catch(() => "")));
     const after = o.page.locator('[data-testid="pupil-claim"]', { hasText: "Sipho Walker" }).first();
+    // The list is read again after the answer: wait for that read, not the first paint
+    // (1 run in 3 read the row before it, on the db/169 branch).
+    await o.page.locator('[data-testid="pupil-claim"][data-state="recognised"]', { hasText: "Sipho Walker" }).first()
+      .waitFor({ timeout: 6000 }).catch(() => {});
     ok("...and the list says so, with his place on the list", (await after.getAttribute("data-state")) === "recognised" && /Walk Rosterboy/.test(await after.innerText()));
     const fl = await floors(o.page, '[data-testid="pupil-claims"]');
     ok("the Pupil claims list: nothing under 12px, nothing under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].join(" | "));

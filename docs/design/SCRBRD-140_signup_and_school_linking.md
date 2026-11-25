@@ -5,6 +5,12 @@ question (2026-10-02): "Can we use Google OAuth via Firebase? Can users just sig
 later be linked to their school, or select a school and it must get passed against a
 school-provided register." Added to Fable's list the same day: "security isn't cheap."
 
+**Migration B (db/169), decided 20 Nov 2026 (Kameel, on the board; times SAST):**
+- Fable's red-team: "All six as recommended" (07:45).
+- A disable keeps the school's yes (13:37; account lifecycle D1). Switching a boy's account off and on again does not end it. His account ending, his roster link moving, or leaving the school (a move to another school included) still end it.
+- Date of birth (13:38): the office corrects it, and every change is audited. His note: "Date of birth should be match with an ID No." db/169 leaves the date as today; a follow-up, db/172, logs each correction (old date, new date, who) and refuses a date that disagrees with the ID number, on the server.
+- Slice 5, the parent's terms screen (18:06): Kameel's six calls decided "All six as recommended"; it is built after the 25 Nov reset.
+
 What this document reads from, by name, is in Appendix A. Opus builds from it; the lead
 numbers the migration, the `db/99` section and the phases at build.
 

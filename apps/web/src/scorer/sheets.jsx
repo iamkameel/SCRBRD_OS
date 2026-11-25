@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DISMISSAL, DISMISSAL_LABEL, INNINGS_END_REASON, NB_RUNS, dismissalsOffExtra } from "@scrbrd/scoring";
-import { D, T } from "../design/tokens.js";
+import { D, T, px } from "../design/tokens.js";
 import { armHandover, cancelHandover, claimHandover, refusalWords, sessionState, verifyTakeover } from "../lib/handover.js";
 import { fmtOv } from "./format.js";
 import { SHOT_CATEGORIES } from "./shots.js";
@@ -683,7 +683,8 @@ function BattingOrderSheet({squad,batsmen,teamKey,twelfthMan,onSend,onClose,head
         )}
         {onTimedOut&&(
           <button type="button" data-testid="timed-out-toggle" onClick={()=>setTimedOut(v=>!v)} className="pressBtn" style={{
-            width:"100%",marginBottom:"12px",padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
+            // §3.5: 44px to tap (T.floor.target); it was 36 on its padding.
+            width:"100%",minHeight:px(T.floor.target),marginBottom:"12px",padding:"9px 12px",borderRadius:D.md,cursor:"pointer",textAlign:"left",
             border:`1px solid ${timedOut?D.rose+"55":D.border}`,background:timedOut?`${D.rose}12`:"transparent",
             fontFamily:D.body,fontSize:"12px",fontWeight:500,color:timedOut?D.roseText:D.textSecondary}}>
             {timedOut?"Timed out — tap the batter who did not arrive in time":"Incoming batter timed out?"}
