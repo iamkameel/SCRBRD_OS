@@ -1,11 +1,11 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useTheme } from "../../design/theme.js";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
 import { deriveCommentary } from "@scrbrd/scoring/commentary";
 import { api, apiStatus, signedIn } from "../../lib/api.js";
 import { useRows, useWeather } from "../../lib/live.js";
-import { boardInnings, matchLine, nameBook, resultText, revisionNotice, sidesOf, statusSentence, teamOf } from "../../lib/matchCentre.js";
+import { boardInnings, matchLine, nameBook, resultText, revisionNotice, sideOfTeam, sidesOf, statusSentence, teamOf } from "../../lib/matchCentre.js";
 import { seedCompletedMatch } from "../../scorer/seed.js";
 import { PlayerProfileModal, parseBalls, parseScore, teamSquad } from "../shared.jsx";
 import { can, filterRecord } from "../../rbac/index.js";
@@ -35,10 +35,12 @@ import { CorrectedChip, StaleLine } from "./corrected.jsx";
 import { CorrectionsSheet, pendingWords } from "./corrections.jsx";
 import { StateLabel } from "../../ui/stateLabel.jsx";
 import { TabStrip, panelLabel } from "./tabStrip.jsx";
-import { NARROW_PX, tabOr } from "../../lib/matchTabs.js";
+import { NARROW_PX, homeTab, tabOr } from "../../lib/matchTabs.js";
+import { scoresItHere } from "../../lib/enterScoring.js";
+import { useLogOnThisPhone } from "../../lib/scoringHere.js";
 import { scrollerOf } from "../../lib/toBall.js";
 import { ballsOf, mayListBalls } from "../../lib/ballsOf.js";
-import PageLinks from "./pageLinks.jsx";
+import { PageTools } from "./pageTools.jsx";
 import { opensPassportOf } from "../../lib/passportLink.js";
 
 // CRI-3.2: a boy's passport over the scorecard, its own chunk, fetched on the first tap.
@@ -353,10 +355,14 @@ function useCorrections(match, on, seen) {
 const CAPTAIN_TAB = { id: "captain", label: "Captain" };
 
 /**
- * The coach's tab (SCRBRD-136 phase A): after the Summary, for a person whose
- * single assignment covers this fixture's side and grants `team.select` or
+ * The coach's tab (SCRBRD-136 phase A), for a person whose single assignment
+ * covers this fixture's side and grants `team.select` or
  * `player.workload.read` (lib/cockpit.js cockpitGate: by capability, never by
  * title). Anybody else has the six tabs, and nothing suggests one is missing.
+ * Redesign slice 10 (question 7, Kameel, 19 Nov): it is his FIRST tab, and the
+ * page opens on it until the first ball (lib/matchTabs.js homeTab); on a phone
+ * his strip is Coach, Summary and Scorecard. SCRBRD-136 put it after the
+ * Summary; question 7 moved it.
  */
 const COACH_TAB = { id: "coach", label: "Coach" };
 
@@ -380,13 +386,23 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const { features } = useFeatures();
   const staff = useMemo(() => (signedIn() && !captain && !focus?.length ? withSwitches(cockpitGate(profile()?.assignments, match), features) : null),
     [match, captain, focus, features]);
-  // The tabs this reader has: the six, and his own after the Summary where he holds one.
-  const tabs = captain ? [TABS[0], CAPTAIN_TAB, ...TABS.slice(1)] : staff ? [TABS[0], COACH_TAB, ...TABS.slice(1)] : TABS;
+  // The tabs this reader has: the six, and his own where he holds one: the captain's after the Summary, the
+  // coach's first (slice 10).
+  const tabs = captain ? [TABS[0], CAPTAIN_TAB, ...TABS.slice(1)] : staff ? [COACH_TAB, ...TABS] : TABS;
+  // Slice 10 (question 7): the page's default tab, the Coach tab until the first ball, then the Summary. Settled
+  // once the log has answered and then kept for as long as the page is open, so a first ball arriving on the poll
+  // never moves the page from under him; until it answers, a fixture still to be played is taken as unbowled.
+  const bowled = log.innings.some((i) => (i?.ballLog?.length ?? 0) > 0 || (i?.balls ?? 0) > 0);
+  const homeKey = `${match.id}:${staff ? "coach" : ""}`;
+  const settledHome = useRef(/** @type {{key: string, tab: string} | null} */ (null));
+  if (!log.loading && settledHome.current?.key !== homeKey) settledHome.current = { key: homeKey, tab: homeTab(tabs, bowled) };
+  const home = settledHome.current?.key === homeKey ? settledHome.current.tab : homeTab(tabs, match.status !== "upcoming");
   // CRI-1.3: where the Match Centre gives the fixture an address (`route`, MatchCentreView), the tab is the
   // address's and choosing one is a new history entry; elsewhere (a family's screen) it is this view's own.
-  const [ownTab, setOwnTab] = useState(initialTab === "coach" && staff ? "coach" : "summary");
-  const tab = tabOr(tabs, route ? route.tab : ownTab);
-  const setTab = route ? route.setTab : setOwnTab;
+  const [ownTab, setOwnTab] = useState(initialTab === "coach" && staff ? "coach" : null);
+  const tab = tabOr(tabs, route ? route.tab : ownTab, home);
+  // The default tab is the fixture's bare address; any other, the Summary included, its own segment.
+  const setTab = route ? (/** @type {string} */ t) => route.setTab(t, home) : setOwnTab;
   // The staff screen: signed in, not a family's or the captain's view.
   const staffScreen = signedIn() && !captain && !focus?.length;
   const corrections = useCorrections(match, staffScreen && !log.demo, log.events?.length ?? 0);
@@ -548,13 +564,16 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   const isLive = match.status === "live";
   // Slice 4 (DESIGN_DIRECTION Q2): a live fixture whose log has decided it is the coach's to confirm, and until
   // then it reads "Provisional" to everyone, here as on every card. A super over in play is not decided.
-  const provisional = isLive && !log.demo && !!log.result && !liveSO;
   // The coach's answer, held here and not in the panel: a confirm re-reads the fixture, which comes back complete,
   // and the panel (drawn while provisional) would go with its answer before anyone read it (CI, 20 Nov).
   const [confirmedSaid, setConfirmedSaid] = useState(/** @type {string | null} */ (null));
+  // One status (question 2): once his confirm has answered OK, the header says what the panel says, the result, at
+  // once, not "Provisional" until the fixture's re-read arrives.
+  const provisional = isLive && !log.demo && !!log.result && !liveSO && !confirmedSaid;
   // OFFICIAL_RESULT (db/114): provisional, under review (staff) or official —
   // the server's state for a finished fixture, read again as the log moves.
-  const official = useOfficial(match, !!match.live && !log.demo && !isLive && match.status !== "upcoming", log.events?.length ?? 0);
+  // Read once the match is finished: by its status, or, in this session, by his confirm's answer.
+  const official = useOfficial(match, !!match.live && !log.demo && ((!isLive && match.status !== "upcoming") || !!confirmedSaid), log.events?.length ?? 0);
   const [officialStep, setOfficialStep] = useState(/** @type {string | null} */ (null));
   // RECOGNITION R6 (db/142): Player of the Match, for the people who decide
   // it (the server answers nobody else). A finished fixture, the staff screen.
@@ -594,6 +613,17 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
     return <PassportLink name={name} label={label} onOpen={(e) => setPass({ id, name, from: e?.currentTarget ?? null })}/>;
   };
 
+  // "Open scorer" (question 7): the existing per-fixture check, and on the coach's page only where he is the one
+  // scoring it, by this phone's saved log or an appointment to this fixture (lib/enterScoring.js scoresItHere).
+  const scoringLive = !!canScoreIt && (isLive || match.status === "upcoming") && !provisional && !!onOpenScorer;
+  const logHere = useLogOnThisPhone(staff && scoringLive ? match.id : null);
+  const opensScorer = scoringLive && (!staff || scoresItHere(profile()?.assignments, match, { onThisPhone: logHere }));
+  const bigOffered = !log.demo && played.length > 0 && groundSides?.rows.length > 0;
+  // The coach's line (§2.2, line 4): which way round his side is, while an innings is in play.
+  const atCrease = played.length ? played[played.length - 1] : null;
+  const batEnd = staff && isLive && !provisional && atCrease && !atCrease.complete ? sideOfTeam(match, atCrease.battingTeam) : null;
+  const ourLine = batEnd ? (batEnd === staff.end ? "We're batting" : "We're bowling") : null;
+
   const ctx = { match, role, innings: played, result, commentary: told, events: log.events, demo: log.demo, overs: log.overs,
     inningsSel, setInningsSel: setPicked, phone, players: PLAYERS, weather, competition: comp, onNavProfile, setTab,
     moment, overSummary, shownRuns, opens: signedIn() && !log.demo, profileOf, passportOf, Wheel: ShotWheel,
@@ -614,44 +644,43 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
 
   return (
     <div className="os-page" data-testid="match-view" data-match={match.id} style={{ minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap", marginBottom: T.space.md }}>
+      {/* Slice 10 (DESIGN_DIRECTION §2.1, Flow A): one row under the header. Back, named for where he came from; then
+          "Open scorer" for whoever is scoring; then the page's tools, Big screen, Share and the ground display, in
+          the row where there is room and, on a phone, in one overflow. */}
+      <div data-testid="mc-top-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: T.space.sm, flexWrap: "wrap", marginBottom: T.space.md }}>
         <button type="button" onClick={onClose} data-testid="mc-back" className="pressBtn os-state"
           style={{ minHeight: "44px", padding: `0 ${T.space.md}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
             background: "transparent", border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill, cursor: "pointer",
             color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 500 }}>
           <Icon name="chevron-left"/> {backLabel}
         </button>
-        <span style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
-        {!log.demo && played.length > 0 && groundSides?.rows.length > 0 && (
-          <button type="button" onClick={() => setBig(true)} data-testid="mc-bigscreen-open" className="pressBtn os-state"
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
-              background: T.board.face, color: T.board.figure, border: `1px solid ${T.board.rule}`, borderRadius: T.radius.pill,
-              cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
-            <Icon name="tv"/> Big screen
-          </button>
-        )}
+        <span style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap", alignItems: "center", marginLeft: "auto" }}>
         {/* CRI-1.4: the one way from reading this match into scoring it — an explicit tap, offered only where the
             caller found an assignment granting the scoring routes' capability over this fixture (lib/enterScoring.js).
-            Nothing else on this page opens the pad, claims the match or calls a scoring route. */}
-        {canScoreIt && (isLive || match.status === "upcoming") && !provisional && onOpenScorer && (
+            Nothing else on this page opens the pad, claims the match or calls a scoring route. On the coach's page
+            (question 7) it is narrower still: "Open scorer", only where he is the one scoring (scoresItHere), and
+            quiet, since his page's lead is the Coach tab. */}
+        {opensScorer && (
           <button type="button" onClick={() => onOpenScorer(match)} className="pressBtn os-state" data-testid="mc-enter-scoring"
-            style={{ minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
-              background: T.brand.green, color: T.surface.canvas,
-              border: "none", borderRadius: T.radius.pill, cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
-            <Icon name="pencil"/> Enter scoring
+            style={staff
+              ? { minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+                background: "transparent", color: T.content.primary, border: `1px solid ${T.line.normal}`, borderRadius: T.radius.pill,
+                cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }
+              : { minHeight: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", gap: T.space.xs,
+                background: T.brand.green, color: T.surface.canvas,
+                border: "none", borderRadius: T.radius.pill, cursor: "pointer", fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+            <Icon name="pencil"/> {staff ? "Open scorer" : "Enter scoring"}
           </button>
         )}
+        <PageTools phone={phone} big={bigOffered ? () => setBig(true) : null}
+          links={!log.demo && (shareUrl || published?.home)
+            // Q18: the public page's link where the fixture is published (its preview names the sides and the score,
+            // nobody else), else this page's own; a screen with no address of its own and nothing public shares
+            // nothing. Q19: the ground display only where the server serves it. Never on a demonstration fixture.
+            ? { share: shareUrl ? { url: shareUrl, title: `${sides.home.full} v ${sides.away.full}`, text: shareText } : null,
+                display: published?.home ? `/display/${match.id}` : null } : null}/>
         </span>
       </div>
-      {/* Q18: the public page's link where the fixture is published (its preview names the sides and the score,
-          nobody else), else this page's own; a screen with no address of its own and nothing public shares nothing.
-          Q19: the ground display only where the server serves it. Never on a demonstration fixture. */}
-      {!log.demo && (shareUrl || published?.home) && (
-        <div style={{ marginBottom: T.space.md }}>
-          <PageLinks share={shareUrl ? { url: shareUrl, title: `${sides.home.full} v ${sides.away.full}`, text: shareText } : null}
-            display={published?.home ? `/display/${match.id}` : null}/>
-        </div>
-      )}
       {big && <BigScreen key={match.id} match={match} events={log.events} head={log.head ?? null} fold={log.fold} result={result} settled={settled}
         par={par} onClose={() => setBig(false)}/>}
 
@@ -663,7 +692,7 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
           <span data-testid="mc-status" style={{ ...T.role.label, color: isLive && !(log.result && !liveSO) ? T.brand.accentText : T.content.secondary,
             display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
             {isLive && !(log.result && !liveSO) && <span className="live-dot" aria-hidden="true"/>}
-            {provisional ? "Provisional" : (log.result && !liveSO) || (server && server.outcome !== "in_progress" && !liveSO) || match.status === "complete" ? "Result" : isLive ? "Live" : "Fixture"}
+            {provisional ? "Provisional" : (log.result && !liveSO) || (server && server.outcome !== "in_progress" && !liveSO) || match.status === "complete" || confirmedSaid ? "Result" : isLive ? "Live" : "Fixture"}
           </span>
           {log.demo && <StateLabel kind="demo" compact/>}
         </div>
@@ -676,8 +705,11 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
         {/* CRI-1.2: where the match stands, in the sentence its card in the list says too — here on every
             tab but a live Summary, which says it under its board (EXPERIENCE_PASS §3.3), so it is said once. */}
         {!summarySays && <StatusLine st={status} except={["upcoming"]}/>}
+        {ourLine && <p data-testid="mc-our-line" style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, margin: 0 }}>{ourLine}</p>}
+        {/* After his confirm the match is finished, here at once and before the fixture's re-read: the official
+            result's line says who it waits on (Kameel, 25 Nov), never "Provisional" beside "Confirmed". */}
         {!log.demo && <OfficialLine official={official} names={{ home: sides.home.full, away: sides.away.full }}
-          fixture={{ finished: match.status === "complete", competition: !!match.competition }}/>}
+          fixture={{ finished: match.status === "complete" || !!confirmedSaid, competition: !!match.competition }}/>}
         {line && <p data-testid="mc-match-line" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{line}</p>}
         {!log.demo && <StaleLine stale={log.stale} refreshing={log.refreshing} failed={log.failed} okAt={log.okAt} onRefresh={log.refresh}/>}
         {corrections.words && (
@@ -697,8 +729,9 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
 
       {!log.loading && !log.error && (
         <div style={{ display: "grid", gap: T.space.md, margin: `${T.space.md} 0` }}>
-          {/* Before the toss (item 1): the pre-toss facts, in place of a dead end. */}
-          {match.status === "upcoming" && played.length === 0 && <PreTossCard match={match} weather={weather}/>}
+          {/* Before the toss (item 1): the pre-toss facts, in place of a dead end. Not on the coach's page (slice 10):
+              the line above says the ground, the start and the weather, and his Coach tab says the rest of the day. */}
+          {match.status === "upcoming" && played.length === 0 && !staff && <PreTossCard match={match} weather={weather}/>}
           {/* A rain delay or interruption (item 1): a clear status, not a frozen board. */}
           {notice && <RevisionBanner notice={notice}/>}
           {/* The full-time screen links onward (item 4) and the confirm-or-correct prompt (item 5) —

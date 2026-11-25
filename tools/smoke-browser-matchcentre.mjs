@@ -211,9 +211,13 @@ try {
   await pre.page.waitForTimeout(300);
   ok("a fixture yet to be played opens", await openMatch(pre.page, "77777777-0000-0000-0000-000000000002"));
   ok("both sides and the status show", /Hilton College/.test(await tid(pre.page, "mc-title").innerText()) && (await tid(pre.page, "mc-status").textContent()) === "Fixture");
-  ok("ground and start, in place of a dead end", await tid(pre.page, "mc-pretoss").count() === 1);
-  const preToss = await tid(pre.page, "mc-pretoss").innerText();
-  ok("the ground is named", /Gordon Sherwood Oval/.test(preToss), preToss);
+  // Slice 10 (question 7): the director of sport has this side's Coach tab, so the page opens on it before the
+  // first ball, and the ground and the start are said once, in the match line: no "Before the toss" card repeats them.
+  ok("it opens on the Coach tab, in place of a dead end", await tid(pre.page, "mc-tab-coach").getAttribute("aria-selected").catch(() => null) === "true"
+     && await tid(pre.page, "mc-coach").count() === 1);
+  ok("...with no Before the toss card", await tid(pre.page, "mc-pretoss").count() === 0);
+  const preToss = await tid(pre.page, "mc-match-line").innerText();
+  ok("the ground is named, once, in the match line", /Gordon Sherwood Oval/.test(preToss), preToss);
   ok("no confirm-the-scorecard prompt on a fixture that has not been played", await tid(pre.page, "mc-confirm-prompt").count() === 0);
   ok("no onward links either — there is nothing to be onward from yet", await tid(pre.page, "mc-onward").count() === 0);
   ok("no console errors (before the toss)", pre.errors.length === 0, pre.errors.join(" | "));
@@ -431,7 +435,7 @@ try {
   ok("Match Centre opens the fixture", await openMatch(dos.page, fx.live));
   const p = dos.page;
 
-  group("The tabs: six, in the prototype's order (and the Coach tab after the Summary, for the director of sport's grant), a tablist a keyboard drives");
+  group("The tabs: six, in the prototype's order (and the Coach tab first, for the director of sport's grant), a tablist a keyboard drives");
   const tabs = await p.evaluate(() => {
     const list = document.querySelector('[role="tablist"][data-testid="mc-tabs"]');
     return list ? [...list.querySelectorAll('[role="tab"]')].map((t) => {
@@ -440,26 +444,29 @@ try {
         h: r.height, font: parseFloat(getComputedStyle(t).fontSize) };
     }) : null;
   });
-  // SCRBRD-136: the director of sport holds team.select and player.workload.read school-wide, so the Coach tab
-  // follows the Summary (the cockpit walk holds who gets it); the six are unchanged and in their order.
-  ok("Summary · Coach · Scorecard · Commentary · Partnerships · Analytics · Match details",
-     tabs?.map((t) => t.name).join(" · ") === "Summary · Coach · Scorecard · Commentary · Partnerships · Analytics · Match details", tabs?.map((t) => t.name).join(" · "));
-  ok("...Summary selected first, and each names the panel it controls", tabs?.[0]?.selected === "true" && tabs.every((t) => /^mc-panel-/.test(t.controls ?? "")));
+  // SCRBRD-136: the director of sport holds team.select and player.workload.read school-wide, so he has the Coach
+  // tab (the cockpit walk holds who gets it); slice 10 (question 7) puts it first; the six are unchanged and in their order.
+  ok("Coach · Summary · Scorecard · Commentary · Partnerships · Analytics · Match details",
+     tabs?.map((t) => t.name).join(" · ") === "Coach · Summary · Scorecard · Commentary · Partnerships · Analytics · Match details", tabs?.map((t) => t.name).join(" · "));
+  ok("...the match has begun, so the Summary is selected, and each names the panel it controls", tabs?.[1]?.selected === "true" && tabs.every((t) => /^mc-panel-/.test(t.controls ?? "")));
   ok("...every tab at least 44px tall", tabs?.every((t) => t.h >= 44), tabs?.map((t) => t.h).join(","));
   ok("...and on the 12px floor", tabs?.every((t) => t.font >= 12));
   await tid(p, "mc-tab-summary").focus();
+  await p.keyboard.press("ArrowLeft");
+  ok("ArrowLeft moves to Coach", await tid(p, "mc-tab-coach").getAttribute("aria-selected") === "true");
   await p.keyboard.press("ArrowRight");
-  ok("ArrowRight moves to Coach", await tid(p, "mc-tab-coach").getAttribute("aria-selected") === "true");
   await p.keyboard.press("ArrowRight");
-  ok("ArrowRight moves to Scorecard", await tid(p, "mc-tab-scorecard").getAttribute("aria-selected") === "true"
+  ok("ArrowRight, twice, moves to Scorecard", await tid(p, "mc-tab-scorecard").getAttribute("aria-selected") === "true"
      && await p.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "mc-tab-scorecard");
   await p.keyboard.press("End");
   ok("End goes to Match details", await tid(p, "mc-tab-details").getAttribute("aria-selected") === "true");
   await p.keyboard.press("ArrowRight");
-  ok("...and ArrowRight wraps to Summary", await tid(p, "mc-tab-summary").getAttribute("aria-selected") === "true");
-  await p.keyboard.press("ArrowLeft");
+  ok("...and ArrowRight wraps to Coach", await tid(p, "mc-tab-coach").getAttribute("aria-selected") === "true");
+  await p.keyboard.press("End");
   await p.keyboard.press("Home");
-  ok("Home comes back to Summary", await tid(p, "mc-tab-summary").getAttribute("aria-selected") === "true");
+  ok("Home comes back to Coach", await tid(p, "mc-tab-coach").getAttribute("aria-selected") === "true");
+  await p.keyboard.press("ArrowRight");
+  ok("...and ArrowRight to Summary", await tid(p, "mc-tab-summary").getAttribute("aria-selected") === "true");
   ok("the tab panel is labelled by its tab", await tid(p, "mc-panel-summary").getAttribute("aria-labelledby") === "mc-tab-summary");
 
   group("The header: the sides in full, and the match line");
@@ -975,12 +982,11 @@ try {
   const det = await tid(p, "mc-details").innerText();
   ok("the format, the ground and the toss", /T10 · 10 overs a side/.test(det) && /Gordon Sherwood Oval/.test(det)
      && /Hilton College 1XI won the toss and chose to bat/.test(det), det.slice(0, 200));
-  group("CRI-1.4: Enter scoring is offered to the director of sport, and reading every tab never entered it");
+  group("CRI-1.4 and slice 10: the director of sport may score it but is not scoring it, so no Open scorer; reading every tab never entered it");
   {
-    const enter = tid(p, "mc-enter-scoring");
-    const geo = await enter.evaluate((e) => ({ h: e.getBoundingClientRect().height, f: parseFloat(getComputedStyle(e).fontSize), t: e.textContent.trim() })).catch(() => null);
-    ok("the live fixture offers \"Enter scoring\" (scoring.edit at Hilton, the fixture's home school)", await enter.count() === 1 && geo?.t === "Enter scoring", geo?.t);
-    ok("...a 44px button on the 12px floor", (geo?.h ?? 0) >= 44 && (geo?.f ?? 0) >= 12, JSON.stringify(geo));
+    // Question 7 (Kameel, 19 Nov): on a page led by the Coach tab, "Open scorer" only for whoever is scoring. He
+    // holds scoring.edit at Hilton (the existing check) and has no log of it on this phone and no appointment to it.
+    ok("the live fixture, on his Coach-tab page, offers no Open scorer", await tid(p, "mc-enter-scoring").count() === 0);
     ok("reading the fixture, every tab of it, asked no write of the match: no claim, no ball, no handover",
        dosWrites.length === 0, dosWrites.join(" | "));
     ok("...and the pad never opened: the reader is still on the match page", await p.locator(".scorer-shell").count() === 0 && await tid(p, "match-view").count() === 1);
@@ -1475,6 +1481,17 @@ try {
   const shortShown = await ph.page.locator("#mc-panel-summary, [data-testid='mc-scores']").first().evaluate(() =>
     [...document.querySelectorAll("[data-testid='mc-scores'] .mc-short")].filter((e) => getComputedStyle(e).display !== "none").map((e) => e.textContent));
   ok(`the scores name the sides by code (${shortShown.join(", ")})`, shortShown.length === 2 && shortShown[0] === "HIL 1XI", shortShown.join(", "));
+  // Slice 10 (Kameel, 25 Nov): on a phone Share always sits under the page's More, with the other tools, so the
+  // row under the header never changes shape as their reads answer: Back, then More; Share only once it is opened.
+  ok("on a phone the page's tools are under one More, and Share is not in the row", await tid(ph.page, "mc-tools-open").count() === 1
+     && await tid(ph.page, "mc-share").count() === 0 && await tid(ph.page, "mc-bigscreen-open").count() === 0);
+  await tid(ph.page, "mc-tools-open").click({ timeout: 4000 }).catch(() => {});
+  await tid(ph.page, "mc-tools").waitFor({ timeout: 4000 }).catch(() => {});
+  ok("...More opens them: Share and Big screen, each 44px", await ph.page.evaluate(() => ["mc-share", "mc-bigscreen-open"]
+    .every((t) => (document.querySelector(`[data-testid="mc-tools"] [data-testid="${t}"]`)?.getBoundingClientRect().height ?? 0) >= 44)));
+  await ph.page.keyboard.press("Escape");
+  ok("...and Escape closes it, focus back on More", await tid(ph.page, "mc-tools").count() === 0
+     && await ph.page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "mc-tools-open");
   // CRI-1.3: at 390 the strip is Summary, Scorecard, Commentary and More; the rest are in More's menu.
   for (const t of TABS) {
     await pickTab(ph.page, t).catch(() => {});
@@ -1748,7 +1765,20 @@ try {
 
   group("CRI-1.4: who is offered Enter scoring — only an assignment that may score this fixture; the pad opens on the tap alone");
   {
-    const sees = async (who, id) => {
+    // Slice 10: the pad's saved log of a fixture on this phone (lib/persist.js, IndexedDB "scrbrd", store "kv",
+    // key match:<id>), which is what makes a coach "the one scoring it" (lib/enterScoring.js scoresItHere).
+    const logOnPhone = (page, id) => page.evaluate((k) => new Promise((res) => {
+      const r = indexedDB.open("scrbrd", 1);
+      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains("kv")) r.result.createObjectStore("kv"); };
+      r.onerror = () => res(false);
+      r.onsuccess = () => {
+        const t = r.result.transaction("kv", "readwrite");
+        t.objectStore("kv").put({ matchId: k.slice(6), cfg: { live: true }, events: [[]], curIn: 0, savedAt: Date.now() }, k);
+        t.oncomplete = () => { r.result.close(); res(true); };
+        t.onerror = () => res(false);
+      };
+    }), `match:${id}`);
+    const sees = async (who, id, { logHere = false } = {}) => {
       const s = await open();
       const writes = [];
       s.page.on("request", (r) => { if (r.method() !== "GET" && /\/api\/matches\//.test(r.url())) writes.push(`${r.method()} ${new URL(r.url()).pathname}`); });
@@ -1762,15 +1792,21 @@ try {
         await afterReads(s.page, 2000);
         inn = (await s.page.locator('[data-testid="os-main"]').count()) > 0;
       } else inn = await signIn(s.page, who);
+      if (logHere) ok("...this phone holds the pad's log of the fixture", await logOnPhone(s.page, id));
       // The list's card first: its scorer button asks the same gate (Kameel, 6 Nov).
       await s.page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
       await tid(s.page, `mc-open-${id}`).first().waitFor({ timeout: 10000 }).catch(() => {});
       const listed = await tid(s.page, `mc-score-${id}`).count() === 1;
       const opened = await openMatch(s.page, id);
+      await afterReads(s.page, 800);
       const offered = await tid(s.page, "mc-enter-scoring").count() === 1;
-      // The card and the page say the same: both offered, or neither.
-      ok(`...the list's card agrees with the page (${offered ? "offered" : "not offered"})`, listed === offered, JSON.stringify({ listed, offered }));
-      return { s, inn, opened, writes, offered };
+      const label = offered ? (await tid(s.page, "mc-enter-scoring").innerText().catch(() => "")).trim() : null;
+      const coachPage = await tid(s.page, "mc-tab-coach").count() === 1;
+      // The card and the page say the same: both offered, or neither; except on a page led by the Coach tab, where
+      // the page is narrower (question 7: only for whoever is scoring) and never wider.
+      if (!coachPage) ok(`...the list's card agrees with the page (${offered ? "offered" : "not offered"})`, listed === offered, JSON.stringify({ listed, offered }));
+      else ok(`...his Coach-tab page is never wider than the list's card (${offered ? "offered" : "not offered"})`, !offered || listed, JSON.stringify({ listed, offered }));
+      return { s, inn, opened, writes, offered, listed, label, coachPage };
     };
     const w = await sees(/watcher@example\.invalid|Spectator/, fx.brk);
     ok("a spectator opens the live U16A fixture and is never offered it (no scoring.edit)", w.inn && w.opened && !w.offered);
@@ -1785,8 +1821,15 @@ try {
        wes.inn && wes.opened && !wes.offered, JSON.stringify({ inn: wes.inn, opened: wes.opened, offered: wes.offered }));
     await wes.s.ctx.close();
     const c1 = await sees("coach@example.invalid", awayFx);
-    ok("Hilton's 1XI coach is offered it on his own side's fixture", c1.inn && c1.opened && c1.offered, JSON.stringify({ inn: c1.inn, opened: c1.opened, offered: c1.offered }));
+    ok("Hilton's 1XI coach may score his own side's fixture: the list offers it", c1.inn && c1.opened && c1.listed, JSON.stringify({ inn: c1.inn, opened: c1.opened, listed: c1.listed }));
+    ok("...but his page, led by the Coach tab, offers no Open scorer: he is not the one scoring it (question 7)", c1.coachPage && !c1.offered,
+       JSON.stringify({ coachPage: c1.coachPage, offered: c1.offered }));
     await c1.s.ctx.close();
+    const c1h = await sees("coach@example.invalid", awayFx, { logHere: true });
+    ok("...with the pad's log of it on this phone, he is: \"Open scorer\"", c1h.opened && c1h.offered && /^Open scorer$/.test(c1h.label ?? ""), c1h.label);
+    // The tap itself is the scorer's below; the log here is a stand-in, not one to resume.
+    ok("...with no console errors", c1h.s.errors.length === 0, c1h.s.errors.join(" | "));
+    await c1h.s.ctx.close();
     const c2 = await sees("coach2@example.invalid", awayFx);
     ok("Hilton's 2XI coach holds scoring.edit too, but for the 2XI: on the 1XI's fixture he is not offered it",
        c2.inn && !c2.offered, JSON.stringify({ inn: c2.inn, opened: c2.opened, offered: c2.offered }));

@@ -5,7 +5,7 @@
  * destinations to their view components. Views read data through getData() in
  * rbac/, never from the mock constants directly.
  */
-import { Suspense, lazy, useState, useEffect, useRef } from "react";
+import { Suspense, lazy, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
 import { FRAMED, homeOf } from "./design/homes.js";
@@ -176,6 +176,13 @@ function OffPageGuard({ page, home, onNav }) {
   useEffect(() => { if (off) onNav(home); }, [off, home, onNav]);
   return null;
 }
+
+/** The address's two events (lib/route.js), and whether it is a fixture's own page (/app/matches/:id…). */
+const onAddress = (/** @type {() => void} */ fn) => {
+  window.addEventListener("popstate", fn); window.addEventListener("scrbrd:navigate", fn);
+  return () => { window.removeEventListener("popstate", fn); window.removeEventListener("scrbrd:navigate", fn); };
+};
+const onFixtureAddress = () => /^\/app\/matches\/[^/]+/.test(window.location.pathname);
 
 export default function SCRBRD_OS() {
   // The theme (design/theme.js). Subscribing HERE, at the root, is what makes
@@ -554,6 +561,10 @@ export default function SCRBRD_OS() {
     }
     setPage(k, section);
   };
+  // Redesign slice 10 (DESIGN_DIRECTION §2.1: at most one row under the header): with a fixture open, its own page
+  // has Back and its tools in one row, so the Matches bar's links do not sit above it. Its address, kept current
+  // through the back button and the route's own event, written out for the ceiling above.
+  const onFixture = useSyncExternalStore(onAddress, onFixtureAddress, () => false);
   const lastPage = useRef(page);
   useEffect(() => {
     if (lastPage.current === "matches" && page !== "matches" && atMatches()) toApp();
@@ -803,7 +814,7 @@ export default function SCRBRD_OS() {
               <ErrorBoundary key={page} name={NAV_META[page]?.label ?? "page"}>
                 {/* Today, Matches, Team, School and Platform (EXPERIENCE_PASS §1.3): the home's sections over the screen, each section the
                     destination it came from, drawn only where this reader reaches it (design/homes.js). */}
-                {FRAMED.includes(homeOf(shown)) && (
+                {FRAMED.includes(homeOf(shown)) && !(shown === "matches" && onFixture) && (
                   <div className="os-home-frame" data-testid="home-frame">
                     <HomeBar home={homeOf(shown)} role={role} section={shown} onSection={(k) => { if (thing) { setThing(null); toApp(); } navTo(k); }} onNav={navTo} scroll invites={invitesWaiting}/>
                   </div>

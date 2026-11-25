@@ -222,7 +222,8 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
     return (
       <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={enters}
         initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false} initialCorrections={coachOn?.corrections ?? false}
-        route={{ tab: route?.matchId === fresh.id ? route.tab : null, setTab: (t) => navigate(appPath(fresh.id, t)) }}
+        // The fixture's bare address is its default tab (slice 10: the Coach tab until the first ball, for its coach).
+        route={{ tab: route?.matchId === fresh.id ? route.tab : null, setTab: (t, home) => navigate(appPath(fresh.id, t, home)) }}
         onOpenScorer={onOpenScorer} onNavProfile={onNavProfile} onNav={onNav} onOpenDuties={openDuties}
         matches={MATCHES} onOpenFixture={openFixture} onTeamResults={teamResults} onChanged={() => setMatchesNonce((n) => n + 1)}/>
     );
