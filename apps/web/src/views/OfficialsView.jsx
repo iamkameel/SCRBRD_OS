@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { D, themed } from "../design/tokens.js";
+import { D, T, px, themed } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Input, Modal, Pill, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
 import { api } from "../lib/api.js";
@@ -272,8 +272,9 @@ function OfficialsView({ role }) {
               const on = duty === d;
               const c = d === "all" ? D.sky : DUTY[d].color;
               return (
-                <button key={d} onClick={() => { setDuty(d); setSel(null); }} className="pressBtn"
-                  style={{ padding: "6px 13px", borderRadius: D.pill, cursor: "pointer",
+                <button key={d} type="button" onClick={() => { setDuty(d); setSel(null); }} className="pressBtn"
+                  // §3.5: 44px to tap (T.floor.target); the chips were 28 tall.
+                  style={{ display: "inline-flex", alignItems: "center", gap: "4px", minHeight: px(T.floor.target), padding: "0 13px", borderRadius: D.pill, cursor: "pointer",
                     background: on ? c + "18" : D.surf1, border: `1px solid ${on ? c + "44" : D.border}`,
                     fontFamily: D.head, fontSize: "12px", fontWeight: 700, letterSpacing: "0.06em",
                     color: on ? D.textPrimary : D.textMuted }}>

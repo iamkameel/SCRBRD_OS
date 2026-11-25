@@ -708,6 +708,10 @@ try {
              ('a5510000-0000-0000-0000-0000000000a1', $1, 'player', $2, '1XI'), ('a5510000-0000-0000-0000-0000000000a2', $1, 'selfaccess', $2, NULL)`, [MATE_USER, HIL]);
   await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, consent_version, consent_at, created_by)
            values ('a5510000-0000-0000-0000-0000000000a2', $1, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c')`, [WHITFIELD]);
+  // db/169: he is 16 and was enrolled the way the office did before db/169 (his own
+  // link stamped 'granted'). The paste carries that stamp over as the office's yes
+  // for his own sign-in (db/169 §6); the walk asks for the same carry-over.
+  await q(`select pupil_signin_carry_over()`);
 
   // What the tab may never say (§4): the walk's own list, kept apart from the screen's.
   const NEVER = new RegExp(String.raw`injur|fitness|\bfit\b|physio|rehab|restrict|return date|guideline|workload|wellness|available|unavailable|doubtful|\breason|because|\bwhy\b|threat|probab|win chance|shoulder|impingement|hamstring|funeral|${RTW_WORDS}`, "i");

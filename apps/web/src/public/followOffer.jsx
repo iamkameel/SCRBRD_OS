@@ -64,7 +64,7 @@ export function FollowOffer({ header, state, matchId = "" }) {
             color: T.content.primary, flexWrap: "wrap" }}>
           <span style={{ display: "grid", gap: "2px", minWidth: 0 }}>
             <span style={{ ...T.role.body, fontWeight: 700, overflowWrap: "anywhere" }}>Follow {theirs(s.name)} matches</span>
-            <span style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary }}>Their live boards lead your Today. One sign-in; nothing else to fill in.</span>
+            <span style={{ ...T.role.body, fontSize: "13px", color: T.content.secondary }}>Their live boards will lead your Today.</span>
           </span>
           <span aria-hidden="true" style={{ ...T.role.body, fontWeight: 700, color: T.brand.accentText }}>Follow ›</span>
         </a>
