@@ -47,7 +47,7 @@ export function bornRefusal(e) {
   if (!e || !BORN_REFUSED_BY_DB.includes(e.message)) return null;
   // born_needs_the_office stays a 422: it is also the answer a caller who may
   // not read ID numbers is given for a date that disagrees with one on file.
-  return { status: e.message.endsWith("_is_the_office") || e.message === "id_number_needs_the_office" ? 403 : 422,
+  return { status: e.message.endsWith("_is_the_office") || e.message === "id_number_needs_the_office" || e.message === "born_own_child" ? 403 : 422,
            error: e.message };
 }
 
@@ -133,6 +133,50 @@ export function dobCaptureRoutes({ pool, secret }) {
       } catch (/** @type {any} */ e) {
         const named = bornRefusal(e);
         if (named) return res.status(named.status).json({ error: named.error });
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+
+    // GET /api/schools/:id/coming-of-age
+    // "Coming of age" (db/173; Kameel, 25 Nov 2026, Q2): the boys at the
+    // school who are 18, or will be within 60 days, on a date no office person
+    // wrote or confirmed. The school's office alone; anyone else is refused.
+    comingOfAge: async (req, res) => {
+      try {
+        const school = String(req.params.id ?? "");
+        if (!UUID.test(school)) throw err("not_found", 404);
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          const [o] = (await client.query(`select player_born_office($1::uuid) as office`, [school])).rows;
+          if (o?.office !== true) return null;
+          const { rows } = await client.query(
+            `select player_id, full_name, team_code, to_char(born, 'YYYY-MM-DD') as born, to_char(of_age_on, 'YYYY-MM-DD') as of_age_on,
+                    how, written_at from born_unconfirmed($1::uuid)`, [school]);
+          return rows.map((r) => ({ playerId: r.player_id, fullName: r.full_name, teamCode: r.team_code, born: r.born,
+                                    ofAgeOn: r.of_age_on, how: r.how ?? null, writtenAt: r.written_at ?? null }));
+        });
+        if (!out) throw err("not_permitted", 403);
+        res.json({ rows: out });
+      } catch (/** @type {any} */ e) {
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+
+    // POST /api/players/:id/date-of-birth/confirm
+    // The office's "Confirm his date" (db/173): the date on record, checked.
+    confirm: async (req, res) => {
+      try {
+        const id = String(req.params.id ?? "");
+        if (!UUID.test(id)) throw err("not_found", 404);
+        const r = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) =>
+          (await client.query(`select ok, reason from player_born_confirm($1::uuid)`, [id])).rows[0]);
+        if (!r?.ok) {
+          const reason = r?.reason || "refused";
+          throw err(reason, reason === "not_permitted" ? 403 : 422);
+        }
+        res.json({ id, confirmed: true, unchanged: r.reason === "unchanged" });
+      } catch (/** @type {any} */ e) {
         const status = e.code === "42501" ? 403 : (e.status || 500);
         res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
       }

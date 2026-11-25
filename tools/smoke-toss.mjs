@@ -258,7 +258,9 @@ try {
                                           "school_register", "request_cooldown", "passport_union_read",
                                           "milestone_family_notice", "recognition_audit", "ball_log_pin",
                                           "pupil_claim", "pupil_signin_consent", "player_born_change",
-                                          "family_register"]);
+                                          "family_register",
+                                          // db/173: who wrote an ID number and when, never the number; the trigger's alone.
+                                          "player_id_number_change"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

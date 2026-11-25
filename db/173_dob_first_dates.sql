@@ -86,9 +86,13 @@
 --       a claim held for a safeguarding concern (pupil_claim_held(), db/168),
 --       which reads as none so nothing tips anyone off.
 --   ~ pupil_signin_after_yes() (db/169), replaced whole, guarded: for a claim
---       held for a safeguarding concern a yes moves neither his own link's
---       stamp nor his account; it answers as if nothing waits (the yes itself
---       stands on record).
+--       held for a safeguarding concern (db/168 B1) a yes does not enrol the
+--       account (no `player` role is granted; the claim stays recognised) and
+--       does not stamp his own link; it answers as if nothing waits (the yes
+--       itself stands on record). A hold keeps an account and its claim from
+--       being removed; it does not shut an account. One the office already
+--       enrolled opens, like every boy's, on any yes in force (db/169's gate
+--       reads the boy's yes, not the account's claim).
 --   ~ pupil_signin_state() (db/169), replaced whole, guarded: `held` (his
 --       account waits) is never true to his family for such a claim; the
 --       office reads it as before.

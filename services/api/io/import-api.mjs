@@ -20,7 +20,8 @@
  * did.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
-import { resolveBirthDate, BIRTH_DATE_MESSAGE, BORN_REFUSED_BY_DB, isEighteenOn } from "@scrbrd/policy/date-of-birth";
+import { createHash } from "node:crypto";
+import { resolveBirthDate, BIRTH_DATE_MESSAGE, BORN_REFUSED_BY_DB, isEighteenOn, majorityOn } from "@scrbrd/policy/date-of-birth";
 import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } from "./csv.mjs";
 /** @import { Pool, Db, Handler, ApiRequest, RawResponse, DressedError } from "../api-types.mjs" */
 /** @import { ColumnSpec, RowError } from "./csv.mjs" */
@@ -58,9 +59,12 @@ import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } f
  *                                 ID number): `differs`, whether one on file is another number.
  *                                 Never returned to the caller.
  * @property {boolean} [adults]    db/173: a line whose first date makes him 18 today is the
- *                                 office's. The dry run lists such lines; the office's commit
- *                                 needs its tick (`adultsChecked`, the count); anyone else's
- *                                 are left out, each with the one sentence.
+ *                                 office's; anyone else's is left out, with the one sentence.
+ *                                 The office's lines that make him 18 today or within 60 days
+ *                                 are listed, and its commit needs its tick of them
+ *                                 (`adultsChecked`, the hash the dry run gave for those lines);
+ *                                 only a ticked line counts as the office's checked date
+ *                                 (Kameel, 26 Nov 2026, Q1).
  * @property {(client: Db, school: string | undefined, v: Record<string, any>,
  *             file: Map<string, any>, line: number) => Promise<RowOutcome>} [apply]
  *                                 One row, written its own way. Used instead of find/insert/update.
@@ -452,7 +456,7 @@ export const IMPORTS = {
  * @param {string | undefined} bearer  the Authorization header, as sent
  * @param {string | undefined} kind
  * @param {{ csv?: unknown, schoolId?: string, commit?: unknown, adultsChecked?: unknown }} body  the request body as sent;
- *   `adultsChecked`: the office's tick, the count of lines making a boy 18 it has checked (db/173)
+ *   `adultsChecked`: the office's tick, the hash of the lines it has checked (db/173)
  */
 export async function runImport(pool, secret, bearer, kind, { csv, schoolId, commit, adultsChecked }) {
   const def = Object.hasOwn(IMPORTS, /** @type {string} */ (kind)) ? IMPORTS[/** @type {string} */ (kind)] : undefined;   // an absent kind finds nothing, as "undefined"
@@ -481,11 +485,17 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
     if (def.setup) await client.query(def.setup);
     const office = def.office ? (await client.query(def.office, [schoolId])).rows[0]?.office === true : false;
     // The school's day, as the database's trigger reads it (sa_today()).
-    const today = def.adults ? (await client.query(`select to_char(sa_today(), 'YYYY-MM-DD') as d`)).rows[0]?.d : null;
+    const days = def.adults ? (await client.query(
+      `select to_char(sa_today(), 'YYYY-MM-DD') as d, to_char(sa_today() + 60, 'YYYY-MM-DD') as soon`)).rows[0] : null;
+    const today = days?.d ?? null, soon = days?.soon ?? null;
+    // The office's tick, sent with the commit: the hash of the lines it was
+    // shown. A ticked line is written as checked (app.born_ticked); if the
+    // file's lines turn out to hash otherwise, nothing is committed.
+    const tickSent = office && typeof adultsChecked === "string" && adultsChecked.length > 0;
     let inserted = 0, updated = 0, unchanged = 0;
     // db/173: the lines whose first date makes a boy 18 today, and, for a
     // caller who is not the office, the lines left out for that reason.
-    /** @type {{ line: number, fullName: string }[]} */
+    /** @type {{ line: number, fullName: string, born: string, ofAgeOn: string, now: boolean }[]} */
     const adults = [];
     /** @type {RowError[]} */
     const leftOut = [];
@@ -567,16 +577,26 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
           continue;
         }
         // db/173: a first date (a new boy, or one with no date on record)
-        // that makes him 18 today. Decided here, before the database is
-        // asked, so the answer is the same whatever is on file. The office's
-        // lines go in on its tick; anyone else's are left out of the file.
-        if (def.adults && today && values.born && !found.rows[0]?.born && isEighteenOn(String(values.born), String(today))) {
-          adults.push({ line, fullName: String(values.full_name) });
-          if (!office) {
+        // that makes him 18 today, or within 60 days. Decided here, before the
+        // database is asked, so the answer is the same whatever is on file.
+        // 18 today: the office's on its tick, anyone else's left out of the
+        // file. Within 60 days: the office's tick makes it its checked date;
+        // anyone else's goes in, for "Coming of age".
+        let ticked = false;
+        if (def.adults && today && soon && values.born && !found.rows[0]?.born && isEighteenOn(String(values.born), String(soon))) {
+          const now = isEighteenOn(String(values.born), String(today));
+          if (office) {
+            adults.push({ line, fullName: String(values.full_name), born: String(values.born), ofAgeOn: majorityOn(String(values.born)), now });
+            ticked = tickSent;
+          } else if (now) {
             leftOut.push({ line, column: "born", message: BIRTH_DATE_MESSAGE.born_needs_the_office });
             continue;
+          } else {
+            warnings.push({ line, column: "born",
+              message: `He turns 18 on ${majorityOn(String(values.born))}. The school office will be asked to confirm this date.` });
           }
         }
+        if (def.adults) await client.query(`select set_config('app.born_ticked', $1, true)`, [ticked ? "on" : ""]);
         if (checked.warning) {
           warnings.push({ line, column: "id_number",
                           message: BIRTH_DATE_MESSAGE[checked.warning] ?? checked.warning });
@@ -615,9 +635,18 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
     const allErrors = [...errors, ...refused];
     // The office's one tick for the lines making a boy 18: the count it was
     // shown, so a file changed since the dry run is not committed on it.
-    const needsTick = office && adults.length > 0 && adultsChecked !== adults.length;
-    const committed = commit === true && allErrors.length === 0 && !needsTick;
-    const adultReport = { count: adults.length, lines: adults, checked: office && adults.length > 0 && !needsTick };
+    // The tick is tied to the lines themselves, not their count (RT N3).
+    const hash = adults.length ? createHash("sha256").update(JSON.stringify(adults.map((a) => [a.line, a.fullName, a.born]))).digest("hex") : null;
+    const tickOk = adults.length > 0 && adultsChecked === hash;
+    // Required while a line makes him 18 today; for lines within 60 days it
+    // is the office's choice, and without it those dates stay unconfirmed.
+    const needsTick = office && adults.some((a) => a.now) && !tickOk;
+    // A tick sent for other lines than these commits nothing.
+    const tickStale = tickSent && !tickOk;
+    const committed = commit === true && allErrors.length === 0 && !needsTick && !tickStale;
+    const adultReport = { count: adults.length, hash,
+                          lines: adults.map((a) => ({ line: a.line, fullName: a.fullName, ofAgeOn: a.ofAgeOn, now: a.now })),
+                          checked: office && tickOk, tickable: office && adults.length > 0 };
     // The dry run and a failed commit both unwind. runAsPrincipal owns the
     // outer transaction, so raising is how this refuses to keep the writes —
     // and a report has to come back either way, so the error carries it.
@@ -626,13 +655,13 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
       e.report = { kind, committed: false, rows: rows.length, wouldInsert: inserted,
                    wouldUpdate: updated, unchanged, errors: allErrors, unknownColumns: unknown,
                    warnings, clean: allErrors.length === 0,
-                   ...(def.adults ? { adults: adultReport, needsTick, leftOut } : {}) };
+                   ...(def.adults ? { adults: adultReport, needsTick, tickStale, leftOut } : {}) };
       e.rollback = true;
       throw e;
     }
     return { kind, committed: true, rows: rows.length, inserted, updated, unchanged,
              errors: [], unknownColumns: unknown, warnings, clean: true,
-             ...(def.adults ? { adults: adultReport, needsTick: false, leftOut } : {}) };
+             ...(def.adults ? { adults: adultReport, needsTick: false, tickStale: false, leftOut } : {}) };
   }).catch((e) => {
     if (e?.rollback && e.report) return e.report;
     throw e;
