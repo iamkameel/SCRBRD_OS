@@ -23,9 +23,10 @@ import { RecentMatches } from "./cockpit/RecentMatches.jsx";
 import { weatherWords } from "../lib/cockpit.js";
 import { observedStamp } from "../lib/weatherStamp.js";
 import { saClock } from "../lib/saTime.js";
-import { MatchCard } from "../ui/matchCard.jsx";
+import { MatchCard, UpdatedAgo } from "../ui/matchCard.jsx";
 import { sideOfTeam } from "../lib/matchCentre.js";
-import { decidedOn, openWords, resultSaidOf } from "../lib/matchCard.js";
+import { decidedOn, openWords, paceWords, resultSaidOf } from "../lib/matchCard.js";
+import { liveRefreshMs } from "./matchcentre/live.js";
 import { cockpitGate } from "../lib/cockpit.js";
 import { requestCoach, requestDuties, requestResult } from "../lib/cockpitNav.js";
 import { fixFor, requestFix } from "../lib/fixNote.js";
@@ -119,13 +120,15 @@ export function weekOf(matches, day) {
  * never the source: asMatch() sets `scorecard: null` for every real fixture on
  * purpose, because a live score is derived, not a column.
  */
-function useLiveScore(matchId) {
-  const [state, setState] = useState({ loading: false, error: null, inn: null, target: null, innings: [], result: null, conditions: null });
+const NO_SCORE = { loading: false, error: null, inn: null, target: null, innings: [], result: null, conditions: null, at: null };
+function useLiveScore(matchId, pollMs = 0) {
+  const [state, setState] = useState(NO_SCORE);
   useEffect(() => {
-    if (!matchId || !signedIn()) { setState({ loading: false, error: null, inn: null, target: null, innings: [], result: null, conditions: null }); return; }
+    if (!matchId || !signedIn()) { setState(NO_SCORE); return; }
     let cancelled = false;
-    setState((s) => ({ ...s, loading: true }));
-    (async () => {
+    // One read. `quiet` is a re-read on the clock: it keeps what is drawn, and a miss leaves the last good answer.
+    const load = async (quiet) => {
+      if (!quiet) setState((s) => ({ ...s, loading: true }));
       try {
         const { events: rows, fold } = await api(`/api/matches/${matchId}/events`);
         if (cancelled) return;
@@ -137,13 +140,17 @@ function useLiveScore(matchId) {
         const target = curIn === 1 ? (inn?.target ?? ((innings[0]?.runs || 0) + 1)) : null;
         // Every innings of the same fold: the match card's two scores (slice 1). Nothing more is read.
         // And its result, so a match the pad has decided reads "Provisional" until the coach confirms it (slice 4).
-        setState({ loading: false, error: null, inn, target, innings, result: result ?? null, conditions: fold?.conditions ?? null });
+        setState({ loading: false, error: null, inn, target, innings, result: result ?? null, conditions: fold?.conditions ?? null, at: Date.now() });
       } catch (e) {
-        if (!cancelled) setState({ loading: false, error: e.code || "unreachable", inn: null, target: null, innings: [], result: null, conditions: null });
+        if (!cancelled && !quiet) setState({ ...NO_SCORE, error: e.code || "unreachable" });
       }
-    })();
-    return () => { cancelled = true; };
-  }, [matchId]);
+    };
+    load(false);
+    // Redesign slice 15 (Q14, 19 Nov): the spectator's lead asks again every 15 seconds while the page is in view,
+    // the same read, and says so ("Updates every 15 seconds"); it never says it of a page that does not.
+    const timer = pollMs > 0 ? setInterval(() => { if (typeof document === "undefined" || !document.hidden) load(true); }, pollMs) : null;
+    return () => { cancelled = true; if (timer) clearInterval(timer); };
+  }, [matchId, pollMs]);
   return state;
 }
 
@@ -217,12 +224,17 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
                     reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true, off = {},
                     needsYou = null, nextFold = null, lastMatch = null, dso = null, chipDoor = null,
-                    liveInnings = null, liveResult = null, liveConditions = null, nowLine = null, nowAction = null, openMatch = null }) {
+                    liveInnings = null, liveResult = null, liveConditions = null, nowLine = null, nowAction = null, openMatch = null,
+                    liveAt = null, lead = null, news = null }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
   // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
   const holds = (capability) => holdsAsHeld(role, capability, held ? undefined : []);
   const rc = ROLES[role];
+  // Redesign slice 15 (DESIGN_DIRECTION §3.5): a signed-in spectator's Today, titled with the date, is matches and
+  // results he can open, not a staff day sheet with the staff parts greyed. Drawn from the rows this sheet is
+  // already given; it reads nothing more, and what a staff role sees is unchanged.
+  const fan = role === "spectator" && held;
   const hasDuty = (key) => dutyRows.some((r) => r.duty === key);
   // The week's training, and the chips drawn, with what is switched off taken out.
   const training = off.training ? [] : weekTraining;
@@ -238,9 +250,41 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
   // "Resume scoring" gives way to the match, where the coach confirms it.
   const liveFold = liveInnings?.length ? { innings: liveInnings, result: liveResult, conditions: liveConditions } : null;
   const liveDecided = decidedOn(liveMatch, liveFold);
+  // A fixture of the week as the match card's row (slice 1): played ones say their result, those to come their start.
+  const weekRow = (m, last = false) => {
+    const played = m.status !== "upcoming";
+    return (
+      <div key={m.id} data-testid={`week-fixture-${m.id}`} data-played={played ? "true" : "false"}>
+        <MatchCard size="row" last={last} match={m} statusTestid={`week-said-${m.id}`}
+          resultSaid={typeof m.weekResult === "string" && m.weekResult ? m.weekResult : null}
+          innings={Array.isArray(m.weekInnings) ? m.weekInnings : null}
+          // The result read did not answer: said, never "Match over" alone.
+          line={m.weekResult === null ? "The result could not be read just now." : null}
+          // A quiet list: the whole row opens the match, with no button of its own (§2.6).
+          onOpen={openMatch ? () => openMatch(m) : null} openLabel={openWords(m)}/>
+      </div>
+    );
+  };
+  // The spectator's lists (§2.3): matches still to come under "Today" and "This week", and the results, newest first.
+  const dayNow = dateStr(today);
+  const fanComing = fan ? weekMatches.filter((m) => m.status === "upcoming") : [];
+  const fanToday = fanComing.filter((m) => m.date === dayNow);
+  const fanLater = fanComing.filter((m) => m.date !== dayNow);
+  const fanResults = fan ? weekMatches.filter((m) => m.status !== "upcoming")
+    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || (b.time ?? "").localeCompare(a.time ?? "")) : [];
+  const fanMatchesSaid = fan ? said(reads?.matches) : null;
+  const groupHead = { ...T.role.label, color: T.content.secondary, margin: `0 0 ${T.space.xs}` };
+  const fanPace = fan && liveMatch && !liveDecided ? paceWords(liveRefreshMs()) : null;
   return (
     <div className="os-page" data-testid="day-sheet">
       <div style={{ marginBottom: T.space.lg }}>
+        {fan ? (
+          // Titled with the date, never "Spectator" (§3.5).
+          <h1 data-testid="day-title" style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
+            {humanDate(dayNow)}
+            {!live && <StateLabel kind="demo" compact why={demoNote}/>}
+          </h1>
+        ) : (<>
         <h1 style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", alignItems: "center", gap: T.space.sm }}>
           <Icon name={rc?.icon ?? "layout-dashboard"} style={{ color: rc?.color }}/>
           {rc?.label ?? "Today"}
@@ -249,7 +293,10 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           <span>{new Date().toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
           {!live && <StateLabel kind="demo" compact why={demoNote}/>}
         </div>
+        </>)}
       </div>
+
+      {lead}
 
       <Bento>
         {/* 1. Now — a live fixture: the match card at its board size (slice 1), the Board under its two sides. */}
@@ -257,7 +304,8 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           <BentoCard level="a" title="Now" data-testid="day-now">
             <MatchCard size="board" match={liveMatch} fold={liveFold}
               testid="day-now-card" statusTestid="day-now-status"
-              line={nowLine} lineTestid="day-now-line"
+              line={fanPace ?? nowLine} lineTestid={fanPace ? "day-now-pace" : "day-now-line"}
+              updated={fan && !liveDecided && liveAt != null ? <UpdatedAgo at={liveAt} testid="day-now-updated"/> : undefined}
               board={board
                 // No last-wicket row on the day sheet's board (CRI-1.1 is the Match Centre's and the public page's).
                 ? <Board {...board} lastWicket={undefined} testid="day-board"/>
@@ -268,7 +316,9 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                     onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" }
                 : nowAction ?? (holds("scoring.edit")
                 ? { label: "Resume scoring", onClick: () => onOpenScorer && onOpenScorer(liveMatch), testid: "day-now-open" }
-                : { label: openMatch ? openWords(liveMatch) : "Match Centre", onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" })}/>
+                // A spectator's one action on a live match is "Watch" (§2.2); everyone else's names the match.
+                : { label: fan ? "Watch" : openMatch ? openWords(liveMatch) : "Match Centre", aria: fan ? `Watch ${openWords(liveMatch).replace(/^Open /, "")}` : undefined,
+                    onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" })}/>
           </BentoCard>
         )}
 
@@ -277,7 +327,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
         {needsYou}
 
         {/* 2. Today / next — the next fixture, ready or not. */}
-        {holds("fixture.read") && (
+        {holds("fixture.read") && !fan && (
           <BentoCard level="b" title="Next fixture" data-testid="day-next">
             {next ? (
               <div data-testid={`next-fixture-${next.id}`}>
@@ -351,7 +401,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
         )}
 
         {/* 4. This week — training and fixtures, as a list, not a grid. */}
-        {(holds("team.read") || holds("fixture.read")) && (
+        {(holds("team.read") || holds("fixture.read")) && !fan && (
           <BentoCard level="c" title="This week" data-testid="day-week">
             {weekMatches.length === 0 && training.length === 0 ? draw(weekRead, (
               <EmptyState message="Nothing scheduled this week." icon="calendar"/>
@@ -360,20 +410,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                 {/* One of the two reads failed: what is listed is not the whole week. */}
                 {weekRead?.state === "partial" && <ReadState read={weekRead} onRetry={onRetry} compact testId="week-read-state"/>}
                 {/* Each fixture is the match card's row (slice 1): played ones say their result, those to come their start. */}
-                {holds("fixture.read") && weekMatches.map((m) => {
-                  const played = m.status !== "upcoming";
-                  return (
-                    <div key={m.id} data-testid={`week-fixture-${m.id}`} data-played={played ? "true" : "false"}>
-                      <MatchCard size="row" last match={m} statusTestid={`week-said-${m.id}`}
-                        resultSaid={typeof m.weekResult === "string" && m.weekResult ? m.weekResult : null}
-                        innings={Array.isArray(m.weekInnings) ? m.weekInnings : null}
-                        // The result read did not answer: said, never "Match over" alone.
-                        line={m.weekResult === null ? "The result could not be read just now." : null}
-                        // A quiet list: the whole row opens the match, with no button of its own (§2.6).
-                        onOpen={openMatch ? () => openMatch(m) : null} openLabel={openWords(m)}/>
-                    </div>
-                  );
-                })}
+                {holds("fixture.read") && weekMatches.map((m) => weekRow(m, true))}
                 {holds("team.read") && training.map((s) => (
                   <div key={s.id} data-testid={`week-training-${s.id}`} style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: `${T.space.xs} ${T.space.sm}` }}>
                     <Icon name="dumbbell"/>
@@ -386,13 +423,43 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
           </BentoCard>
         )}
 
+        {/* 3b. The spectator's matches and results (§3.5): rows under "Today" and "This week", then what was played; the
+            one read's failure said once in place of both; a block with nothing in it is not drawn, and the one empty
+            sentence is said only when the day has nothing at all. */}
+        {fan && fanMatchesSaid && (
+          <BentoCard level="b" title="Matches" data-testid="day-fixtures"><ReadState read={fanMatchesSaid} onRetry={onRetry} compact/></BentoCard>
+        )}
+        {fan && !fanMatchesSaid && fanComing.length > 0 && (
+          <BentoCard level="b" title="Matches" data-testid="day-fixtures">
+            <div style={{ display: "flex", flexDirection: "column", gap: T.space.md }}>
+              {[["Today", fanToday], ["This week", fanLater]].filter(([, rows]) => rows.length > 0).map(([head, rows]) => (
+                <section key={head} aria-label={head} data-testid={`day-group-${head === "Today" ? "today" : "week"}`}>
+                  <h3 style={groupHead}>{head}</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>{rows.map((m) => weekRow(m))}</div>
+                </section>
+              ))}
+            </div>
+          </BentoCard>
+        )}
+        {fan && !fanMatchesSaid && fanResults.length > 0 && (
+          <BentoCard level="c" title="Results" data-testid="day-results">
+            <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>{fanResults.map((m) => weekRow(m))}</div>
+          </BentoCard>
+        )}
+        {fan && !fanMatchesSaid && !liveMatch && fanComing.length === 0 && fanResults.length === 0 && (
+          <BentoCard level="b" title="Matches" data-testid="day-fixtures">
+            <EmptyState message="Nothing is on today or this week. Matches show here when they are arranged." icon="calendar-days"/>
+          </BentoCard>
+        )}
+        {fan && news}
+
         {/* 4b. Last match, and the side's season, in a line each (§3.10). */}
         {lastMatch}
 
         {/* 5. Alerts — last, and only unread. Addressed to a person rather
             than read out of a scoped table, so every role that reaches this
             screen has the section; what is IN it is still scoped by news.read. */}
-        <BentoCard level="c" title="Alerts" data-testid="day-alerts">
+        {(!fan || unread.length > 0 || said(reads?.alerts)) && <BentoCard level="c" title="Alerts" data-testid="day-alerts">
           {unread.length === 0 ? draw(reads?.alerts, (
             <EmptyState message="Nothing unread." icon="bell"/>
           )) : (
@@ -406,12 +473,41 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
               ))}
             </div>
           )}
-        </BentoCard>
+        </BentoCard>}
       </Bento>
       {/* Last on every Today (Q7; SAFEGUARDING_DSO §2.5): the school's DSOs by name and how to reach them. The same
           card for everyone at the school; nothing on it says whether a concern exists. */}
       {dso && <div style={{ marginTop: T.space.lg }}>{dso}</div>}
     </div>
+  );
+}
+
+/**
+ * The spectator's news (§3.5): the three latest headlines of the posts his school's feed already gives him, the same
+ * read the Newsfeed makes (news.read, which a spectator holds). Titles and days only; nothing is opened from here, as
+ * his menu is Today and Matches. Not drawn while it is read or when there is nothing; a failed read is said, with Retry.
+ * @param {{role: string, nonce: number}} p
+ */
+function FanNews({ role, nonce }) {
+  const [again, setAgain] = useState(0);
+  const read = useLive("news", role, nonce + again);
+  const state = readState(read, { what: "the news" });
+  const posts = read.rows.filter((n) => !n.draft && n.title).sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? ""))).slice(0, 3);
+  if (state.state === "failed") {
+    return <BentoCard level="c" title="News" data-testid="day-news"><ReadState read={state} onRetry={() => setAgain((n) => n + 1)} compact/></BentoCard>;
+  }
+  if (posts.length === 0) return null;
+  return (
+    <BentoCard level="c" title="News" data-testid="day-news">
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: T.space.sm }}>
+        {posts.map((n) => (
+          <li key={n.id} data-testid={`news-headline-${n.id}`}>
+            <div style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere" }}>{n.title}</div>
+            <div style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{n.audience ? `${n.audience} · ` : ""}{humanDate(String(n.at ?? "").slice(0, 10))}</div>
+          </li>
+        ))}
+      </ul>
+    </BentoCard>
   );
 }
 
@@ -439,7 +535,9 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const WEATHER = weatherRead.weather;
 
   const liveMatch = MATCHES.find((m) => m.status === "live");
-  const liveScore = useLiveScore(liveMatch?.id);
+  // A spectator's lead re-reads every 15 seconds and says so (slice 15, Q14); nobody else's page changes.
+  const fan = role === "spectator";
+  const liveScore = useLiveScore(liveMatch?.id, fan && signedIn() ? liveRefreshMs() : 0);
 
   const upcoming = MATCHES.filter((m) => m.status === "upcoming").sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || (a.time ?? "").localeCompare(b.time ?? ""));
   const next = upcoming[0];
@@ -555,9 +653,11 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     ? <div className="os-page" data-testid="today-followed"><FollowedSchools followed={followed} lead={followedFirst}/></div> : null;
   return (
     <>
-    {followedFirst && followedBlock}
+    {followedFirst && !fan && followedBlock}
     <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
-      liveInnings={liveInnings} liveResult={signedIn() ? liveScore.result : null} liveConditions={signedIn() ? liveScore.conditions : null} nowLine={nowLine} nowAction={nowAction} openMatch={openMatch}
+      liveInnings={liveInnings} liveResult={signedIn() ? liveScore.result : null} liveConditions={signedIn() ? liveScore.conditions : null} nowLine={nowLine} nowAction={nowAction} openMatch={openMatch} liveAt={liveScore.at}
+      news={fan && signedIn() ? <FanNews role={role} nonce={nonce}/> : null}
+      lead={fan && followedFirst && followedBlock ? <div data-testid="today-followed"><FollowedSchools followed={followed} lead/></div> : null}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}
