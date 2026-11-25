@@ -17413,7 +17413,8 @@ BEGIN
     SELECT * INTO r FROM player_born_correct(BOY, B2, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(r.ok AND r.reason IS NULL AND r.was = B AND r.born = B2, format('§147 (door): the correction answered %s', row_to_json(r)));
     PERFORM _assert(_v172_now(BOY) = B2 || '|-', format('§147 (door): his date is %s', _v172_now(BOY)));
-    PERFORM _assert(_v172_rows(BOY) = format('%s>%s:correction:%s', B, B2, REG), format('§147 (door): recorded as %s', _v172_rows(BOY)));
+    -- db/173: his first date is a row too, the office's (it wrote him, through a door, under its session).
+    PERFORM _assert(_v172_rows(BOY) = format('->%s:capture:%s;%s>%s:correction:%s', B, REG, B, B2, REG), format('§147 (door): recorded as %s', _v172_rows(BOY)));
     PERFORM _assert(_v172_by_name(BOY) = _v168_audit_label(REG), format('§147 (door): the office person''s label was not kept: %s', _v172_by_name(BOY)));
     PERFORM _assert(_v172_reason(BOY) = 'Verify 172: birth certificate seen', format('§147 (door): the reason recorded is %s', _v172_reason(BOY)));
     -- 200 characters is a reason, trimmed.
