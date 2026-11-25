@@ -150,6 +150,8 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
   // may not read ID numbers (review N1): it tells him neither that one is on
   // file nor what date it carries.
   born_needs_the_office: "The school office must record this date of birth.",
+  // db/173 (Kameel, 25 Nov 2026): an ID number, first or not, is the office's.
+  id_number_needs_the_office: "The school office must record this ID number.",
 });
 
 /**
@@ -162,4 +164,30 @@ export const BORN_REFUSED_BY_DB = Object.freeze([
   "born_correction_is_the_office",
   "id_number_change_is_the_office",
   "born_correction_needs_a_reason",
+  // db/173: a first date that makes him 18 today, and a first ID number,
+  // from anyone but the school office.
+  "born_needs_the_office",
+  "id_number_needs_the_office",
 ]);
+
+/**
+ * The day a boy born on `born` (yyyy-mm-dd) turns 18, as db/08's
+ * majority_on() has it: Postgres's date + 18 years, which clamps 29
+ * February to 28 February.
+ * @param {string} born
+ * @returns {string} yyyy-mm-dd
+ */
+export function majorityOn(born) {
+  const [y, m, d] = String(born).split("-").map(Number);
+  const last = new Date(Date.UTC(y + 18, m, 0)).getUTCDate();
+  return `${String(y + 18).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+}
+
+/**
+ * Does a date of birth make him 18 on `today` (yyyy-mm-dd, the school's day,
+ * db/08's sa_today())? The test db/173's trigger makes of a first date.
+ * @param {string} born @param {string} today
+ */
+export function isEighteenOn(born, today) {
+  return majorityOn(born) <= today;
+}

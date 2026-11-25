@@ -45,7 +45,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export function bornRefusal(e) {
   if (!e || !BORN_REFUSED_BY_DB.includes(e.message)) return null;
-  return { status: e.message.endsWith("_is_the_office") ? 403 : 422, error: e.message };
+  // born_needs_the_office stays a 422: it is also the answer a caller who may
+  // not read ID numbers is given for a date that disagrees with one on file.
+  return { status: e.message.endsWith("_is_the_office") || e.message === "id_number_needs_the_office" ? 403 : 422,
+           error: e.message };
 }
 
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
@@ -67,6 +70,10 @@ export function dobCaptureRoutes({ pool, secret }) {
           office = (await client.query(
             `select player_born_office(m.school_id) as office from player_masked m where m.id = $1`,
             [req.params.id])).rows[0]?.office === true;
+          // An ID number, first or not, is the office's to write (db/173;
+          // Kameel, 25 Nov 2026). Refused before the write, so the answer is
+          // the same whether or not one is already on his record.
+          if (idNumber && !office) throw err("id_number_needs_the_office", 403);
           const { rows } = await client.query(
             `update player set born = $2, id_number = coalesce(id_number, $3)
               where id = $1 and born is null

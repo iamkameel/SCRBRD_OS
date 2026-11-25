@@ -125,7 +125,7 @@ try {
   await match("Maritzburg College", 5, league, sixes(25), naidoo, { sealed: false });
 
   const self      = await login("pillay@example.invalid");
-  const mate      = await login("spectator@example.invalid");    // a `player` on the 1XI
+  const mate      = await login("mate@example.invalid");    // a `player` on the 1XI
   const parent    = await login("parent@example.invalid");
   const coach     = await login("coach@example.invalid");        // 1XI
   const principal = await login("principal@example.invalid");

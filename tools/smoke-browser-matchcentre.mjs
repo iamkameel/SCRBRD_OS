@@ -874,7 +874,7 @@ try {
     // A family opens the fixture from its own Matches (family mode: the child's 1st XI plays in it).
     const who = [
       ["the parent (guardian)", "parent@example.invalid", THREE, "spectator", true],
-      ["the pupil (player, 1st XI)", "spectator@example.invalid", THREE, "spectator", true],
+      ["the pupil (player, 1st XI)", "mate@example.invalid", THREE, "spectator", true],
       ["the 1st XI's coach", "coach@example.invalid", ALL, "full", false],
       ["the scorer (staff, no analytics.read)", "scorer@example.invalid", ALL, "full", false],
       ["the director of sport", "sarah@example.invalid", ALL, "full", false],

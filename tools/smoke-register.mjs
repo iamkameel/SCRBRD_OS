@@ -56,7 +56,7 @@ try {
   const coach   = await login("coach@example.invalid");     // coach, 1XI
   const watcher = await login("watcher@example.invalid");   // spectator
   const plat    = await login("platform@example.invalid");  // platformadmin
-  const pupil   = await login("spectator@example.invalid");  // a pupil (player, 1XI)
+  const pupil   = await login("mate@example.invalid");  // a pupil (player, 1XI)
   const parent  = await login("parent@example.invalid");     // guardian of R Pillay
 
   group("The panel is readable, because a scorecard already says who stood");

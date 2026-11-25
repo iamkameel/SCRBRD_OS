@@ -147,7 +147,7 @@ try {
   const sarah = await login("sarah@example.invalid");        // director of sport (and a U16B coach): confirms
   const head = await login("principal@example.invalid");     // principal: audit.read, the card not the page
   const parent = await login("parent@example.invalid");
-  const pupil = await login("spectator@example.invalid");    // a pupil (role player)
+  const pupil = await login("mate@example.invalid");    // a pupil (role player)
   const wes = await login("coach.wes@example.invalid");      // another school's coach
   const league = await login("league@example.invalid");      // competitionadmin, no school
   const platform = await login("platform@example.invalid");  // the platform's key: the purge

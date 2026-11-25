@@ -45,12 +45,14 @@ for (const r of rows) {
   ok(`${r.id} on ${r.on} is ${r.want ?? "no date"}, in JavaScript as in SQL`, got === r.want, `JS says ${got}`);
 }
 
-const db172 = readFileSync(join(ROOT, "db", "172_dob_audited_correction.sql"), "utf8");
+// db/172's trigger, and db/173's that replaces it, raise the same names.
+const db172 = readFileSync(join(ROOT, "db", "172_dob_audited_correction.sql"), "utf8")
+  + readFileSync(join(ROOT, "db", "173_dob_first_dates.sql"), "utf8");
 for (const name of BORN_REFUSED_BY_DB) {
-  ok(`db/172 raises ${name} by that name`, db172.includes(`RAISE EXCEPTION '${name}'`));
+  ok(`db/172 or db/173 raises ${name} by that name`, db172.includes(`RAISE EXCEPTION '${name}'`));
   ok(`...and the office has words for it`, typeof BIRTH_DATE_MESSAGE[name] === "string" && BIRTH_DATE_MESSAGE[name].length > 10);
 }
-ok("every name db/172 raises is one the routes read",
+ok("every name db/172 and db/173 raise is one the routes read",
    [...db172.matchAll(/RAISE EXCEPTION '([a-z_]+)'/g)].every((m) => BORN_REFUSED_BY_DB.includes(m[1])));
 
 console.log(`\n${"─".repeat(52)}\nSA ID SQL PIN: ${pass} passed, ${fail} failed`);

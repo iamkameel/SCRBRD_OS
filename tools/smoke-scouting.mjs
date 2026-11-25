@@ -216,7 +216,7 @@ try {
     const otherSide = await consentOf(await login("coach2@example.invalid"));   // 2XI coach
     ok("another side's coach reads no decision of this boy's",
        !otherSide.some((r) => r.player_id === R_PILLAY), `${otherSide.length} rows`);
-    const mate = await consentOf(await login("spectator@example.invalid"));      // a 1XI pupil, his team-mate
+    const mate = await consentOf(await login("mate@example.invalid"));      // a 1XI pupil, his team-mate
     ok("a team-mate reads no consent rows at all", mate.length === 0, `${mate.length} rows`);
     const elsewhere = await consentOf(await login("coach.wes@example.invalid")); // Westville's 1XI coach
     ok("the same side's coach at another school reads none of them",

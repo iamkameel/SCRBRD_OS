@@ -72,7 +72,7 @@ try {
   const coach = await login("coach@example.invalid");
   const pillay = await login("pillay@example.invalid");
   const parent = await login("parent@example.invalid");
-  const pupil = await login("spectator@example.invalid");   // a `player` at Hilton: a team-mate
+  const pupil = await login("mate@example.invalid");   // a `player` at Hilton: a team-mate
   ok("the coach, the boy, his parent and a team-mate sign in", coach && pillay && parent && pupil);
 
   // Today's nets, at six in the morning.

@@ -507,10 +507,13 @@ try {
       csv: `full_name,team_code,born\nK Dlamini,U16B,${was}\n`, schoolId: HIL, commit: true });
     ok("...while the office's file carrying the date already on record goes in, and records nothing",
        again.body?.committed === true && (await changesOf("K Dlamini")).length === 0, JSON.stringify(again.body?.errors));
-    // A new boy's first date is the file's, recorded as nothing (an insert is no change).
+    // A new boy's first date is the file's, and since db/173 it is recorded too, `was` empty.
     const newBoy = await importCsv("players", office, {
       csv: "full_name,team_code,born\nFirst Date Boy,U15A,2011-05-05\n", schoolId: HIL, commit: true });
     ok("a new boy's first date goes in from a file", newBoy.body?.committed === true && (await bornOf("First Date Boy")) === "2011-05-05");
+    ok("...recorded as the import's, with nothing before it",
+       JSON.stringify((await changesOf("First Date Boy")).map((c) => [c.how, c.was, c.became])) === JSON.stringify([["import", null, "2011-05-05"]]),
+       JSON.stringify(await changesOf("First Date Boy")));
 
     // The ID number on file is the office's (db/172 review S1, N1).
     const idOf = async (name) => (await q(`select id_number from player where school_id = $1 and full_name = $2`, [HIL, name]))[0]?.id_number;
@@ -537,6 +540,80 @@ try {
       csv: `full_name,team_code,id_number\nK Dlamini,U16B,${fill}\n`, schoolId: HIL, commit: true });
     ok("the office's file fills a missing number", filled.body?.committed === true && (await idOf("K Dlamini")) === fill,
        JSON.stringify(filled.body?.errors));
+  }
+
+  group("A first date that makes a boy 18 is the office's, on its tick; anyone else's line is left out (db/173)");
+  {
+    // Kameel, 25 Nov 2026: only the office writes a first date that makes a
+    // boy 18; the import lists such lines, for the office's one tick.
+    const ago = async (years) => (await q(`select to_char(sa_today() - make_interval(years => $1), 'YYYY-MM-DD') d`, [years]))[0].d;
+    const adult = await ago(19), minor = await ago(15);
+    const rowsOf = async (name) => (await q(
+      `select c.how, c.by_office, p.id from player_born_change c join player p on p.id = c.player_id
+        where p.school_id = $1 and p.full_name = $2 order by c.at`, [HIL, name]));
+    const named = async (name) => (await q(`select count(*)::int n from player where school_id = $1 and full_name = $2`, [HIL, name]))[0].n;
+    const director = await login("sarah@example.invalid");   // player.profile.manage, not the office
+
+    // The director: the adult line is listed and left out, in one sentence; the rest goes in.
+    const file = `full_name,team_code,born\nAdult Lineboy,1XI,${adult}\nMinor Lineboy,U15A,${minor}\n`;
+    const dry = await importCsv("players", director, { csv: file, schoolId: HIL });
+    ok("the director's dry run counts the line that makes a boy 18",
+       dry.body?.adults?.count === 1 && dry.body?.adults?.lines?.[0]?.line === 2 && dry.body?.adults?.lines?.[0]?.fullName === "Adult Lineboy",
+       JSON.stringify(dry.body?.adults));
+    ok("...and leaves it out, in one sentence, not as an error",
+       dry.body?.leftOut?.length === 1 && dry.body.leftOut[0].line === 2 && dry.body.leftOut[0].column === "born"
+         && dry.body.leftOut[0].message === "The school office must record this date of birth."
+         && (dry.body?.errors ?? []).length === 0 && dry.body?.wouldInsert === 1, JSON.stringify(dry.body));
+    const byDirector = await importCsv("players", director, { csv: file, schoolId: HIL, commit: true });
+    ok("...and the commit loads the rest, and not him",
+       byDirector.body?.committed === true && byDirector.body?.inserted === 1
+         && (await named("Adult Lineboy")) === 0 && (await named("Minor Lineboy")) === 1, JSON.stringify(byDirector.body));
+    ok("...the minor's first date recorded as the import's, not the office's",
+       JSON.stringify((await rowsOf("Minor Lineboy")).map((r) => [r.how, r.by_office])) === JSON.stringify([["import", false]]));
+
+    // The same answer whether or not an ID number carrying that date is on
+    // his record: decided on the line, before the database is asked.
+    await pool.query(`alter table player drop constraint if exists player_born_required`);
+    const idAdult = `${adult.slice(2, 4)}${adult.slice(5, 7)}${adult.slice(8, 10)}5173081`;
+    await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born, id_number)
+             values ($1, '1XI', 'Nodate Withid', 73, 'batter', null, $2), ($1, '1XI', 'Nodate Noid', 74, 'batter', null, null)`, [HIL, idAdult]);
+    await pool.query(`alter table player add constraint player_born_required check (born is not null) not valid`);
+    const withId = await importCsv("players", director, { csv: `full_name,team_code,born\nNodate Withid,1XI,${adult}\n`, schoolId: HIL });
+    const noId = await importCsv("players", director, { csv: `full_name,team_code,born\nNodate Noid,1XI,${adult}\n`, schoolId: HIL });
+    const shape = (b) => JSON.stringify({ ...b, adults: { ...b?.adults, lines: (b?.adults?.lines ?? []).map((l) => l.line) } });
+    ok("the director's report is the same whether or not an ID number is on his record",
+       shape(withId.body) === shape(noId.body) && withId.body?.leftOut?.length === 1, `${shape(withId.body)} / ${shape(noId.body)}`);
+    // Their dates, as the owner, so the round trip below reads two whole boys.
+    await q(`update player set born = $2 where school_id = $1 and full_name in ('Nodate Withid', 'Nodate Noid')`, [HIL, adult]);
+
+    // The office: listed, and the commit waits for its tick of that count.
+    const officeFile = `full_name,team_code,born\nOffice Adultboy,1XI,${adult}\nOffice Minorboy,U15A,${minor}\n`;
+    const odry = await importCsv("players", office, { csv: officeFile, schoolId: HIL });
+    ok("the office's dry run lists the line and asks for its tick",
+       odry.body?.adults?.count === 1 && odry.body?.needsTick === true && (odry.body?.leftOut ?? []).length === 0
+         && (odry.body?.errors ?? []).length === 0, JSON.stringify(odry.body));
+    const untick = await importCsv("players", office, { csv: officeFile, schoolId: HIL, commit: true });
+    const wrong = await importCsv("players", office, { csv: officeFile, schoolId: HIL, commit: true, adultsChecked: 2 });
+    ok("...and without it, or with another count, nothing is written",
+       untick.body?.committed === false && wrong.body?.committed === false
+         && (await named("Office Adultboy")) === 0 && (await named("Office Minorboy")) === 0, JSON.stringify([untick.body, wrong.body]));
+    const ticked = await importCsv("players", office, { csv: officeFile, schoolId: HIL, commit: true, adultsChecked: 1 });
+    ok("...and with it, the file goes in", ticked.body?.committed === true && ticked.body?.inserted === 2
+       && ticked.body?.adults?.checked === true, JSON.stringify(ticked.body));
+    const oadult = await rowsOf("Office Adultboy");
+    ok("...recorded as the office's import, and off Coming of age",
+       JSON.stringify(oadult.map((r) => [r.how, r.by_office])) === JSON.stringify([["import", true]])
+         && (await q(`select player_born_confirmed($1) c`, [oadult[0]?.id]))[0]?.c === true, JSON.stringify(oadult));
+
+    // A coach may not import at all.
+    const byCoach = await importCsv("players", coach, { csv: file, schoolId: HIL, commit: true });
+    ok("a coach's file writes nothing", byCoach.body?.committed !== true && (await named("Adult Lineboy")) === 0, JSON.stringify(byCoach.body));
+
+    // A database refusal is sent as its code, never its detail (RT N7c).
+    const bad = await importCsv("players", office, { csv: `full_name,team_code,born\nBad Sideboy,ZZ9,${minor}\n`, schoolId: HIL });
+    const said = bad.body?.errors?.[0]?.message ?? "";
+    ok("a constraint the file broke is reported by its code, with none of the row",
+       /refused by the database \(23514\)/.test(said) && !/Failing row|Bad Sideboy/.test(said), said);
   }
 
   group("A round trip");
