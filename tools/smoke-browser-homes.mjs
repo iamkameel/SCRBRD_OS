@@ -279,6 +279,13 @@ try {
        && await s.page.locator(`[data-testid="day-matchday"][data-match="${next?.id}"]`).count() <= 1);
     ok("...with the match-day card folded into it, not beside it",
        await s.page.locator(`[data-testid="day-next"] [data-testid="day-matchday"][data-match="${next?.id}"]`).count() === 1);
+    // Kameel, 25 Nov (DESIGN_DIRECTION §3.3): on his side's match day the match leads and Needs you sits under it;
+    // on any other day Needs you leads, as before.
+    const [{ today } = { today: false }] = await q(`select (starts_at at time zone 'Africa/Johannesburg')::date = sa_today() as today from match where id = $1`, [next?.id]);
+    await tid(s.page, "needs-you").first().waitFor({ timeout: 12000 }).catch(() => {});
+    const order = await s.page.evaluate(() => { const n = document.querySelector('[data-testid="needs-you"]'), x = document.querySelector('[data-testid="day-next"]');
+      return !n || !x ? "one is missing" : (x.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING ? "match first" : "needs-you first"); });
+    ok(`...${today ? "his match day: the match leads and Needs you is under it" : "not his match day: Needs you leads"}`, order === (today ? "match first" : "needs-you first"), order);
     const chips = await s.page.$$eval('[data-testid="day-next"] [data-testid^="ready-"]', (els) => els.map((e) => e.getAttribute("data-on")));
     const firstOn = chips.indexOf("true");
     ok("...its chips not done come first", chips.length === 4 && (firstOn === -1 || chips.slice(firstOn).every((v) => v === "true")), chips.join());

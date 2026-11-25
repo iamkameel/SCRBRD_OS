@@ -736,6 +736,11 @@ try {
   const nyCount = Number((await inner(d.page, "needs-you-header")).match(/^(\d+)/)?.[1] ?? 0);
   ok(`...and the card's count (${cardCount}) is this fixture's rows on Needs you (${ny.filter((m) => m === DAY).length} of ${nyCount} shown)`,
      nyCount <= ny.length ? ny.filter((m) => m === DAY).length === cardCount : cardCount <= nyCount, `${ny.join()} | ${await inner(d.page, "needs-you-header")}`);
+  // Kameel, 25 Nov (DESIGN_DIRECTION §3.3): his side plays tonight and has not started, so the match leads and Needs
+  // you sits under it.
+  const order = await d.page.evaluate(() => { const n = document.querySelector('[data-testid="needs-you"]'), x = document.querySelector('[data-testid="day-next"]');
+    return !n ? "no needs-you" : !x ? "no next" : (x.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING ? "match first" : "needs-you first"); });
+  ok("match day, before the toss: the match card leads his Today, and Needs you is under it", order === "match first", order);
   ok("...the side in a line: ten named, five to chase, two restricted", /10 named/.test(await inner(d.page, "matchday-side")) && /2 restricted/.test(await inner(d.page, "matchday-side")), await inner(d.page, "matchday-side"));
   await tid(d.page, "matchday-signals").click({ timeout: 4000 });
   await afterReads(d.page, 3500);
