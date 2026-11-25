@@ -2567,6 +2567,50 @@ Hash-checked:
 `sha256 7c80311d0d67f811b3717c0d70024a7e19993b746a52262170482fc15abcebd2`.
 Recorded in `db/SHIPPED.sha256` by #371 (df071d36).
 <!-- ── end db/168 ── -->
+<!-- ── db/172: a date of birth, corrected by the office ── -->
+#### A date of birth: the office corrects it, every change is recorded (db/172)
+
+`db/172_dob_audited_correction.sql` (branch claude/wip-dob-followup; Kameel,
+20 Nov 2026: "The office corrects it; every change is audited", and "Date of
+birth should be match with an ID No."). A date of birth that disagrees with the
+ID number on his record is refused in the database, whoever writes it through
+the application. A recorded date, and an ID number on file, are the school
+office's alone to change. Every change to a date is written to
+`player_born_change` (before, after, who, when, how), which the office reads on
+Edit Profile. The roster import's silent overwrite is folded into the same rule.
+Its proof is db/99 §147.
+
+To paste:
+
+- **After db/171.** It needs db/168's `pupil_claim_office()` and re-emits no
+  function of db/169, db/170 or db/171. It matters more once db/169 is in,
+  because db/169 opens a pupil's own sign-in by the date on his record.
+- **Read its NOTICE.** The paste counts the rows whose date already disagrees
+  with their ID number, and names the count, never a boy. Nothing fails because
+  of them: such a row stands until its date or its number is next written, and
+  then the write must agree. Give the count to the office, which puts each date
+  right on Edit Profile to the date its ID number carries. A boy whose ID number
+  is the wrong one is a question for Kameel: no route corrects an ID number yet.
+- **Then, on the managed host, check the API roles reach nothing new:**
+  ```sql
+  SELECT * FROM api_role_reach('anon');
+  SELECT * FROM api_role_reach('authenticated');
+  SELECT * FROM api_role_reach('service_role');
+  ```
+  Each answers no rows (db/157). This is the one check the local verify cannot
+  make.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  172, and the API refuses to start on a database without it.
+- It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, and a `DROP
+  TRIGGER IF EXISTS` before each trigger. It takes a short lock on `player` for
+  its two triggers (ten-second `lock_timeout`, reset by its last statement); a
+  paste that timed out on its lock is simply run again.
+- §147's `(definer)` case logs in as the application for a moment, which only a
+  superuser login can do. On the managed host it is skipped and says so; it runs
+  locally and on CI.
+
+Not pasted yet. Hash to check: `sha256 3bb79a372e1e7b1997bdfa25edd380c485b5d54fb1be8361675c501a382fe207`.
+<!-- ── end db/172 ── -->
 
 ### 5 · Cloud Run, the first time
 
