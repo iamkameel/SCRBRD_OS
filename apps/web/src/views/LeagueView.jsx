@@ -268,7 +268,7 @@ function LeagueView({ role, homeBar = null }) {
                             <td key={k} style={{padding:"11px 12px",textAlign:"center"}}>
                               {isEdit&&k!=="P"?(
                                 <input type="number" aria-label={`${t.team} — ${k}`} defaultValue={t[k]} onChange={e=>setTableEdit(prev=>({...prev,[t.team]:{...prev[t.team],[k]:Number(e.target.value)}}))}
-                                  style={{width:"40px",background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.sm,padding:"3px 6px",fontFamily:D.mono,fontSize:T.role.control.fontSize,color:D.textPrimary,textAlign:"center"}}/>
+                                  style={{width:"56px",background:D.surf2,border:`1px solid ${D.borderMed}`,borderRadius:D.sm,padding:"3px 6px",fontFamily:D.mono,fontSize:T.role.control.fontSize,color:D.textPrimary,textAlign:"center"}}/>
                               ):(
                                 <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>{t[k]}</span>
                               )}
