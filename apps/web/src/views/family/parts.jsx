@@ -40,7 +40,7 @@ export function Page({ children, testid, label }) {
  *   lead      the one block a first screen leads with: the raised surface, the
  *             strong hairline, the theme's own lift, more room inside
  *   standard  what is asked of the reader beside the lead: as every card was
- *   quiet     what is there to read: the resting surface, the faintest line, no lift
+ *   quiet     what is there to read: on the page itself, the faintest line, no lift
  * Weight is a border, a surface and a shadow, never a colour (§3.7). Functions,
  * not constants: a token read at import keeps the theme it was read under.
  */
@@ -48,7 +48,7 @@ const WEIGHT = {
   lead: () => ({ background: T.surface.raised, border: `1px solid ${T.line.strong}`, boxShadow: `${T.elevation.md}, ${T.elevation.sheen}`,
     padding: `${T.space.lg} ${T.space.lg}`, gap: T.space.md }),
   standard: () => ({ background: T.surface.raised, border: `1px solid ${T.line.normal}`, padding: `${T.space.md} ${T.space.lg}`, gap: T.space.sm }),
-  quiet: () => ({ background: T.surface.base, border: `1px solid ${T.line.subtle}`, padding: `${T.space.md} ${T.space.lg}`, gap: T.space.sm }),
+  quiet: () => ({ background: "transparent", border: `1px solid ${T.line.subtle}`, padding: `${T.space.md} ${T.space.lg}`, gap: T.space.sm }),
 };
 
 /** A card: an eyebrow, then what it says. A border, not a tint (§3.7). `weight`: lead, standard (the default) or quiet. */

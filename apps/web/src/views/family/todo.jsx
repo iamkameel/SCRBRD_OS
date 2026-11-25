@@ -172,11 +172,13 @@ export function TodoCard({ todo, matches, onOpen, lead = null, onDayRetry, onDoo
       <Facts row={row}/>
     </OpenRow>
   );
+  // Its one ask is the lead's, said above: the card would only count it, so it is not drawn (§2.4).
+  const onlyTheLead = t.held && !t.reading && t.rows.length === 0 && !t.later.line && t.unread === 0;
   const shown = showMore ? t.rows : t.rows.slice(0, SHOWN_ROWS);
   const more = t.rows.length - SHOWN_ROWS;
   return (
     <>
-      <Card label={t.label} testid="todo-card">
+      {!onlyTheLead && <Card label={t.label} testid="todo-card">
         <div aria-live="polite">
           <Line strong testid="todo-count">{t.line}</Line>
         </div>
@@ -204,7 +206,7 @@ export function TodoCard({ todo, matches, onOpen, lead = null, onDayRetry, onDoo
           </div>
         )}
         {t.clocked && <Line quiet testid="todo-clock">{t.clockWords}</Line>}
-      </Card>
+      </Card>}
       {record && (record.lines.length > 0 || record.info.length > 0) && (
         <Card label="What you have agreed" testid="todo-record" weight="quiet">
           {record.lines.map((l) => (

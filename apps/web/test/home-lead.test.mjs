@@ -128,7 +128,7 @@ group("Three card weights, from the existing tokens");
   ok("...and they differ: a lift on the lead, none on the quiet", /box-shadow/.test(w("lead")) && !/box-shadow/.test(w("quiet")) && !/box-shadow/.test(w("standard")) && w("lead") !== w("quiet") && w("standard") !== w("quiet"));
   const parts = readFileSync(new URL("../src/views/family/parts.jsx", import.meta.url), "utf8");
   const block = parts.slice(parts.indexOf("const WEIGHT = {"), parts.indexOf("};", parts.indexOf("const WEIGHT = {")));
-  ok("...from tokens alone: no hex, no rgb, no new value", /T\.surface\.raised/.test(block) && /T\.surface\.base/.test(block) && /T\.elevation\.md/.test(block) && !/#[0-9a-f]{3,8}\b|rgba?\(/i.test(block), block.match(/#[0-9a-f]{3,8}\b|rgba?\(/i)?.[0]);
+  ok("...from tokens alone: no hex, no rgb, no new value", /T\.surface\.raised/.test(block) && /"transparent"/.test(block) && /T\.elevation\.md/.test(block) && !/#[0-9a-f]{3,8}\b|rgba?\(/i.test(block), block.match(/#[0-9a-f]{3,8}\b|rgba?\(/i)?.[0]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

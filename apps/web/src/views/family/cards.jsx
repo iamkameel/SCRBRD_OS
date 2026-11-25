@@ -121,7 +121,7 @@ export function LastMatchCard({ child, matches, onOpen, now, self = false, weigh
         <MatchCard size="card" match={last} ownEnd={end} now={now} statusTestid="last-match-result"
           fold={fold.innings.length ? { innings: fold.innings, result: fold.result } : null} resultSaid={result}
           line={line ? (self ? `You: ${line}` : line) : !result && !fold.innings.length ? "No score was recorded for this match." : null}
-          lineTestid={line ? "last-match-line" : "last-match-none"}
+          lineTestid={line ? "last-match-line" : "last-match-none"} actionPrimary={weight === "lead"}
           action={{ label: openWords(last, end), testid: "last-match-open", onClick: () => onOpen(last) }}/>
       )}
     </Card>
