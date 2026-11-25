@@ -527,6 +527,83 @@ try {
     ok(`...its first row (${kind}) opens the fix: the fixture, or the thing on its screen`, onFixture || onThing, `${where} ${s.page.url()}`);
     await s.ctx.close();
   }
+
+  // Redesign slice 15 (DESIGN_DIRECTION §3.5): the signed-in spectator's Today, in its three days: nothing on, a match
+  // later today, a match live. Titled with the date; matches and results, no staff parts; "Watch" and its pace on a
+  // live lead. S15_SHOTS=<dir> keeps a picture of each, at 390 and 1366, in both themes.
+  group("Slice 15: the spectator's Today");
+  {
+    const dayWords = await (async () => { const d = new Date(); return `${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]} ${d.getDate()} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]}`; })();
+    const shotsDir = process.env.S15_SHOTS;
+    if (shotsDir) await (await import("node:fs/promises")).mkdir(shotsDir, { recursive: true });
+    const visit = async (/** @type {number} */ width, /** @type {"light" | "dark"} */ scheme, /** @type {boolean} */ empty, /** @type {boolean} */ sunny = false) => {
+      const s = await open(width);
+      await s.page.emulateMedia({ colorScheme: scheme });
+      if (empty) await s.page.route("**/api/read/matches*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rows: [] }) }));
+      // The forecast the removed Next fixture card read, for every fixture to come (the read itself is unchanged).
+      if (sunny) {
+        const ids = (await q(`select id from match where school_id = $1 and status = 'scheduled'`, [HIL])).map((r) => r.id);
+        await s.page.route("**/api/read/weather*", (r) => r.fulfill({ status: 200, contentType: "application/json",
+          body: JSON.stringify({ rows: ids.map((id) => ({ match_id: id, condition: "Sunny", temp_c: 24, rain_chance_pct: 10, observed_at: new Date().toISOString() })) }) }));
+      }
+      await signIn(s.page, "watcher@example.invalid");
+      await tid(s.page, "day-sheet").first().waitFor({ timeout: 12000 }).catch(() => {});
+      await afterReads(s.page, 2500);
+      return s;
+    };
+    const keep = async (s, name, width, scheme) => { if (shotsDir) await s.page.screenshot({ path: `${shotsDir}/spectator-${name}-${width}-${scheme}.png`, fullPage: true }).catch(() => {}); };
+    const bare = async (s) => ({ title: await inner(s.page, "day-title"), h1s: await s.page.locator("h1").allInnerTexts(), chips: await s.page.locator('[data-testid^="ready-"]').count(),
+      next: await tid(s.page, "day-next").count(), all: await inner(s.page, "day-sheet") });
+
+    for (const [name, setup] of [["nothing", null], ["later", async () => { const [m] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+        values ($1, '1XI', 'Slice 15 Later XI', now() + interval '40 minutes', 'cricket', 'T20', 20, 'scheduled') returning id`, [HIL]); made.matches.push(m.id); }],
+        ["live", async () => { const [m] = await q(`insert into match (school_id, team_code, opponent, starts_at, sport, format, overs, status)
+        values ($1, '1XI', 'Slice 15 Live XI', now() - interval '20 minutes', 'cricket', 'T20', 20, 'live') returning id`, [HIL]); made.matches.push(m.id); }]]) {
+      if (setup) await setup();
+      for (const width of [390, 1366]) for (const scheme of /** @type {const} */ (["light", "dark"])) {
+        const s = await visit(width, scheme, name === "nothing", name === "later");
+        await keep(s, name, width, scheme);
+        if (scheme === "light") {
+          const b = await bare(s);
+          ok(`${name} @${width}: titled with the date, never "Spectator"`, b.title.includes(dayWords) && !b.h1s.some((h) => /Spectator/.test(h)), `${b.title} | ${b.h1s}`);
+          ok(`${name} @${width}: no readiness chips, no Next fixture card`, b.chips === 0 && b.next === 0);
+          ok(`${name} @${width}: no empty Alerts card`, !/Nothing unread/.test(b.all));
+          if (name === "nothing") ok(`nothing @${width}: one sentence, and no live board`, /Nothing is on today or this week/.test(b.all) && await tid(s.page, "day-now").count() === 0, b.all.slice(0, 300));
+          if (name === "later") ok(`later @${width}: the match under "Today", as a row`, await tid(s.page, "day-group-today").count() === 1 && /Slice 15 Later/.test(await inner(s.page, "day-group-today")) && !/Nothing is on today/.test(b.all), b.all.slice(0, 300));
+          if (name === "later") {
+            const w = tid(s.page, "day-weather");
+            ok(`later @${width}: the weather is one quiet line, on the next match`, await w.count() === 1 && /24° sunny/.test(await w.innerText().catch(() => ""))
+               && await s.page.locator('[data-testid="day-group-today"] [data-testid="day-weather"]').count() === 1, await w.allInnerTexts().catch(() => ""));
+          }
+          if (name === "live") {
+            const open_ = tid(s.page, "day-now-open").first();
+            const box = await open_.boundingBox().catch(() => null);
+            ok(`live @${width}: the lead says Watch, 44px to tap, and "Updates every 15 seconds"`, (await open_.innerText().catch(() => "")).trim() === "Watch" && !!box && box.height >= 44
+               && /Updates every 15 seconds/.test(await inner(s.page, "day-now-pace")), `${await open_.innerText().catch(() => "")} ${JSON.stringify(box)}`);
+            ok(`live @${width}: the match is in the lead only, not again under Today`, await s.page.locator('[data-testid="day-group-today"] [data-testid^="week-fixture-"]').count() === 0 || !/Slice 15 Live/.test(await inner(s.page, "day-group-today")));
+          }
+          if (name === "live" && width === 390) {
+            const head = s.page.locator('[data-testid^="news-headline-open-"]').first();
+            const hb = await head.boundingBox().catch(() => null);
+            ok("a headline is 44px to tap", !!hb && hb.height >= 44, JSON.stringify(hb));
+            await head.click({ timeout: 4000 }).catch(() => {});
+            await s.page.waitForSelector('[data-testid="news-read"]', { timeout: 8000 }).catch(() => {});
+            ok("...and opens its post", await tid(s.page, "news-read").count() === 1, await pageNow(s.page));
+            const t = await visit(390, "light", false);
+            const all = tid(t.page, "day-news-all");
+            const box = await all.boundingBox().catch(() => null);
+            ok("the news block's link is 44px to tap", !!box && box.height >= 44, JSON.stringify(box));
+            await all.click({ timeout: 4000 }).catch(() => {});
+            await afterReads(t.page, 2000);
+            ok("...and opens the news section of his Today", await tid(t.page, "news-list").count() > 0 || /Newsfeed/.test(await inner(t.page, "os-main")), await pageNow(t.page));
+            await t.ctx.close();
+          }
+          ok(`${name} @${width}: no sideways scroll`, await s.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+        }
+        await s.ctx.close();
+      }
+    }
+  }
 } catch (e) {
   fail++;
   console.log("  ✗ the walk threw:", e.message);
