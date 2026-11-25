@@ -2590,7 +2590,7 @@ yet pasted. Before it, on each database:
 4. After it, `SELECT count(*) FROM app_user u WHERE u.active AND NOT
    pupil_signin_open(u.id);` equals step 2's `would_close`.
 
-Hash to check: `sha256 018d2aea510b97a90503c61e8d45194034b791ccd3623055aea93194ed22f9a0`.
+Hash to check: `sha256 20039ba004f82e8754dc5d53caf6ab535586ea043b40692e388c8c142b3503af`.
 <!-- ── end db/169 ── -->
 <!-- ── db/172: a date of birth, corrected by the office ── -->
 #### A date of birth: the office corrects it, every change is recorded (db/172)
@@ -2638,7 +2638,7 @@ To paste:
   superuser login can do. On the managed host it is skipped and says so; it runs
   locally and on CI.
 
-Not pasted yet. Hash to check: `sha256 3bb79a372e1e7b1997bdfa25edd380c485b5d54fb1be8361675c501a382fe207`.
+Not pasted yet. Hash to check: `sha256 20039ba004f82e8754dc5d53caf6ab535586ea043b40692e388c8c142b3503af`.
 <!-- ── end db/172 ── -->
 
 ### 5 · Cloud Run, the first time
