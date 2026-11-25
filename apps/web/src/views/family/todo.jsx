@@ -152,9 +152,18 @@ const rowTestId = (row) => (row.rule === "R1" || row.rule === "R2" ? `todo-row-$
 export function TodoCard({ todo, matches, onOpen, lead = null, onDayRetry, onDoor }) {
   const [showLater, setShowLater] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const t = underLead(todo.t, lead);
+  // Its one ask is the lead's, said above: the card would only count it, so it is not drawn (§2.4).
+  const onlyTheLead = !!t.held && t.rows.length === 0 && !t.later.line && t.unread === 0;
+  // Whether the card was drawn when its reads last settled. A first read still out draws nothing, so a
+  // "Reading…" card that then holds only the lead's ask never flashes and goes; a card already drawn
+  // keeps its place while it reads again (an answer given in the lead, a retry), and goes only if the
+  // new reads leave it nothing of its own.
+  const [drawnWhenSettled, setDrawnWhenSettled] = useState(false);
+  useEffect(() => { if (!t.reading) setDrawnWhenSettled(!onlyTheLead); }, [t.reading, onlyTheLead]);
+  const drawn = t.reading ? drawnWhenSettled : !onlyTheLead;
   if (!signedIn()) return null;
   const { record } = todo;
-  const t = underLead(todo.t, lead);
   const byId = (id) => matches.find((m) => m.id === id);
   const go = (row) => {
     const d = row.door;
@@ -172,13 +181,11 @@ export function TodoCard({ todo, matches, onOpen, lead = null, onDayRetry, onDoo
       <Facts row={row}/>
     </OpenRow>
   );
-  // Its one ask is the lead's, said above: the card would only count it, so it is not drawn (§2.4).
-  const onlyTheLead = t.held && !t.reading && t.rows.length === 0 && !t.later.line && t.unread === 0;
   const shown = showMore ? t.rows : t.rows.slice(0, SHOWN_ROWS);
   const more = t.rows.length - SHOWN_ROWS;
   return (
     <>
-      {!onlyTheLead && <Card label={t.label} testid="todo-card">
+      {drawn && <Card label={t.label} testid="todo-card">
         <div aria-live="polite">
           <Line strong testid="todo-count">{t.line}</Line>
         </div>
