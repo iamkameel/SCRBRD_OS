@@ -6,8 +6,8 @@
  * these handlers run them under the caller's principal and broadcast the new
  * session state so the incoming scorer and every watcher see the transition live.
  *
- * The protocol (claim → arm → claim-handover → verify → active; plus heartbeat
- * and force-release) is specified in SCORING_HANDOVER_SPEC.md and proven in
+ * The protocol (claim → arm → claim-handover → verify → active; plus heartbeat,
+ * the holder's own release (db/171) and force-release) is specified in SCORING_HANDOVER_SPEC.md and proven in
  * scoring-session.test.mjs. This just exposes it and keeps the hub in sync.
  */
 import { runAsPrincipal, who } from "../auth/auth-db.mjs";
@@ -210,6 +210,36 @@ export function sessionRoutes({ pool, secret, hub }) {
           `select * from scoring_verify_takeover($1,$2,$3,$4,$5)`,
           [id, req.body.device, req.body.runs, req.body.wickets, req.body.balls]);
         res.json(await withBroadcast(id, b, r));
+      } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
+    },
+
+    // POST /matches/:id/session/release { epoch, pending, device? }
+    //
+    // The holder puts the pen down (db/171, redesign slice 4): the scorer's
+    // end screen, once everything is sent, so the coach's Confirm does not
+    // wait out the 90 s lease. scoring_release() decides — this person, this
+    // device, this generation, and nothing left on the phone (`pending`, the
+    // outbox's own count, as the handover's arm asks it) — and bumps the
+    // epoch, so a ball still in flight is quarantined, never lost.
+    //
+    // The device is the PRINCIPAL's (SCRBRD-087), as the heartbeat's: a body
+    // naming another is refused by name. Also reached with a pad resume
+    // credential (pad-resume.mjs PAD_ROUTES): the release is the credential's
+    // own match's, and db/50's trigger ends the credential with it. The idle
+    // state is broadcast from what the function answered, not re-read: under
+    // a credential the re-read would run as a credential just ended.
+    release: async (req, res) => {
+      const { id } = req.params, b = who(req);
+      try {
+        const r = await runAsPrincipal(pool, secret, b, async (client, principal) => {
+          const named = req.body?.device;
+          if (named != null && named !== principal.deviceId) return { ok: false, reason: "device_mismatch", epoch: null };
+          return (await client.query(`select * from scoring_release($1,$2,$3,$4)`,
+            [id, principal.deviceId, Number.isInteger(req.body?.epoch) ? req.body.epoch : null,
+             Number.isInteger(req.body?.pending) ? req.body.pending : null])).rows[0] || {};
+        });
+        if (r.ok) hub.broadcastSession(id, { state: "idle", epoch: r.epoch, holder: null });
+        res.json(r);
       } catch (/** @type {any} */ e) { res.status(e.status || 500).json({ error: e.code || e.message }); }
     },
 

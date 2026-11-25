@@ -15,7 +15,7 @@ import { api, setToken, apiStatus, resetApi, getToken } from "./api.js";
 import { forgetAllPadCredentials } from "./padKey.js";
 import { resetFeatures, resetSports } from "./features.js";
 import { resetNotifications } from "./notifications.js";
-import { roleGrants } from "@scrbrd/policy/roles";
+import { roleConfirmsResult, roleGrants } from "@scrbrd/policy/roles";
 import { deviceId } from "./device.js";
 
 let _profile = null;
@@ -190,6 +190,19 @@ export function couldFinalise(schoolId, teamCode) {
 }
 
 /**
+ * May this person ask for Pro mode on this fixture (db/170: team.select or
+ * fixture.update at the home side)? Like couldFinalise(), it decides whether
+ * to OFFER the control, never whether to allow it: match_capture_request()
+ * asks app_can() again.
+ */
+export function couldAskProMode(schoolId, teamCode) {
+  return (_profile?.assignments ?? []).some((a) =>
+    (roleGrants(a.role, "team.select") || roleGrants(a.role, "fixture.update")) &&
+    (a.school == null || a.school === schoolId) &&
+    (a.team == null || a.team === teamCode));
+}
+
+/**
  * May this person confirm the result of this fixture (redesign slice 4;
  * DESIGN_DIRECTION Q2, Kameel, 20 Nov 2026: "the coach confirms the result")?
  * Confirming is db/130's finish: scoring.finalise at the home side. The coach,
@@ -198,13 +211,12 @@ export function couldFinalise(schoolId, teamCode) {
  * part ends at the last ball: "Your part is done. The coach confirms the
  * result." So an assignment as `scorer` is not counted here. Like
  * couldFinalise(), what to OFFER, never whether: match_finalise() decides,
- * and it still admits the scorer role (the lead's migration, if it is to
- * refuse him too).
+ * and since db/171 it refuses the scorer too (coach_confirms), by the same
+ * rule (@scrbrd/policy roleConfirmsResult()).
  */
 export function couldConfirmResult(schoolId, teamCode) {
   return (_profile?.assignments ?? []).some((a) =>
-    a.role !== "scorer" &&
-    roleGrants(a.role, "scoring.finalise") &&
+    roleConfirmsResult(a.role) &&
     (a.school == null || a.school === schoolId) &&
     (a.team == null || a.team === teamCode));
 }

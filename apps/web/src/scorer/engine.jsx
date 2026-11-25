@@ -160,7 +160,8 @@ const sideSourceOf = (sides) => ({ home: sides.home.source, away: sides.away.sou
   twelfth: { home: sides.home.twelfth ?? null, away: sides.away.twelfth ?? null } });
 
 /**
- * The toss for a fixture, as the server recorded it. SCRBRD-067.
+ * The fixture's own row, read fresh: the toss as the server recorded it
+ * (SCRBRD-067; tossFromRow), and what its coach asked for (db/170).
  *
  * Read through the fixture list the Match Centre already reads —
  * GET /api/read/matches, under fixture.read, whose rows carry toss_won_by,
@@ -168,19 +169,31 @@ const sideSourceOf = (sides) => ({ home: sides.home.source, away: sides.away.sou
  * a new endpoint: the scorer holds fixture.read over any match it may score,
  * and a second read of the same row would be a second policy to keep in step.
  *
- * Null when there is no toss, no server, or the read failed. Null is not
- * "the home side": the pad then asks (TossSheet), because the innings it
- * opens cannot be undone.
+ * No toss in the row (or no row) is not "the home side": the pad then asks
+ * (TossSheet), because the innings it opens cannot be undone.
+ *
+ * The same row carries what its coach asked the pad to declare (db/170's
+ * capture_profile; Pro mode is "full"). Null when there is no session, no
+ * server, or the read failed or timed out; tossFromRow(null) is no toss.
+ *
+ * Fresh because the request may change after the scorer's screen loaded its
+ * list (review S4, 20 Nov): a coach who turns Pro mode on at 09:30 for a
+ * screen opened at 09:00 must reach the toss at 09:45, or the pad declares
+ * quick and the fixture's request is then fixed at full beside an innings
+ * that never asked it.
  */
-async function liveToss(cfg) {
+async function liveFixtureRow(cfg, timeoutMs = 10000) {
   if (!cfg?.matchId || !signedIn()) return null;
   try {
-    const { rows } = await api("/api/read/matches");
-    return tossFromRow(rows.find((r) => r.id === cfg.matchId));
+    const { rows } = await api("/api/read/matches", { timeoutMs });
+    return rows.find((r) => r.id === cfg.matchId) ?? null;
   } catch {
     return null;
   }
 }
+
+/** What a fresh row asks, or what was known before when there is no row. */
+const askedOf = (row, known) => (row ? (row.capture_profile ?? null) : (known ?? null));
 
 /**
  * The server's log for a fixture, as events — or null when there is no
@@ -270,6 +283,9 @@ function SyncPill({ sync, storage, onOpenHeld }) {
     waiting: { dot: D.amber, label: `No signal · ${sync.pending} to send`, title: "No connection — balls are saved and will send when there is one" },
     local:   sync.reason === "handed_over"
       ? { dot: D.sky, label: "Handed over", title: "You gave the scoring token to someone else" }
+      // db/171: the scorer's end screen put the pen down, everything sent.
+      : sync.reason === "released"
+      ? { dot: D.sky, label: "All sent · pen down", title: "Everything is sent. The coach can confirm the result now." }
       : sync.reason === "handover_pending" || sync.reason === "verifying"
       ? { dot: D.amber, label: "Handover pending", title: "Someone has armed a handover — use Take over to claim it" }
       // db/33 (SCRBRD-034): the result is declared and the database refuses
@@ -768,6 +784,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // no signal there is nowhere else the match exists, so the log goes to disk
   // on every change and is rehydrated on return.
   const [matchId, setMatchId] = useState(null);
+  // What the fixture asked the pad to declare at the toss (db/170): the
+  // list's answer when the pad opened, then each fresh read of the row.
+  const askedRef = useRef(resume?.cfg?.captureProfile ?? null);
   const [saveState, setSaveState] = useState({ kind: null, restored: false, savedAt: null });
   const hydratedRef = useRef(false);
 
@@ -853,8 +872,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
           // Each end's squad is the side its coach named, where there is one
           // (scorer/side.js): the pad scores who the safeguarding checks let
           // onto the sheet, not the whole roster around them.
-          const [sides, toss] = await Promise.all([liveSides(resume.cfg), liveToss(resume.cfg)]);
+          const [sides, row] = await Promise.all([liveSides(resume.cfg), liveFixtureRow(resume.cfg)]);
           if (cancelled) return;
+          const toss = tossFromRow(row);
+          // What the fixture asks, from the row just read, not the list the
+          // screen loaded when it opened (db/170; review S4). No row (no
+          // signal), and the list's answer stands.
+          askedRef.current = askedOf(row, askedRef.current);
           homeSquadRef.current = sides?.home.squad ?? null;
           awaySquadRef.current = sides?.away.squad ?? null;
           if (sides) setSideSource(sideSourceOf(sides));
@@ -864,13 +888,15 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
             ...firstInningsSides({ batsFirst: toss.batsFirst, fixture: resume.cfg,
               homeSquad: homeSquadRef.current, awaySquad: awaySquadRef.current }),
             overs: resume.cfg.overs ?? 20,
-            // A fixture that carries a declaration passes it on; none does yet,
-            // so this innings opens declared quick: runs first, one tap a ball
-            // (redesign slice 3, question 1). The declaration is what the pad
+            // A fixture that carries a declaration passes it on: Pro mode, which
+            // its coach asked for before the toss (db/170), declares full, the
+            // shot and the field on every ball. One that asks nothing opens
+            // declared quick: runs first, one tap a ball (redesign slice 3,
+            // question 1). The declaration is what the pad
             // asks, so the charts read its missing points as never asked for,
             // not as missing. The scorer may declare Full or Standard on the
             // opener sheet before the first ball; the latest one stands.
-            captureProfile: resume.cfg.captureProfile ?? CAPTURE_PROFILE.QUICK,
+            captureProfile: askedRef.current ?? CAPTURE_PROFILE.QUICK,
             id: openId,
           })] : [], []];
           if (toss) mintedRef.current.add(openId);
@@ -1069,6 +1095,33 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     })();
     return () => { cancelled = true; };
   }, [padStatus, matchOver]);
+
+  // ── The scorer puts the pen down (db/171, redesign slice 4) ──
+  // On the scorer's end screen ("Your part is done", FinishGate: not the
+  // coach's Confirm), once the match is over here and its outbox cleared —
+  // everything this phone recorded is the server's, nothing queued, held or
+  // on its way — the pad lets go of the lease, so the coach's "Confirm the
+  // result" works at once instead of after the 90 s lapse (held_elsewhere).
+  // The server asks the same of the holder and refuses anything else; a
+  // refusal or no signal leaves the lease to lapse as before. Something
+  // recorded afterwards (an undo) takes the pen again (PadSync.status()).
+  const scorersEnd = screen === "result" && fixtureLive && !practiceMode && matchOver && offer.state !== "available"
+    && finishOffer(match?.schoolId, match?.teamCode) !== "finish";
+  // Only once the end has held for a moment, with every event the pad shows
+  // in the outbox's sent set: a seal the scorer has just confirmed may not yet
+  // have been offered to the outbox (CI's super over walk, 20 Nov).
+  useEffect(() => {
+    const ps = syncRef.current, st = padStatus;
+    if (!scorersEnd || !ps || !st || !st.attached || !st.cleared || st.released) return;
+    if (st.pending || st.held || st.tossPending || st.syncing) return;
+    const t = setTimeout(() => {
+      const e = ps.engine;
+      const unsent = eventsRef.current.some((evs) => (evs ?? []).some((ev) => ev?.id && !e?.sent?.has(ev.id) && !serverKnownRef.current.has(ev.id)));
+      if (!e || e.pendingCount || e.syncing || unsent) return;
+      ps.release().catch(() => {});
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [padStatus, scorersEnd]);
 
   const startMatch=cfg=>{
     setMatch(cfg);
@@ -1298,9 +1351,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const open={...inningsStart({
       ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current,awaySquad:awaySquadRef.current}),
       overs:match.overs??20,
-      // Runs first: undeclared by the fixture, the innings declares quick, as
-      // the opening on hydration does (above). Never a second innings_start.
-      captureProfile:match.captureProfile??CAPTURE_PROFILE.QUICK,
+      // Pro mode (db/170) declares what the fixture's coach asked for; a
+      // fixture that asks nothing declares quick, runs first, as the opening
+      // on hydration does (above). Never a second innings_start.
+      captureProfile:askedRef.current??CAPTURE_PROFILE.QUICK,
     }),innings:0,id:newEventId(deviceIdRef.current,matchIdRef.current??"local")};
     setEvents(prev=>{
       if((prev[0]??[]).some(e=>e.kind===KIND.INNINGS_START))return prev;
@@ -1328,6 +1382,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
         const answer={wonBy:toss.wonBy,decision:toss.decision};
         if(engine) await engine.queueToss(answer).catch(()=>{ pendingTossRef.current=answer; });
         else pendingTossRef.current=answer;
+      }
+      // What the fixture asks, read again now the coin has landed (db/170;
+      // review S4): the toss sheet may have stood open a while. Capped short,
+      // and skipped with no signal, so the innings still opens at once; on no
+      // answer the last known request stands.
+      if(fixtureLive&&(typeof navigator==="undefined"||navigator.onLine!==false)){
+        const row=await liveFixtureRow(match,2500);
+        askedRef.current=askedOf(row,askedRef.current);
       }
       openFirstInnings(batsFirst);
       setModal("opener");
@@ -2719,7 +2781,8 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
                left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
                attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
             :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}
-               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}/>)}
+               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}
+               released={!!padStatus?.released}/>)}
           {/* A tied match: the button where a super over may start, the
               engine's words where it may not (the tie stands). */}
           {offer.state!=="none"&&<div style={{marginBottom:"28px"}}><SuperOverOffer offer={offer} onStart={()=>setModal("superOver")}/></div>}

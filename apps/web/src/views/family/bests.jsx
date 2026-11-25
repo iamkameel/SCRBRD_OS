@@ -33,7 +33,7 @@ const EMPTY = Object.freeze({
  *   quietWhenNone: draw nothing for a boy with no innings at all (the
  *   parent's Home, where a card that says nothing is noise).
  */
-export function PersonalBests({ role, playerId, who, testid = "personal-bests", quietWhenNone = false }) {
+export function PersonalBests({ role, playerId, who, testid = "personal-bests", quietWhenNone = false, weight = "standard" }) {
   const [nonce, setNonce] = useState(0);
   const [group, setGroup] = useState(GROUPS[0].id);
   // The read is asked about this one boy, and answers about nobody else.
@@ -42,11 +42,11 @@ export function PersonalBests({ role, playerId, who, testid = "personal-bests", 
   if (quietWhenNone && !read.loading && !read.error && !read.rows.length) return null;
   // His own end of each fixture names the opponent (the server's is the host's).
   return <PersonalBestsView rows={withOpponents(read.rows, matches)} read={read} group={group} onGroup={setGroup} who={who} testid={testid}
-    onRetry={() => setNonce((n) => n + 1)}/>;
+    onRetry={() => setNonce((n) => n + 1)} weight={weight}/>;
 }
 
 /** The card itself, from rows already read (also what the unit test renders). */
-export function PersonalBestsView({ rows, read, group, onGroup, who, testid = "personal-bests", onRetry }) {
+export function PersonalBestsView({ rows, read, group, onGroup, who, testid = "personal-bests", onRetry, weight = "standard" }) {
   const held = groupsHeld(rows);
   const lines = bestLines(rows, group);
   const empty = emptyState(rows, group);
@@ -56,7 +56,7 @@ export function PersonalBestsView({ rows, read, group, onGroup, who, testid = "p
   // The filter appears once a group beside the headline holds something.
   const showFilter = held.some((g) => g !== GROUPS[0].id);
   return (
-    <Card label="Personal bests" testid={testid}>
+    <Card label="Personal bests" testid={testid} weight={weight}>
       {showFilter && (
         <div role="group" aria-label="Which group" data-testid={`${testid}-filter`} style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
           {GROUPS.map((g) => (

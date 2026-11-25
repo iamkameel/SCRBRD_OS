@@ -268,6 +268,10 @@ export const READ_QUERIES = {
     // from a school name that might have matched neither side.
     text: `select m.id, m.school_id, m.team_code, m.opponent, m.starts_at,
                   m.format, m.overs, m.status,
+                  -- What the fixture asks the pad to declare at the toss
+                  -- (db/170): 'full' is Pro mode, NULL asks nothing (the pad
+                  -- declares quick, one tap a ball).
+                  m.capture_profile,
                   -- The school season the fixture falls in, by the calendar's
                   -- rule, so a screen never derives a season from a date.
                   -- season_for() on the Johannesburg date, through the one

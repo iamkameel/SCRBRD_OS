@@ -31,6 +31,7 @@
  * the ability to READ it, which is the point.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
+import { CAPTURE_PROFILE } from "@scrbrd/scoring";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
@@ -45,6 +46,9 @@ const STATUS = ["scheduled", "live", "complete", "abandoned"];
 // status_transition below in its own words.
 const AMEND_STATUS = [...STATUS, "postponed"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// What a coach may ask the pad to declare (db/170): Pro mode, the full
+// profile (db/07's vocabulary, from the scoring package so the two never part).
+const PRO_MODE = CAPTURE_PROFILE.FULL;
 
 /**
  * A refusal as the route answers it: 23514 is one of the fixture's own rules
@@ -243,6 +247,38 @@ export function fixtureRoutes({ pool, secret }) {
         if (!rows.length) throw err("not_permitted", 403);
         return { id: rows[0].id, startsAt: rows[0].starts_at,
                  ground: rows[0].ground_id, status: rows[0].status, competitionId: rows[0].competition_id ?? null };
+      });
+    }),
+
+    // POST /api/fixtures/:id/capture-profile { captureProfile: "full" | null }
+    //   (anything else, or a body that is not an object: 400)
+    //   → { id, captureProfile, state: set | unchanged }
+    //
+    // Pro mode (db/170; the redesign's question 1): the fixture's coach, or
+    // the office, asks before the toss for the pad to record the shot and
+    // the field on every ball. The pad declares it on the first
+    // innings_start. match_capture_request() decides who (team.select or
+    // fixture.update at the home side) and when (not once the log has
+    // begun); this checks the word and passes its answer on.
+    //   refusals: capture_profile_unknown (400), not_permitted (403),
+    //             scoring_started (409)
+    captureProfile: handle(async (req) => {
+      const b = req.body;
+      // A body that is not an object (a bare number or string) is a 400, never
+      // a TypeError's 500 (review N4).
+      if (b == null || typeof b !== "object" || Array.isArray(b) || !("captureProfile" in b)) throw err("capture_profile_required");
+      const profile = b.captureProfile ?? null;
+      // Pro mode or nothing: the coach's control is two-state (review N3).
+      // The column takes the log's whole vocabulary; the route asks only full.
+      if (profile !== null && profile !== PRO_MODE) throw err("capture_profile_unknown");
+      if (!UUID.test(String(req.params.id ?? ""))) throw err("not_permitted", 403);
+      return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+        const r = (await client.query(`select * from match_capture_request($1, $2)`, [req.params.id, profile])).rows[0];
+        if (!r?.ok) {
+          const why = r?.reason ?? "not_permitted";
+          throw err(why, why === "not_permitted" ? 403 : why === "scoring_started" ? 409 : 400);
+        }
+        return { id: req.params.id, captureProfile: profile, state: r.reason };
       });
     }),
   };

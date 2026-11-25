@@ -213,17 +213,17 @@ group("H. The proof is for exactly one request");
   ok("newJti() is 22 base64url characters of randomness", /^[A-Za-z0-9_-]{22}$/.test(newJti()) && newJti() !== newJti());
 }
 
-group("I. The scope escape: a signed request reaches six routes, on its own match, and nothing else");
+group("I. The scope escape: a signed request reaches seven routes, on its own match, and nothing else");
 {
   const routes = mountedRoutes({ id: MATCH, resources: ["players", "injuries", "matches", "notes", "emergency_contacts",
                                                         "disciplinary_records", "users", "assignments", "trip_contacts"] });
   const allowed = new Set(PAD_ROUTES.map(([m, re]) => `${m} ${re.source}`));
   const reached = routes.filter((r) => padRoute(r.method, r.path));
   ok(`the dispatcher mounts ${routes.length} routes (read from server.mjs)`, routes.length >= 90);
-  ok("exactly six of them admit a credential",
-     reached.length === 6 && reached.every((r) => [...allowed].some((a) => a.startsWith(`${r.method} `))), reached.map((r) => `${r.method} ${r.path}`).join(", "));
-  ok("...the heartbeat, the claim, the events both ways and the toss both ways",
-     ["POST /session/heartbeat", "POST /session/claim", "POST /events", "GET /events", "GET /toss", "POST /toss"]
+  ok("exactly seven of them admit a credential",
+     reached.length === 7 && reached.every((r) => [...allowed].some((a) => a.startsWith(`${r.method} `))), reached.map((r) => `${r.method} ${r.path}`).join(", "));
+  ok("...the heartbeat, the claim, the events both ways, the toss both ways and the pen put down (db/171)",
+     ["POST /session/heartbeat", "POST /session/claim", "POST /events", "GET /events", "GET /toss", "POST /toss", "POST /session/release"]
        .every((w) => reached.some((r) => `${r.method} ${r.path}`.endsWith(w.split(" ")[1]) && r.method === w.split(" ")[0])));
   for (const r of routes.filter((x) => !padRoute(x.method, x.path)))
     ok(`${r.method} ${r.path} refuses a credential`, padRoute(r.method, r.path) === null);

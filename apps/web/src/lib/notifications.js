@@ -38,6 +38,21 @@ import { scoped } from "../rbac/index.js";
 export const GONE = "This notice is no longer available.";
 
 /**
+ * The words that end a decided-match notice (db/171, redesign slice 4): "U13E
+ * v Westville Boys' High 1XI is decided. Confirm the result." Only the people
+ * who may confirm at the home side are sent one; the match is its subject.
+ */
+export const DECIDED_TITLE_END = " is decided. Confirm the result.";
+
+/**
+ * Is this the coach's "decided, confirm the result" notice? Notices then
+ * offers the one tap to the match's Confirm (the Match Centre's mc-finish).
+ * @param {{ type?: string, title?: string, subjectKind?: string | null, subjectId?: string | null }} n
+ */
+export const confirmsResult = (n) =>
+  n?.type === "fixture" && n?.subjectKind === "match" && !!n?.subjectId && typeof n?.title === "string" && n.title.endsWith(DECIDED_TITLE_END);
+
+/**
  * A notification row from GET /api/read/notifications or from opening one,
  * in the shape the screens draw.
  * @param {any} r

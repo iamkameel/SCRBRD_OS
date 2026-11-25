@@ -30,7 +30,7 @@
  * request runs. Every step refuses with a 401 and a code; a stale `iat` is
  * answered with the server's time so the device can correct its offset.
  *
- * WHAT IT IS GOOD FOR — six routes, and nothing else. PAD_ROUTES below is
+ * WHAT IT IS GOOD FOR — seven routes, and nothing else. PAD_ROUTES below is
  * the whole list; the dispatcher in server.mjs checks it before any other
  * routing, so a signed request to any other path — a pupil, a medical record,
  * another match, /api/session, /api/health — is 403 `pad_scope` without being
@@ -58,7 +58,7 @@ export const PAD = Object.freeze({
 });
 
 /**
- * The six routes a credential may reach, and the handler key each maps to in
+ * The seven routes a credential may reach, and the handler key each maps to in
  * server.mjs. The match in the path must be the credential's own.
  * @type {ReadonlyArray<readonly [string, RegExp, string]>}
  */
@@ -72,6 +72,11 @@ export const PAD_ROUTES = Object.freeze([
   // signal is sent after the sign-in may have run out, and every ball waits
   // behind it. pad_resume_toss() asks that the token is still this device's.
   ["POST", /^\/api\/matches\/([^/]+)\/toss$/, "tossRecord"],
+  // The pen put down (db/171, redesign slice 4): the scorer's end screen,
+  // everything sent. scoring_release() lets go only of the token this
+  // device holds, at its generation, and db/50's trigger ends the credential
+  // with it: a narrowing, never a reach.
+  ["POST", /^\/api\/matches\/([^/]+)\/session\/release$/, "release"],
 ]);
 
 /**

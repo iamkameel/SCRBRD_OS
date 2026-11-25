@@ -324,6 +324,7 @@ const SUITES = [
   // fourteen-day fold; "N to do" and "Couldn't load X", a failed read never
   // the same as nothing; no reason, no note, no "done".
   ["todo", "apps/web/test/todo.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  ["home-lead", "apps/web/test/home-lead.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // Pick the side (lib/pickSide.js): the draft and its numbers, the twelfth man,
   // the route's three pre-write checks in its own codes, the codes as sentences,
   // and which boy a trigger's message names.

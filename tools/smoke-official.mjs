@@ -117,9 +117,15 @@ async function score(token, match, innings) {
   return { accepted, keys: all.map((e) => e.id) };
 }
 
-/** The fixture notices about a match, as the owner reads them. */
+/**
+ * The official result's fixture notices about a match (db/114), as the owner
+ * reads them. Not db/171's "is decided. Confirm the result." to whoever may
+ * confirm at the home side (under scoring.finalise), which smoke-finalise.mjs
+ * and the live-from-pad walk prove.
+ */
 const notes = (m) => q(`select school_id, team_code, scope_level, urgency, title, body, retraction_kind, retracts_id, subject_person_id, recipient_id
                           from notification where kind = 'fixture' and subject_kind = 'match' and subject_id = $1
+                           and required_capability <> 'scoring.finalise'
                          order by published_at, id`, [m]);
 
 const until = async (fn, ms = 6000) => {

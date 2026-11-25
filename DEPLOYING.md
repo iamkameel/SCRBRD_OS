@@ -2592,6 +2592,66 @@ yet pasted. Before it, on each database:
 
 Hash to check: `sha256 018d2aea510b97a90503c61e8d45194034b791ccd3623055aea93194ed22f9a0`.
 <!-- ── end db/169 ── -->
+<!-- ── db/170: Pro mode per fixture ── -->
+#### Pro mode per fixture (db/170)
+
+`db/170_fixture_pro_mode.sql` (PR #377, branch claude/wip-promode): the
+redesign's question 1. It adds `match.capture_profile`, the fixture's request to
+the pad (`full` is Pro mode; NULL asks nothing, and the pad scores one tap a
+ball), and `match_capture_request()`, the coach's or the office's door. The
+request is fixed once the toss is in. Its proof is db/99 §145.
+
+To paste:
+
+- **Between matches, with no match live.** `ADD COLUMN` and `ADD CONSTRAINT`
+  take ACCESS EXCLUSIVE on `match` until the paste commits. While the paste
+  waits for that lock (up to its own `lock_timeout`, ten seconds), every read of
+  `match` queues behind it, and a live pad's sync stalls for up to ten seconds
+  and then retries.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  170, and the API refuses to start on a database without it.
+- **It can be pasted again.** A second paste changes nothing (the dump is
+  identical), so a paste that timed out on its lock is simply run again.
+- **It doesn't depend on db/169.** Its guard asks for db/02, db/07, db/09 and
+  db/157 only. Only its place in `expected-migrations.json` follows 169's.
+- It resets `lock_timeout` with its last statement, so a pooled SQL Editor
+  connection is handed back as it came.
+
+Not pasted yet.
+<!-- ── end db/170 ── -->
+<!-- ── db/171: the end of a match, the server's half ── -->
+#### The end of a match: the scorer's part, the coach's notice, the pen put down (db/171)
+
+`db/171_slice4_followups.sql` (PR #378, branch claude/wip-s4-followups; redesign
+slice 4's follow-ups, DESIGN_DIRECTION Q2 (a), Kameel 20 Nov 2026: "keep the
+separation"). The server refuses a finish asked only as the scorer
+(`coach_confirms`); whoever may confirm at the home side is told once when a
+live fixture's log decides it; and the scorer's end screen puts the pen down
+(`scoring_release()`), so the coach's Confirm does not wait out a 90 s lease.
+The official result stays db/114's. Its proof is db/99 §146.
+
+To paste:
+
+- **After db/169 and db/170, in that order.** db/169 re-emits `app_can()`, and
+  db/171 copies `app_can()`'s live body into `app_can_but_scorer()` at the
+  paste, so the copy carries db/169's gate. It fails loudly, changing nothing,
+  if the body is not as it expects.
+- **As one transaction:** the SQL Editor's single run, or `psql -1 -v
+  ON_ERROR_STOP=1 -f`. Statement by statement, its new functions would stand
+  executable by PUBLIC until the grants block ran.
+- **Not while a match is being finished.** Between the paste and the API built
+  with it, a scorer's Finish answers `coach_confirms` through the old API as an
+  unworded 422. A match merely live is fine: the three triggers hold their
+  tables' lock until the paste commits (well under a second), so a ball write
+  waits that long, bounded by the file's ten-second `lock_timeout`; a paste
+  that timed out on its lock is simply run again.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  171, and the API refuses to start on a database without it.
+- It can be pasted again: CREATE OR REPLACE throughout and one `CREATE INDEX IF
+  NOT EXISTS`. It resets `lock_timeout` with its last statement.
+
+Not pasted yet. Hash to check: `sha256 05e2fa904ea6283f6cffc1c78195abb1df1fde47a70acb6368e2753231bcf40a`.
+<!-- ── end db/171 ── -->
 <!-- ── db/172: a date of birth, corrected by the office ── -->
 #### A date of birth: the office corrects it, every change is recorded (db/172)
 

@@ -551,9 +551,13 @@ try {
       headers: { "content-type": "application/json", authorization: `Bearer ${await tokenFor(email)}` } });
     return { status: r.status, body: await r.json().catch(() => ({})) };
   };
-  const early = await finish("scorer@example.invalid");
+  // Asked as the coach: since db/171 the scorer is refused first, whatever the state (coach_confirms).
+  const early = await finish("coach@example.invalid");
   ok(`at the break, finishing is refused: the match is not decided (${early.status} ${early.body?.error})`,
     early.status === 422 && early.body?.error === "not_decided" && /not decided/.test(early.body?.detail ?? ""), JSON.stringify(early));
+  const byScorer = await finish("scorer@example.invalid");
+  ok(`...and the scorer's finish is refused by the server, his part being the scoring (${byScorer.status} ${byScorer.body?.error})`,
+    byScorer.status === 403 && byScorer.body?.error === "coach_confirms", JSON.stringify(byScorer));
   await beat(P, 1200);
   ok("the scorer starts the reply", await click(P, /Start 2nd Innings/, 4000));
   await afterReads(P, 600);

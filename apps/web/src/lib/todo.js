@@ -439,6 +439,60 @@ export function todoOf(o) {
   };
 }
 
+/** How many rows the Home draws open before "N more" (redesign slice 8; §2.6 "Also for you": up to three). */
+export const SHOWN_ROWS = 3;
+
+/** Is this row the answer owed for one fixture (R1 or R2), still open? @param {string | null | undefined} matchId */
+const leadAsk = (matchId) => (/** @type {any} */ r) => matchId != null && r.state === "open" && (r.rule === "R1" || r.rule === "R2") && r.matchId === matchId;
+
+/**
+ * Is his answer for this fixture still owed, as the list read it? The Home's
+ * lead asks (lib/homeLead.js: the next fixture's ask comes before a result
+ * today). False while the answers are still being read: nothing is claimed owed.
+ * @param {ReturnType<typeof todoOf>} t  @param {string | null | undefined} matchId
+ */
+export function owes(t, matchId) {
+  return [...t.rows, ...t.later.rows].some(leadAsk(matchId));
+}
+
+/**
+ * The list as the Home draws it under its lead (redesign slice 8; the role
+ * reviews' direction §2.6: "An ask already in the lead is not repeated
+ * here"). The lead's own ask is the R1 or R2 row of the fixture the Home
+ * leads with: its card already holds his answer and the door to give it, so
+ * the row is not drawn a second time, in the window or under "Later".
+ *
+ * ONE COUNT (§2.6): the count is the list's own, unchanged, so it says the
+ * same number as his card on Family (TodoCount) and a second tab; where the
+ * held row is one of them, the line says it is the answer above. Nothing is
+ * dropped from the count, and no other rule's row is held: a lift on the same
+ * fixture is its own ask.
+ *
+ * Pure: `t` is todoOf()'s answer, `matchId` the lead's fixture (null: none).
+ * @param {ReturnType<typeof todoOf>} t  @param {string | null} matchId
+ */
+export function underLead(t, matchId) {
+  const isLeadAsk = leadAsk(matchId);
+  const held = t.rows.find(isLeadAsk) ?? t.later.rows.find(isLeadAsk) ?? null;
+  if (!held) return { ...t, held: null };
+  const rows = t.rows.filter((r) => r !== held);
+  const laterRows = t.later.rows.filter((r) => r !== held);
+  const inWindow = t.rows.includes(held);
+  const failed = t.unread ? ` · ${readsFailed(t.unread)}` : "";
+  // Only a held row inside the window is in the count; one under "Later" is said by the lead alone.
+  const line = t.reading || !inWindow ? t.line
+    : t.open === 1 ? `1 to do: the answer above${failed}`
+    : `${t.open} to do, including the answer above${failed}`;
+  return {
+    ...t,
+    rows,
+    line,
+    held,
+    later: { rows: laterRows, line: laterRows.length ? `Later · ${laterRows.length} to answer` : null },
+    clocked: rows.some((r) => r.state === "open" && r.byWhenText && r.byWhen != null) || laterRows.some((r) => r.byWhenText),
+  };
+}
+
 /**
  * The fixtures whose answers (and lifts) the list must read for this child:
  * every one of his side's still to come. The same set the Matches screen
