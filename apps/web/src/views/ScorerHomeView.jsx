@@ -25,6 +25,7 @@ import { decidedOn } from "../lib/matchCard.js";
 import { useLiveFolds, useResultsSaid } from "../lib/liveFolds.js";
 import { Icon } from "../ui/icons.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
+import { todayLine } from "../lib/otherPhone.js";
 
 // ══════════════════════════════════════════════════════
 //  THE SCORER'S HOME: the day sheet (GA-I13; R0, ROLE_DASHBOARDS_v1.1 §3D,
@@ -332,8 +333,10 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                   <p style={line()} data-testid="scorer-resume-empty">Nothing on this phone to resume. A match you start or score here is kept here first.</p>
                 )}
                 {/* His side's live fixture, not on this phone: its sentence, and the pad (whose take-over is the route where another device holds it). */}
-                {liveElsewhere.map(({ match: m, state }) => {
+                {liveElsewhere.map(({ match: m, state, holder }) => {
                   const w = STATE_WORDS[state];
+                  // Another phone holds it (slice 13, §2.2): who, in one line, in place of the state's paragraph.
+                  const held = todayLine(state, holder);
                   // Decided on the pad (slice 4): provisional, the coach confirms, and no pad or take-over is offered.
                   const act = w?.action
                     ? { label: "Open the pad", aria: `Open the pad: ${sidesOf(m)}`, testid: `now-live-${m.id}-open`, onClick: () => open(m) }
@@ -342,7 +345,7 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                     // The match card (slice 1): both sides, where it stands, who holds it, and the pad.
                     <div key={`live-${m.id}`} data-testid={`now-live-${m.id}`} data-state={state}>
                       <MatchCard size="card" match={m} fold={foldOf(m)} now={now} statusTestid={`now-live-${m.id}-sentence`}
-                        line={w?.label ? `${w.label}${w.note ? `. ${w.note}` : ""}` : null} lineTestid={`now-live-${m.id}-state`}
+                        line={held ?? (w?.label ? `${w.label}${w.note ? `. ${w.note}` : ""}` : null)} lineTestid={`now-live-${m.id}-state`}
                         action={act}/>
                     </div>
                   );
@@ -456,8 +459,9 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                 {fixturesRead?.state === "partial" && <ReadState read={fixturesRead} onRetry={retry} compact testId="scorer-fixtures-read"/>}
                 {sessionsRead && sessionsRead.state === "stale" && <ReadState read={sessionsRead} onRetry={retry} compact testId="scorer-sessions-read"/>}
                 <ol style={{ listStyle: "none", margin: 0, padding: 0 }} data-testid="scorer-fixture-list">
-                  {week.map(({ match: m, appointment: a, group, state, sessionError }, n) => {
+                  {week.map(({ match: m, appointment: a, group, state, sessionError, holder }, n) => {
                     const w = STATE_WORDS[state];
+                    const held = todayLine(state, holder);
                     const act = w.action
                       ? { label: w.action, aria: `${w.action}: ${sidesOf(m)}`, testid: `fixture-${m.id}-open`, onClick: () => open(m) }
                       : { label: "Match Centre", aria: `Match Centre: ${sidesOf(m)}`, testid: `fixture-${m.id}-centre`, onClick: () => onNav && onNav("matches") };
@@ -471,7 +475,7 @@ function ScorerHomeView({ role, onOpenScorer, onOpenPad, onNav }) {
                               Appointed to score{a.appointedAt ? ` · named ${humanDate(a.appointedAt)}` : ""}
                             </span>
                           ) : <span style={{ ...T.role.label, color: T.content.tertiary }}>Your side's fixture</span>}
-                          line={<span style={{ color: T.content.primary, fontWeight: 600 }}>{w.label}</span>} lineTestid={`fixture-${m.id}-state`}
+                          line={<span style={{ color: T.content.primary, fontWeight: 600 }}>{held ? `Live · ${held}` : w.label}</span>} lineTestid={`fixture-${m.id}-state`}
                           action={act}>
                           {a?.paused && (
                             <p data-testid={`fixture-${m.id}-paused`} style={{ ...line(), color: T.semantic.warningText }}>

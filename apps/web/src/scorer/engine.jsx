@@ -49,6 +49,8 @@ import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard, asksOneTap, usePinnedBoard } from "./pad.jsx";
 import { SyncBanner } from "./syncBanner.jsx";
+import { OtherPhoneScreen, readHolder } from "./otherPhone.jsx";
+import { showOtherPhone } from "../lib/otherPhone.js";
 import { SecondAccountSheet, PenStandsLine, PenStandsSheet } from "./secondAccount.jsx";
 import { TossSheet } from "./toss.jsx";
 import { areaWords } from "./field.js";
@@ -337,7 +339,8 @@ function SyncPill({ sync, storage, onOpenHeld }) {
 // fixture's or the demonstration's matches, is never drawn; every way back to
 // it is the way home instead. `onJoinSchool`, given only then, is offered on
 // a decided result, never during play (§2.5 step 6).
-function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry=null,onJoinSchool=null}={}){
+// `onWatch(matchId)`: the shell's Match Centre on this match ("Watch the score", redesign slice 13).
+function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=null,padEntry=null,onJoinSchool=null}={}){
   const homeOnly=padEntry?.homeOnly===true;
   const[screen,setScreen]=useState(homeOnly&&padEntry?.start==="pilot"?"practice":"setup");
   const[match,setMatch]=useState(null);
@@ -475,6 +478,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // restore after a reload ("restore"), which never takes a match another
   // device has claimed since this one held it (packages/sync attach.mjs).
   const intent = resume?.cfg?.restored ? "restore" : "open";
+  // Redesign slice 13 (DESIGN_DIRECTION §3.4 Flow E): a fixture opened on this
+  // phone with nothing of it saved here, and who holds its scoring as the
+  // match_duties read says (scorer/otherPhone.jsx readHolder). With another
+  // phone holding it, the pad opens on one screen saying so, in place of the
+  // toss sheet and the keys (lib/otherPhone.js showOtherPhone).
+  const[freshOpen,setFreshOpen]=useState(false);
+  const[holder,setHolder]=useState(null);
+  const[checkingHolder,setCheckingHolder]=useState(false);
   // This pad's connection to the server (lib/sync.js PadSync): the outbox,
   // open from the moment the pad is — UNATTACHED until this device holds the
   // token (SCRBRD-078) — and everything the pad needs to say about it. Undo
@@ -620,6 +631,17 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   const padLock = live && !attached && (padStatus?.reason === "handover_pending" || padStatus?.reason === "verifying");
   const padLockRef = useRef(false);
   padLockRef.current = padLock;
+  // Slice 13 (Flow E): another phone holds this match and this one holds
+  // nothing of it, so the pad opens on who is scoring, the handover code and
+  // the score, not the toss sheet and the keys. Gone the moment this phone
+  // holds the token (the code's take-over), or the server says anything else.
+  const otherPhone = fixtureLive && screen === "match" && showOtherPhone({ fresh: freshOpen, holder, status: padStatus });
+  // "Check again": the banner's own Try again (a plain claim, never a take-over), and the read again.
+  const checkHolder = async () => {
+    setCheckingHolder(true);
+    try { await Promise.all([syncRef.current?.attach("open"), readHolder(matchIdRef.current).then(setHolder)]); }
+    finally { setCheckingHolder(false); }
+  };
   // A Pilot Match called off takes no more events (re-check 1): the seal it rests on is the last.
   const calledOffRef = useRef(false);
   calledOffRef.current = pilotMode && !!callOffNow;
@@ -827,6 +849,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
         // has a log, it is THE log (SCRBRD-075): the pad replays it and never
         // starts one of its own — a first visit, and the incoming side of a
         // handover, which the protocol hands the log to (spec §4 step 2).
+        // Who holds the scoring is asked beside it (slice 13), so a phone that
+        // holds nothing of this match learns before any toss sheet is drawn.
+        const holderRead = fixtureLive ? readHolder(id) : Promise.resolve(null);
         const server = fixtureLive ? await liveLog(resume.cfg) : null;
         if (cancelled) return;
         if (server?.length) {
@@ -880,6 +905,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
           if (!toss) setModal("toss");
           setSaveState({ kind: await storageKind(), restored: false, savedAt: null });
         }
+        const h = await holderRead;
+        if (cancelled) return;
+        if (fixtureLive) { setHolder(h); setFreshOpen(true); }
       }
       setScreen("match");
       hydratedRef.current = true;
@@ -2313,6 +2341,7 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
         held={sync.held??0}
         onShowHeld={()=>setModal("held")}
         ballInFlight={scoringCtx!=null}
+        takeOnly={otherPhone}
         startTab={sync.reason==="handover_pending"||sync.reason==="verifying"?"take":"hand"}
         onHandedOver={()=>{
           // This device armed it and someone else has now claimed and
@@ -2789,6 +2818,19 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}
     practice={{offer:practiceOffer,onStart:()=>setScreen("practice"),onList:()=>setScreen("practice-list"),onResume:resumePractice,
       onPilotList:(pilotNow?.sync||pilotHere>0)?()=>setScreen("pilot-list"):null}}/><ExitKey onExit={onExit}/></>);
+
+  // Slice 13 (Flow E): one screen, before any toss sheet. The toss sheet the
+  // opening set waits behind it; only the handover sheet is drawn over it.
+  if(otherPhone)return (
+    <>
+      <GS/>
+      {modal==="handover"&&renderModal()}
+      <OtherPhoneScreen match={match} holder={holder} reason={padStatus?.reason??null} onExit={onExit}
+        onCode={()=>setModal("handover")}
+        onWatch={onWatch&&matchId?()=>onWatch(matchId):null}
+        onCheck={checkHolder} checking={checkingHolder}/>
+    </>
+  );
 
   /* ── MATCH SCREEN ── */
   const NAV=[{id:"score",icon:"bat",label:"Score"},{id:"cards",icon:"scorebook",label:"Cards"},{id:"analysis",icon:"chart-column",label:"Analysis"},{id:"history",icon:"scroll-text",label:"History"}];

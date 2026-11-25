@@ -426,6 +426,8 @@ const SUITES = [
   // device has to resume with its unsent events, and the lines before the toss.
   ["scorer-home", "apps/web/test/scorer-home.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["scorer-day", "apps/web/test/scorer-day.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Redesign slice 13: the pad when another phone holds the match (Flow E).
+  ["other-phone", "apps/web/test/other-phone.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // GA-I07: Squad and Analytics open on the person's own side, and a gate
   // answers from the roles held, as the menu does.
   ["team-context", "apps/web/test/team-context.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
