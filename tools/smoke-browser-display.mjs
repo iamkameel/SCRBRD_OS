@@ -803,7 +803,12 @@ try {
       };
       await press(/Get Started|Log In/); await press(/sarah@example\.invalid|Director/); await press(/^Sign In$/);
       await until(page, () => !!document.querySelector('[data-testid="match-view"]'), 20000);
-      await until(page, () => !!document.querySelector('[data-testid="mc-share"]'), 10000);
+      // Slice 10: on a phone, with two tools or more, Share and the ground display sit under the page's More.
+      await until(page, () => !!document.querySelector('[data-testid="mc-share"], [data-testid="mc-tools-open"]'), 10000);
+      if (await tid(page, "mc-tools-open").count()) {
+        await tid(page, "mc-tools-open").click({ timeout: 4000 }).catch(() => {});
+        await until(page, () => !!document.querySelector('[data-testid="mc-share"]'), 4000);
+      }
       return { ctx, page, errors };
     };
     const a = await at(pub);

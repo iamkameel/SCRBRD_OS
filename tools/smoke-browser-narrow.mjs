@@ -186,7 +186,8 @@ try {
           await page.locator(`[data-testid="mc-open-${fx.live}"]`).click({ timeout: 6000 }).catch(() => {});
           await afterReads(page, 1800);
           ok(`${label} coach: the live fixture opens`, await page.locator('[data-testid="match-view"]').count() === 1);
-          // CRI-1.3: on a phone Partnerships, Analytics, Match details and the Coach tab are under More.
+          // CRI-1.3: on a phone Partnerships, Analytics and Match details are under More; slice 10: his strip leads
+          // with the Coach tab, with Commentary under More.
           for (const t of ["summary", "scorecard", "commentary", "partnerships", "analytics", "details"]) {
             await pickTab(page, t).catch(() => {});
             await page.waitForTimeout(600);
@@ -244,7 +245,11 @@ try {
         };
       }, sel);
       const strip = await measure('[data-testid="mc-tabs-row"]');
-      ok("360: the strip is Summary, Scorecard, Commentary and More", strip?.names.join(" · ") === "Summary · Scorecard · Commentary · More", strip?.names.join(" · "));
+      // Slice 10 (question 7, §2.5): where his assignment covers this side (lib/cockpit.js cockpitGate), his strip is
+      // Coach, Summary, Scorecard; everyone else's Summary, Scorecard, Commentary.
+      const hasCoach = strip?.names[0] === "Coach";
+      ok(`360: the strip is ${hasCoach ? "Coach, Summary, Scorecard" : "Summary, Scorecard, Commentary"} and More`,
+         strip?.names.join(" · ") === (hasCoach ? "Coach · Summary · Scorecard · More" : "Summary · Scorecard · Commentary · More"), strip?.names.join(" · "));
       ok("360: none of them cut, and the strip does not scroll sideways", !!strip && strip.cut.length === 0 && !strip.scrolls, strip?.cut.join(" · "));
       ok("360: each 44px to tap and 12px or more to read", !!strip && strip.floors.length === 0, strip?.floors.join(" · "));
       // Open, and still: drawn, with its drop-in (mcMenuIn, a scale) run out, so what is measured is the menu at rest.
@@ -255,10 +260,8 @@ try {
       await page.locator('[data-testid="mc-more"]').tap({ timeout: 4000 }).catch(() => {});
       await menuOpen();
       const menu = await measure('[data-testid="mc-more-menu"]');
-      // His own tab leads the menu where his assignment covers this side (lib/cockpit.js cockpitGate); the three follow.
-      const hasCoach = menu?.names[0] === "Coach";
-      ok(`360: More opens ${hasCoach ? "Coach, " : ""}Partnerships, Analytics, Match details`,
-         menu?.names.join(" · ") === [...(hasCoach ? ["Coach"] : []), "Partnerships", "Analytics", "Match details"].join(" · "), menu?.names.join(" · "));
+      ok(`360: More opens ${hasCoach ? "Commentary, " : ""}Partnerships, Analytics, Match details`,
+         menu?.names.join(" · ") === [...(hasCoach ? ["Commentary"] : []), "Partnerships", "Analytics", "Match details"].join(" · "), menu?.names.join(" · "));
       ok("360: the menu's items on the screen, uncut, 44px to tap and 12px to read", !!menu && menu.cut.length === 0 && menu.floors.length === 0, [...(menu?.cut ?? []), ...(menu?.floors ?? [])].join(" · "));
       ok("360: the menu drops in (mcMenuIn)", menu?.animation === "mcMenuIn", menu?.animation);
       await page.keyboard.press("Escape");

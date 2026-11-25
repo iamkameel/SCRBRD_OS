@@ -1,9 +1,11 @@
 /**
  * The match page's tabs, for the browser walks (CRI-1.3). On a phone the strip
- * is Summary, Scorecard and Commentary, and the rest — the reader's own tab
- * (Coach, Captain), Partnerships, Analytics, Match details — are under More
- * (apps/web/src/views/matchcentre/tabStrip.jsx), drawn only while its menu is
- * open. Wide, every tab is in the strip. These two work at either width.
+ * is Summary, Scorecard and Commentary, and the rest — the captain's tab,
+ * Partnerships, Analytics, Match details — are under More; a coach's strip is
+ * Coach, Summary and Scorecard, with Commentary under More (slice 10)
+ * (apps/web/src/views/matchcentre/tabStrip.jsx, lib/matchTabs.js), drawn only
+ * while its menu is open. Wide, every tab is in the strip. These two work at
+ * either width.
  */
 
 /**
