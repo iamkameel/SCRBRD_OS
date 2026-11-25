@@ -306,7 +306,10 @@ try {
   ok("his next fixture first", /Verify Pupil XI/.test(await inner(s.page, "next-fixture-title")));
   ok("his team-sheet line: in the side, batting 4", /You're in the side · batting 4/.test(await inner(s.page, "teamsheet-line")));
   ok("the bus", /Bus leaves 07:15 · the Chapel car park/.test(await inner(s.page, "bus-line")));
-  ok("his own answer: not given yet", /No answer yet/.test(await inner(s.page, `availability-state-${PILLAY}`)));
+  ok("his own answer: not given yet, the three keys under one label, none pressed",
+     await tid(s.page, `availability-state-${PILLAY}`).first().getAttribute("data-status").catch(() => "") === "none"
+     && /No answer yet/.test(await inner(s.page, `availability-by-${PILLAY}`)) && /Your answer/i.test(await inner(s.page, `availability-${PILLAY}`))
+     && await s.page.locator(`[data-testid="availability-state-${PILLAY}"] [aria-pressed="true"]`).count() === 0);
   ok("no team-mate's answer, reason or name is on his Home",
      !/Whitfield|Bekker|Naidoo|funeral|family/i.test(home) && await tid(s.page, `availability-state-${WHITFIELD}`).count() === 0, home.slice(0, 300));
   ok("what the coach and the school posted is on his Home (§1.2 job 6)", await tid(s.page, "news-card").count() === 1);
@@ -350,10 +353,57 @@ try {
     await tid(s.page, "todo-later").click({ timeout: 4000 }).catch(() => {});
   }
 
+  // Redesign slice 9, Kameel's question 6 (a): a fixture before his return
+  // date suggests Not available, which he (or his parent) still sends or
+  // changes. A suggestion on the screen only: nothing is written until a tap,
+  // and what is written is the answer alone. His injury's return date is moved
+  // past the fixture for this group and put back after it.
+  group("Injured: Not available suggested before his return, sent only by his tap, with nothing of the injury (slice 9)");
+  {
+    const was = await q(`select id, rtw_date::text as rtw from injury where player_id = $1 and phase <> 'cleared'`, [PILLAY]);
+    await q(`update injury set rtw_date = '2027-03-05' where player_id = $1 and phase <> 'cleared'`, [PILLAY]);
+    // Away and back, so his Home reads again (a reload signs a pupil out of the app's state).
+    await go(s.page, "mymatches");
+    await go(s.page, "myhome");
+    await afterReads(s.page, 1200);
+    const key = (v) => tid(s.page, `availability-set-${PILLAY}-${v}`);
+    const by = (await inner(s.page, `availability-by-${PILLAY}`)).replace(/\s+/g, " ").trim();
+    ok("his Home's lead suggests Not available, saying why in the injury line's own words, no diagnosis",
+       was.length > 0 && await key("unavailable").getAttribute("data-suggested").catch(() => null) === "true"
+       && /^Injured · back Fri 5 Mar\. Not available is suggested; nothing is sent until you tap an answer\.$/.test(by)
+       && !/hamstring|strain|Grade/i.test(await inner(s.page, "next-fixture")), by);
+    ok("...suggested is not answered: no key pressed, and the server holds no answer of his",
+       await s.page.locator(`[data-testid="availability-state-${PILLAY}"] [aria-pressed="true"]`).count() === 0
+       && (await q(`select 1 from match_availability where match_id = $1 and player_id = $2`, [NEXT, PILLAY])).length === 0);
+    const coachToken = await devToken("coach@example.invalid");
+    const coachRow = async () => (await readRows(coachToken, `availability?matchId=${NEXT}`)).find((r) => r.player_id === PILLAY) ?? null;
+    ok("...and the coach's read of him is still no answer", (await coachRow())?.status === null);
+    const boxBefore = await tid(s.page, `availability-state-${PILLAY}`).first().boundingBox();
+    const orderBefore = await s.page.$$eval('[data-testid="pupil-home"] > *', (els) => els.map((e) => e.getAttribute("data-testid")).filter(Boolean));
+    await key("unavailable").click({ timeout: 4000 }).catch(() => {});
+    await s.page.waitForFunction((id) => /Sent to the coach/.test(document.querySelector(`[data-testid="availability-by-${id}"]`)?.innerText ?? ""), PILLAY, { timeout: 8000 }).catch(() => {});
+    await afterReads(s.page, 800);
+    const sent = (await inner(s.page, `availability-by-${PILLAY}`)).replace(/\s+/g, " ").trim();
+    ok("one tap: Not available stays pressed, ticked, 'Sent to the coach · <the day>'",
+       await key("unavailable").getAttribute("aria-pressed") === "true" && /^Sent to the coach · \w{3} \d{1,2} \w{3}$/.test(sent)
+       && await tid(s.page, `availability-state-${PILLAY}`).first().getAttribute("data-status") === "unavailable", sent);
+    const boxAfter = await tid(s.page, `availability-state-${PILLAY}`).first().boundingBox();
+    const orderAfter = await s.page.$$eval('[data-testid="pupil-home"] > *', (els) => els.map((e) => e.getAttribute("data-testid")).filter(Boolean));
+    ok("...the keys have not moved, and the lead is where it was",
+       !!boxBefore && !!boxAfter && Math.abs(boxBefore.y - boxAfter.y) < 1 && Math.abs(boxBefore.x - boxAfter.x) < 1 && orderBefore[0] === orderAfter[0] && orderAfter.indexOf("next-fixture") === orderBefore.indexOf("next-fixture"),
+       [boxBefore?.y, boxAfter?.y, orderBefore.join(), orderAfter.join()]);
+    const r = (await q(`select status, reason_kind, note, declared_by from match_availability where match_id = $1 and player_id = $2`, [NEXT, PILLAY]))[0];
+    ok("...the row is the answer alone: unavailable, no reason, no note, said by him", r?.status === "unavailable" && r?.reason_kind === null && r?.note === null && r?.declared_by === pupilId, JSON.stringify(r));
+    const c = await coachRow();
+    ok("...and the coach reads 'unavailable, said by him' and nothing of the injury on it", c?.status === "unavailable" && c?.self_declared === true && c?.reason_kind === null && c?.note === null, JSON.stringify(c));
+    for (const w of was) await q(`update injury set rtw_date = $2 where id = $1`, [w.id, w.rtw]);
+  }
+
   group("He answers for himself, from the fixture");
   await tid(s.page, "next-fixture-open").click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1500);
   ok("the fixture opens", /Verify Pupil XI/.test(await inner(s.page, "fixture-title")));
+  ok("...and Back names where he came from: Home", /^Home$/.test((await inner(s.page, "family-back")).trim()), await inner(s.page, "family-back"));
   const sheet = await inner(s.page, "side-sheet");
   ok("the team sheet: his side, by name and place", /R Pillay/.test(sheet) && /James Whitfield/.test(sheet) && /T Bekker/.test(sheet));
   {
@@ -372,12 +422,18 @@ try {
   const fixtureText = await inner(s.page, "os-main");
   ok("...and no team-mate's injury, fitness or return date anywhere on it (K3)", !HEALTH.test(fixtureText), fixtureText.match(HEALTH)?.[0]);
   ok("...nor a team-mate's answer or its reason", await tid(s.page, `availability-state-${WHITFIELD}`).count() === 0 && !/funeral|family/i.test(fixtureText));
+  // He changes the answer he sent from Home: one tap, then a reason for the coach.
   await tid(s.page, `availability-set-${PILLAY}-doubtful`).click({ timeout: 4000 }).catch(() => {});
+  await afterReads(s.page, 1200);
+  ok("he changes it to doubtful in one tap: pressed, and sent", await tid(s.page, `availability-set-${PILLAY}-doubtful`).getAttribute("aria-pressed") === "true"
+     && await tid(s.page, `availability-set-${PILLAY}-unavailable`).getAttribute("aria-pressed") === "false"
+     && /Sent to the coach/.test(await inner(s.page, `availability-by-${PILLAY}`)));
+  await tid(s.page, `availability-why-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
   await s.page.selectOption(`[data-testid="availability-reason-${PILLAY}"]`, "illness").catch(() => {});
   await tid(s.page, `availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1500);
-  ok("he says doubtful, and the screen says he said it",
-     /Doubtful/.test(await inner(s.page, `availability-state-${PILLAY}`)) && /said by you/.test(await inner(s.page, `availability-by-${PILLAY}`)));
+  ok("...adds a reason, and the screen still says he sent it",
+     await tid(s.page, `availability-state-${PILLAY}`).first().getAttribute("data-status") === "doubtful" && /^Sent to the coach · /.test((await inner(s.page, `availability-by-${PILLAY}`)).trim()));
   const row = (await q(`select status, reason_kind, declared_by from match_availability where match_id = $1 and player_id = $2`, [NEXT, PILLAY]))[0];
   ok("...the row is his own declaration", row?.status === "doubtful" && row?.reason_kind === "illness" && row?.declared_by === pupilId, JSON.stringify(row));
   ok("...and the team-mate's answer is untouched", (await q(`select status from match_availability where match_id = $1 and player_id = $2`, [NEXT, WHITFIELD]))[0]?.status === "unavailable");
@@ -793,7 +849,9 @@ try {
   ok("...the side, by name and place, once on the screen", /6 named/i.test(side) && [WHITFIELD, BEKKER, NAIDOO, PILLAY, SEVEN, SIX].every((id) => side.includes(nm[id])) && await tid(c.page, "side-sheet").count() === 1, side);
   ok("...this season's figures for a boy on the sheet, in the figure line", /inns · \d+ runs · avg \d/.test(await inner(c.page, `captain-season-${PILLAY}`)), await inner(c.page, `captain-season-${PILLAY}`));
   ok("...no plan block while no plan is out, and no place held for one; the section never holds one", !/plan/i.test(sec) && await tid(c.page, "plan-block").count() === 0);
-  const secAll = await inner(c.page, "os-main");
+  // His OWN answer's line may say his own injury (slice 9: Not available suggested before his return); the
+  // assertion is about team-mates, so his own line is left out of the text it reads.
+  const secAll = (await inner(c.page, "os-main")).replace(await inner(c.page, `availability-by-${PILLAY}`), "");
   ok("...and no team-mate's injury, answer or reason anywhere on the screen (D7, K3)",
      !HEALTH.test(secAll) && !/physio says rest|illness/i.test(secAll) && await tid(c.page, `availability-state-${BEKKER}`).count() === 0, secAll.match(HEALTH)?.[0]);
   ok("the section itself says no injury, fitness word, guideline, availability or reason", !NEVER.test(sec), sec.match(NEVER)?.[0]);
