@@ -275,7 +275,7 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 -- role no longer active), of one person; or of anybody when p_person is NULL.
 -- Answers the day it ended, the latest first; NULL for none.
 CREATE OR REPLACE FUNCTION family_link_ended_on(p_player uuid, p_person uuid) RETURNS date AS $$
-  SELECT max(coalesce(g.valid_until, a.revoked_at::date, g.verified_at::date, g.created_at::date))
+  SELECT max(coalesce(g.valid_until, sa_date(a.revoked_at), sa_date(g.verified_at), sa_date(g.created_at)))
     FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id
    WHERE g.player_id = p_player AND a.role = 'guardian' AND g.relationship IS DISTINCT FROM 'self'
      AND (p_person IS NULL OR a.person_id = p_person)
