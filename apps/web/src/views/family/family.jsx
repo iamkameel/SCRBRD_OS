@@ -25,13 +25,15 @@ import { chooseChild, doorTo, fixturesOf, forgetChild, linkWords, pendingWords, 
 import { agreedWords } from "../../lib/guardianLink.js";
 import { Action, Card, ChildSwitcher, Line, NoneOr, Page, RetryBtn, Title } from "./parts.jsx";
 import { readState } from "../../lib/readState.js";
-import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
+import { InjuryLine, LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
 import { PersonalBests } from "./bests.jsx";
 import { SeasonTrend } from "../seasontrend.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { ChildFileCard } from "./childfile.jsx";
 import { LiftsToday, useLiftDay } from "../lifts.jsx";
-import { TodoCard, TodoCount } from "./todo.jsx";
+import { TodoCard, TodoCount, useTodoList } from "./todo.jsx";
+import { leadOf } from "../../lib/homeLead.js";
+import { owes } from "../../lib/todo.js";
 import { AppointedCard, AppointedOnMatch } from "./scoring.jsx";
 import { DsoCard } from "./dso.jsx";
 import { WaitingTerms } from "../terms.jsx";
@@ -170,14 +172,26 @@ export function FamilyHome({ role, onNav, onOpenScorer }) {
     justAgreed={agreed.includes(child.id)}/>;
 }
 
-/** The Home for the chosen child: its own component, so the day's reads (a hook) are made for him alone. */
+/**
+ * The Home for the chosen child: its own component, so the day's reads (a hook) are made for him alone.
+ * One lead, chosen by his match day (redesign slice 8; lib/homeLead.js), then what is asked of her, then the quiet rest.
+ */
 function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead, matchesSaid, retry, nav, setOpen, onOpenScorer, onRaise, justAgreed = false }) {
   const now = Date.now();
-  // §1.9, §1.10: while his match is live, its board leads his section; otherwise it sits after his lifts.
-  const isLive = fixturesOf(matches, child, now).live.length > 0;
-  const live = <LiveCard child={child} matches={matches} now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>;
   // The day's lift cards, read once and shared by the list (R7) and the day cards (GA-I20 A1, D8).
   const { day, reload: reloadDay } = useLiftDay(child, matches, now);
+  // GA-I20 A0: what is owed for him, read once; the lead asks it whether the next fixture's answer is owed.
+  const todo = useTodoList({ child, matches, matchesRead, now, day });
+  const next = fixturesOf(matches, child, now).upcoming[0] ?? null;
+  // §1.9, §2.6: his match live leads his section; then the fixture, or a result today. A parent's Home has no captain.
+  const lead = leadOf({ matches, child, now, owed: owes(todo.t, next?.id) });
+  const toMatch = (m) => setOpen({ kind: "match", match: m });
+  const toFixture = (m) => setOpen({ kind: "fixture", match: m });
+  const nextCard = (weight) => (
+    <NextFixtureCard child={child} matches={matches} role={role} now={now} said={matchesSaid} onRetry={retry} weight={weight}
+      onOpen={toFixture} onMatches={nav.includes("fixtures") ? () => onNav?.("fixtures") : null}/>
+  );
+  const lastCard = (weight) => <LastMatchCard child={child} matches={matches} now={now} onOpen={toMatch} weight={weight}/>;
   // A door from the list into his card on Family: Consents, or Who to ring.
   const toFamily = (panel) => { doorTo(child.id, panel); onNav?.("family"); };
   return (
@@ -191,6 +205,8 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
         <header style={{ display: "grid", gap: "2px" }}>
           <Title testid="family-child">{child.knownAs || child.name}</Title>
           <Line quiet testid="family-child-school">{schoolLine(child)}</Line>
+          {/* Question 6 (a): his open injury, one quiet line, opening his Health on Family. */}
+          <InjuryLine child={child} role={role} onOpen={onNav ? () => toFamily("health") : null}/>
         </header>
         {/* Just agreed, on this visit: the record's words, from her link as read again. */}
         {justAgreed && child.consent === "granted" && (
@@ -198,21 +214,22 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
             {agreedWords(child.consentAt, child.consentVersion)}
           </p>
         )}
-        {isLive && live}
-        <NextFixtureCard child={child} matches={matches} role={role} now={now} said={matchesSaid} onRetry={retry}
-          onOpen={(m) => setOpen({ kind: "fixture", match: m })}
-          onMatches={nav.includes("fixtures") ? () => onNav?.("fixtures") : null}/>
+        {/* The lead: exactly one block (§2.6). */}
+        {lead.kind === "live" && <LiveCard child={child} matches={matches} now={now} onFollow={toMatch}/>}
+        {lead.kind === "result" && lastCard("lead")}
+        {(lead.kind === "next" || lead.kind === "none") && nextCard("lead")}
+        {lead.kind !== "next" && lead.kind !== "none" && (next || lead.kind !== "live") && nextCard("standard")}
         {/* GA-I20 A0: what is owed for him, under the next fixture: his fixtures'
-            answers, narrowed to him, and the one door of each row. */}
-        <TodoCard child={child} matches={matches} matchesRead={matchesRead} now={now}
-          onOpen={(m) => setOpen({ kind: "fixture", match: m })} day={day} onDayRetry={reloadDay}
-          onDoor={onNav ? toFamily : undefined}/>
+            answers, narrowed to him, and the one door of each row. The fixture's
+            own answer is in its card above, and is not asked twice (§2.6). */}
+        <TodoCard todo={todo} matches={matches} lead={next?.id ?? null}
+          onOpen={toFixture} onDayRetry={reloadDay} onDoor={onNav ? toFamily : undefined}/>
         {/* SCRBRD-124 phase 2 (db/76): his lifts on the day — the driver's
             number and car, the marks, "confirm collected"; her own card when
             she drives. */}
         <LiftsToday child={child} matches={matches} day={day ?? undefined} onReload={reloadDay}/>
-        {!isLive && live}
-        <LastMatchCard child={child} matches={matches} now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
+        {/* The quiet rest: what there is to read. */}
+        {lead.kind !== "result" && lastCard("quiet")}
         <SeasonCard child={child} role={role}/>
         {/* GA-I23 slice 2 (B2, Q8): her child's season, innings by innings,
             one child at a time, read for him alone (innings_by_season's
@@ -220,10 +237,10 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
         {/* Quiet when he has no innings at all, as his Bests are below. */}
         {signedIn() && (
           <SeasonTrend role={role} playerId={child.id} who={child.knownAs || child.name} bare quietWhenNone
-            frame={(panel) => <Card label="Innings by innings" testid="family-trend">{panel}</Card>}/>
+            frame={(panel) => <Card label="Innings by innings" testid="family-trend" weight="quiet">{panel}</Card>}/>
         )}
         {/* RECOGNITION R5 (D23): her child's own bests; no board, nobody else's child. */}
-        <PersonalBests role={role} playerId={child.id} who={`${child.knownAs || child.name}'s`} testid="family-bests" quietWhenNone/>
+        <PersonalBests role={role} playerId={child.id} who={`${child.knownAs || child.name}'s`} testid="family-bests" quietWhenNone weight="quiet"/>
         <NoticesCard child={child} role={role} onOpen={nav.includes("notices") ? () => onNav?.("notices") : null}/>
       </div>
       {/* Q7: the DSO card, last on her Home, outside his section: it is the school's, not his. */}

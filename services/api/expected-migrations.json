@@ -158,5 +158,7 @@
   "165_live_from_first_ball.sql",
   "166_officials_signed_in_reads.sql",
   "167_owner_key_logged.sql",
-  "168_pupil_claim_basic_view.sql"
+  "168_pupil_claim_basic_view.sql",
+  "169_pupil_signin_gate.sql",
+  "170_fixture_pro_mode.sql"
 ]

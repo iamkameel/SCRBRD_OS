@@ -41,6 +41,8 @@ Three words, and only two of them public: **Provisional** (complete, not confirm
 
 **Decision (Kameel, 20 Nov, on the board): keep the separation. After a match, the coach's confirm finishes it; the official result stays with the director of sport or the competition organiser (OFFICIAL_RESULT D3 unchanged).**
 
+**Decision (Kameel, 25 Nov, on the board): "Reword the line; keep the separation" (D3 stands).** After the coach confirms, staff read "Official result: waiting for the director of sport" (or the organiser for a competition).
+
 ---
 
 ## 2 · States, and how each is known

@@ -23,6 +23,7 @@ import { StateLabel } from "../ui/stateLabel.jsx";
 import { TabStrip, panelLabel } from "../views/matchcentre/tabStrip.jsx";
 import { NARROW_PX, parsePublicPath, publicPath, tabOr } from "../lib/matchTabs.js";
 import { navigate, usePath } from "../lib/route.js";
+import { BoardSkeleton, PublicHeader, PublicNotice, useGaveUp } from "./shell.jsx";
 
 /**
  * THE PUBLIC MATCH PAGE — /live/:match and /scorecard/:match (SCRBRD-083
@@ -319,21 +320,29 @@ export function PublicMatch({ matchId, view }) {
   const need = (!!data.header && data.header.status !== "live") || data.events.some((e) => e.kind === "void") || !!data.error;
   useEffect(() => { if (need && !fx) import("./corrections.jsx").then(setFx, () => {}); }, [need, fx]);
   const fixes = useMemo(() => (fx && story ? fx.publicFixes(data.events, story) : null), [fx, story, data.events]);
+  const gaveUp = useGaveUp(data.loading);
 
-  if (data.loading) return <Frame low={low.on}><Quiet testid="public-loading">Loading the match…</Quiet></Frame>;
-  if (data.missing) return <Frame low={low.on}><Quiet testid="public-missing">This page is not available. The link may be wrong, or the match may not be public.</Quiet></Frame>;
-  // A ground with poor signal is where this page is opened: a failed read offers the same read again, and says nothing
-  // more than it did (glossary review item 5).
+  // Redesign slice 14 (DESIGN_DIRECTION §2.4): a board-shaped skeleton while the first read is out, and a read that
+  // takes too long becomes the error state. The state, in the body face, with the public header, a Retry, and "See
+  // today's matches". A ground with poor signal is where this page is opened: a failed read offers the same read
+  // again, and says nothing more than it did (glossary review item 5).
+  if (data.loading && !gaveUp) return <Frame low={low.on}><BoardSkeleton/></Frame>;
+  if (data.missing) return (
+    <Frame low={low.on}>
+      <PublicNotice testid="public-missing" sentence="This page is not available. The link may be wrong, or the match may not be public."/>
+    </Frame>
+  );
   if (!match) return (
     <Frame low={low.on}>
       <div aria-live="polite">
-        <Quiet testid="public-error">Couldn't load this match{data.error === "busy" ? " — too many requests; try again shortly" : ""}.</Quiet>
-        <button type="button" data-testid="public-retry" onClick={() => { if (!data.refreshing) data.refresh(); }} className="pressBtn os-state"
-          style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", background: "transparent",
-            border: `1px solid ${T.brand.accentText}`, borderRadius: T.radius.pill, cursor: "pointer", color: T.brand.accentText,
-            fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
-          {data.refreshing ? "Retrying…" : "Retry"}
-        </button>
+        <PublicNotice testid="public-error" bad sentence={`Couldn't load this match${data.error === "busy" ? " — too many requests; try again shortly" : ""}.`}>
+          <button type="button" data-testid="public-retry" onClick={() => { if (!data.refreshing) data.refresh(); }} className="pressBtn os-state"
+            style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, display: "inline-flex", alignItems: "center", background: "transparent",
+              border: `1px solid ${T.brand.accentText}`, borderRadius: T.radius.pill, cursor: "pointer", color: T.brand.accentText,
+              fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+            {data.refreshing ? "Retrying…" : "Retry"}
+          </button>
+        </PublicNotice>
       </div>
     </Frame>
   );
@@ -496,6 +505,7 @@ function Frame({ children, low = false }) {
     <>
       <style>{GLOBAL_CSS}</style>
       {low && <style>{LOW_DATA_CSS}</style>}
+      <PublicHeader/>
       <main data-low-data={low ? "" : undefined} style={{ maxWidth: "960px", margin: "0 auto", padding: `${T.space.lg} ${T.space.md}`, minHeight: "100vh" }}>
         {children}
       </main>

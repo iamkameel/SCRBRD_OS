@@ -132,6 +132,8 @@ import { pilotRoutes } from "./write/pilot-api.mjs";
 import { followRoutes } from "./write/follow-api.mjs";
 // "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/168).
 import { pupilClaimRoutes } from "./write/pupil-claim-api.mjs";
+// "Allow his own sign-in" (SCRBRD-140 honesty model, Migration B; db/169).
+import { pupilSigninRoutes } from "./write/pupil-signin-api.mjs";
 // Practice Match's live weather hint, from Google (2026-10-02): a hint, never
 // the match's record; nothing stored (weather/weather-api.mjs).
 import { weatherRoutes, weatherConfig } from "./weather/weather-api.mjs";
@@ -506,6 +508,7 @@ const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
 const staffRegister = registerRoutes({ pool, secret: SECRET });
 const pupilClaims = pupilClaimRoutes({ pool, secret: SECRET });
+const ownSignin = pupilSigninRoutes({ pool, secret: SECRET });
 // Sign-up with Google (SCRBRD-140 phase 1, db/81). Google's keys for
 // scrbrd-os; FIREBASE_TEST_KEYS (the walk's own key) is refused in
 // production and verifies only a project that is not scrbrd-os.
@@ -565,6 +568,7 @@ NO_STORE_ROUTES.add(follows.list);
 NO_STORE_ROUTES.add(follows.today);
 NO_STORE_ROUTES.add(pupilClaims.state);
 NO_STORE_ROUTES.add(pupilClaims.list);
+NO_STORE_ROUTES.add(ownSignin.state);
 // The key is read once, here, and goes nowhere but Google's header. Unset,
 // the hint answers 503 weather_unavailable and the scorer picks by hand.
 // Only an enrolled account may spend the quota (db/81's app_enrolled()): a
@@ -767,6 +771,10 @@ const MATCH_ROUTES = [
   // a module (modules.mjs).
   [/^\/api\/notifications\/([^/]+)\/read$/,       "POST", receipts.open],
   [/^\/api\/fixtures\/([^/]+)$/,                  "POST", fixtures.amend],
+  // Pro mode (db/170): the fixture's coach or the office asks, before the
+  // toss, for the shot and the field on every ball. match_capture_request()
+  // decides who and when.
+  [/^\/api\/fixtures\/([^/]+)\/capture-profile$/,  "POST", fixtures.captureProfile],
   // A side of the fixture on the public pages (SCRBRD-083). fixture_publish()
   // (db/47) decides who: broadcast.publish at THAT side's school and team.
   // Not module-gated, like the fixture itself: publishing is off by default
@@ -896,6 +904,12 @@ const PLAYER_ROUTES = [
   [/^\/api\/pupil-claims\/clear$/,                   "POST", pupilClaims.clear],
   [/^\/api\/pupil-claims\/([^/]+)\/recognise$/,      "POST", pupilClaims.recognise],
   [/^\/api\/pupil-claims\/([^/]+)\/decline$/,        "POST", pupilClaims.decline],
+  [/^\/api\/pupil-claims\/([^/]+)\/not-him$/,        "POST", pupilClaims.notHim],
+  // db/169: a boy's own sign-in, the family's yes or no and the office's form on
+  // file. Every decision is a db/169 definer's, under the caller.
+  [/^\/api\/players\/([^/]+)\/own-signin$/,          "GET",  ownSignin.state],
+  [/^\/api\/players\/([^/]+)\/own-signin$/,          "POST", ownSignin.set],
+  [/^\/api\/players\/([^/]+)\/own-signin\/office$/,  "POST", ownSignin.office],
   // The office opening an account for somebody already on the roster — the
   // push half of onboarding. Authenticated: enrol_person() checks
   // user.role.assign and the granter table under the caller's identity.
@@ -1487,6 +1501,9 @@ const PLATFORM_LOGGED = new Map(/** @type {[unknown, import("./read/platform-rea
   [colours.list,              { resource: "colours_nominations" }],
   // Migration A: the office's list of pupils who said "I am a pupil here" (under-18 accounts).
   [pupilClaims.list,          { resource: "pupil_claims" }],
+  // Migration B (db/169): a boy's own sign-in, yes or no and who gave it, read by
+  // his family and the office (neither door answers the key; logged all the same).
+  [ownSignin.state,           { resource: "pupil_own_signin" }],
   [signIn.accountSignIns,     { resource: "account_sign_ins",    subject: "account" }],
   [signIn.preview,            { resource: "account_preview",     subject: "account" }],
   [results.result,            { resource: "match_result",        subject: "match" }],

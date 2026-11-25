@@ -153,7 +153,7 @@ noise). New roles and one scale, in px, on a 4px rhythm:
 | `label` | 12 / 1.3, +0.06em, uppercase | Sans 600 | eyebrows, table heads |
 | `control` | 16 | Sans 500 | inputs and buttons (16 stops iOS zooming) |
 
-**Floors:** nothing read is below 12px; nothing tapped is below 16px. The 8/9/10px
+**Floors:** nothing read is below 12px; no control's type is below 16px; nothing tapped is under 44 × 44. The 8/9/10px
 sizes go. `smoke-a11y` gains a check that no rendered text is under 12px.
 
 ### 3.3 Figures

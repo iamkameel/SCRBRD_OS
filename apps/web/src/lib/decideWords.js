@@ -23,6 +23,12 @@ export const DECIDE_WORDS = {
   team_code_invalid: "That side was not understood. Choose the side again.",
   missing_token: "You were signed out. Sign in again to answer requests.",
   token_expired: "You were signed out. Sign in again to answer requests.",
+  // db/169 (Q12): the office's tick, "The signed consent form is on file".
+  form_no_date_of_birth: "That pupil has no date of birth on the roster, so the signed form cannot open his own page. Add it to the roster first.",
+  form_not_permitted: "Only the school office and the principal can record a pupil's signed consent form.",
+  // db/169 (Kameel, 20 Nov, D): the form names who signed it and the day.
+  form_form_signer_invalid: "Who signed the consent form needs two letters or more, as written on it, or leave it blank.",
+  form_form_date_invalid: "The date the form was signed cannot be after today, or before he was born.",
 };
 const DECIDE_FALLBACK = "That request was not answered. Try again, or ask the platform office.";
 const DECIDE_UNREACHABLE = "SCRBRD could not be reached. The request may or may not have been answered. Check the list before trying again.";
