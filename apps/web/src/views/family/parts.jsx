@@ -318,9 +318,10 @@ export function AvailabilityBlock({ match, child, role, self = false, onSent = n
   return (
     <div data-testid={`availability-${pid}`} style={{ display: "grid", gap: T.space.sm }}>
       <span id={labelId} style={{ ...T.role.label, color: T.content.secondary }}>{self ? "Your answer" : `${name}'s answer`}</span>
+      {/* The keys: three in a row on a phone, wrapping when the screen is narrower than that (200% zoom), so none is under 44px. */}
       {mayDeclare ? (
         <div role="group" aria-labelledby={labelId} data-testid={`availability-state-${pid}`} data-status={status ?? (asking ? "needs_reconfirming" : "none")}
-          style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: T.space.sm }}>
+          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(88px, 1fr))", gap: T.space.sm }}>
           {ANSWERS.map(([v, l]) => (
             <AnswerKey key={v} value={v} label={l} pid={pid} on={status === v} suggested={hint?.status === v} describedBy={hintId}
               onTap={() => { if (status !== v) void send(v); }}/>
