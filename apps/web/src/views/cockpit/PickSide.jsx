@@ -24,8 +24,9 @@ import { AWAY_AVAILABILITY_WORDS, SIDE_SIZE, candidates, checkDraft, draftFoot, 
  * stands (`match_squad`) and this fixture's answers (`readiness`, where the
  * reader's grant reaches it: the status tier only, never a reason, D4).
  *
- * PLAYING UP: the list is the fixture team's own boys, and a quiet "Add a boy
- * from another team" finds any other boy of the SAME SCHOOL in the `players`
+ * PLAYING UP: the list is the fixture team's own boys, his side first, and a
+ * quiet "Add a boy from other sides" (question 16, Kameel, 19 Nov: "his side
+ * first, the rest under 'Other sides'") finds any other boy of the SAME SCHOOL in the `players`
  * read the list already uses (lib/pickSide.js findOthers; no new read) and puts
  * him in the draft marked "from U13A". Whether he may play up is the database's
  * answer, shown beside him like any other refusal.
@@ -197,16 +198,16 @@ export function PickSide({ match, gate, onClose, onSaved }) {
             <div data-testid="pick-other" style={{ display: "grid", gap: T.space.sm, marginTop: T.space.md, paddingTop: T.space.md, borderTop: `1px solid ${T.line.normal}` }}>
               {!finding ? (
                 <button type="button" data-testid="pick-other-open" className="os-state" onClick={() => setFinding(true)} style={{ ...btn(), justifySelf: "start" }}>
-                  Add a boy from another team
+                  Add a boy from other sides
                 </button>
               ) : (
                 <>
                   <label style={{ ...quiet(), display: "grid", gap: T.space.xs }}>
-                    Find a boy from another of your teams
+                    Find a boy on your other sides
                     <input type="search" data-testid="pick-other-search" value={query} autoFocus autoComplete="off" onChange={(e) => setQuery(e.target.value)}
                       placeholder="Type part of his name" style={{ ...select(), width: "100%", minWidth: 0 }}/>
                   </label>
-                  {query.trim() !== "" && found.rows.length === 0 && <p data-testid="pick-other-none" style={quiet()}>Nobody on your other teams matches that.</p>}
+                  {query.trim() !== "" && found.rows.length === 0 && <p data-testid="pick-other-none" style={quiet()}>Nobody on your other sides matches that.</p>}
                   {found.rows.length > 0 && (
                     <ul data-testid="pick-other-results" style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: T.space.xs }}>
                       {found.rows.map((r) => (

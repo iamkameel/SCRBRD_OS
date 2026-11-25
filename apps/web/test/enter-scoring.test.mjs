@@ -14,7 +14,7 @@
  */
 import { readFileSync } from "node:fs";
 import { ROLES, SCORING_ROLES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, roleGrants } from "@scrbrd/policy/roles";
-import { ENTERABLE, ENTER_SCORING_CAPABILITY, mayEnterScoring, scoringResource } from "../src/lib/enterScoring.js";
+import { ENTERABLE, ENTER_SCORING_CAPABILITY, mayEnterScoring, scoresItHere, scoringResource } from "../src/lib/enterScoring.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -105,13 +105,38 @@ group("never on a fixture there is nothing to score on, and never without a sess
   ok("no assignments (signed out, or none): not offered", !mayEnterScoring(null, LIVE, NOW) && !mayEnterScoring([], LIVE, NOW));
 }
 
+group("slice 10, question 7: on the coach's page, \"Open scorer\" only for whoever is scoring");
+{
+  const coach = [assignment("coach")];
+  ok("a coach may score his side's fixture (the existing check)", mayEnterScoring(coach, LIVE, NOW));
+  ok("...but is not offered Open scorer on it by that alone", !scoresItHere(coach, LIVE, { at: NOW }));
+  ok("...offered where this phone holds the fixture's log", scoresItHere(coach, LIVE, { onThisPhone: true, at: NOW }) && scoresItHere(coach, UPCOMING, { onThisPhone: true, at: NOW }));
+  ok("...offered where one of his assignments is narrowed to THIS fixture and may score it",
+     scoresItHere([...coach, assignment("scorer", HIL, { fixture: LIVE.id })], LIVE, { at: NOW }));
+  ok("...not by an appointment to another fixture", !scoresItHere([...coach, assignment("scorer", HIL, { fixture: "m9" })], LIVE, { at: NOW }));
+  ok("...nor by an appointment that has ended", !scoresItHere([...coach, assignment("scorer", HIL, { fixture: LIVE.id, until: "2026-11-01" })], LIVE, { at: NOW }));
+  ok("...nor by an appointment narrowed to this fixture whose role cannot score",
+     !scoresItHere([...coach, assignment("official", HIL, { fixture: LIVE.id })], LIVE, { at: NOW }));
+  // Never wider than the existing check: the phone's log offers nothing to a reader it would refuse.
+  for (const role of ROLES.filter((r) => !roleGrants(r, "scoring.edit"))) {
+    ok(`${role}, with the log on this phone: never offered`, !scoresItHere([assignment(role)], LIVE, { onThisPhone: true, at: NOW }));
+  }
+  ok("a coach at another school, with the log on this phone: never offered", !scoresItHere([assignment("coach", WES)], LIVE, { onThisPhone: true, at: NOW }));
+  ok("a finished fixture, with the log on this phone: never offered", !scoresItHere(coach, { ...LIVE, status: "complete" }, { onThisPhone: true, at: NOW }));
+  ok("signed out: never offered", !scoresItHere(null, LIVE, { onThisPhone: true, at: NOW }));
+}
+
 group("the page offers nothing else that enters scoring");
 {
   const mv = readFileSync(new URL("../src/views/matchcentre/MatchView.jsx", import.meta.url), "utf8");
   const calls = mv.match(/onOpenScorer\(/g) ?? [];
   ok("MatchView calls onOpenScorer in one place, the button's own tap", calls.length === 1 && /onClick=\{\(\) => onOpenScorer\(match\)\}[^>]*data-testid="mc-enter-scoring"/.test(mv));
   // Slice 4: and never on a live match the pad has decided (provisional): the coach confirms it, nobody scores it.
-  ok("...drawn only where its caller passed canScoreIt", /\{canScoreIt && \(isLive \|\| match\.status === "upcoming"\) && !provisional && onOpenScorer && \(/.test(mv));
+  ok("...drawn only where its caller passed canScoreIt", /const scoringLive = !!canScoreIt && \(isLive \|\| match\.status === "upcoming"\) && !provisional && !!onOpenScorer;/.test(mv)
+     && /\{opensScorer && \(/.test(mv));
+  // Slice 10: on the coach's page, narrower still, never wider.
+  ok("...and on the coach's page only where he is the one scoring it",
+     /const opensScorer = scoringLive && \(!staff \|\| scoresItHere\(profile\(\)\?\.assignments, match, \{ onThisPhone: logHere \}\)\);/.test(mv));
   ok("...and MatchView never claims a session or writes the log", !/session\/claim|\/events`, \{ method: "POST"|handover/.test(mv));
   const mc = readFileSync(new URL("../src/views/MatchCentreView.jsx", import.meta.url), "utf8");
   ok("the Match Centre's one gate is the fixture's own when signed in",
