@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { recordKeys } from "./persist.js";
+import { hasMatchLog } from "./persist.js";
 
 /**
  * Does THIS phone hold the pad's log of this fixture (redesign slice 10)? The
@@ -10,8 +10,9 @@ import { recordKeys } from "./persist.js";
  * reader the existing per-fixture check already lets score; it never offers
  * anything by itself.
  *
- * It asks for the key alone, never the log: a log carries the boys' names, and
- * only the scorer's own modules read one (apps/web/test/pilot.test.mjs).
+ * It asks for the key alone, never the log (persist.js hasMatchLog): a log
+ * carries the boys' names, and only the scorer's own modules read one
+ * (apps/web/test/pilot.test.mjs).
  * Nothing here writes, claims or clears. False until the store has answered,
  * and when it cannot be read: no "Open scorer" on a guess.
  * @param {string | null | undefined} matchId  null: nothing is asked
@@ -22,9 +23,8 @@ export function useLogOnThisPhone(matchId) {
   useEffect(() => {
     if (!matchId) { setHeld(false); return undefined; }
     let off = false;
-    const key = `match:${matchId}`;
-    recordKeys(key)
-      .then((keys) => { if (!off) setHeld(Array.isArray(keys) && keys.includes(key)); })
+    hasMatchLog(matchId)
+      .then((has) => { if (!off) setHeld(has === true); })
       .catch(() => { if (!off) setHeld(false); });
     return () => { off = true; };
   }, [matchId]);
