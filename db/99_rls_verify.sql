@@ -15739,11 +15739,13 @@ BEGIN
 
   ELSIF p_case = 'insert' THEN
     -- (insert) A new row whose date disagrees with its ID number is refused,
-    -- as the owner and as the office; one that agrees goes in; an
-    -- unreadable number carries no date to disagree with.
+    -- through a door under a session and as the office; one that agrees goes
+    -- in; an unreadable number carries no date to disagree with; the owner
+    -- with no one signed in is the one write let through.
+    PERFORM _as(REG);
     BEGIN
       PERFORM _v172_boy('insert one', B2, IDN);
-      PERFORM _assert(false, '§147 (insert): the owner inserted a date that disagrees with the ID number');
+      PERFORM _assert(false, '§147 (insert): a door under the office''s session inserted a date that disagrees with the ID number');
     EXCEPTION WHEN check_violation THEN
       GET STACKED DIAGNOSTICS why = MESSAGE_TEXT;
       PERFORM _assert(why = 'id_number_disagrees_with_date_of_birth', format('§147 (insert): refused as %s', why));
@@ -15762,6 +15764,9 @@ BEGIN
     -- Month thirteen: unreadable, so unchecked (the doors refuse it in JS).
     BOY := _v172_boy('insert unreadable', B2, '0913015172084');
     PERFORM _assert(BOY IS NOT NULL, '§147 (insert): an unreadable number was checked against the date');
+    PERFORM set_config('app.user_id', '', true);
+    BOY := _v172_boy('insert owner', B2, IDN);
+    PERFORM _assert(_v172_now(BOY) = B2 || '|' || IDN, '§147 (insert): the owner, no one signed in, was refused');
 
   ELSIF p_case = 'capture' THEN
     -- (capture) A date where there was none, as the capture route writes it:
@@ -15878,23 +15883,20 @@ BEGIN
     END;
 
   ELSIF p_case = 'owner' THEN
-    -- (owner) The owner, no one signed in: checked against the ID number
-    -- like anyone, and recorded as 'owner'. A new ID number that disagrees
-    -- with the date on record is refused too, from the office as well.
+    -- (owner) A new ID number that disagrees with the date on record is
+    -- refused like a date, from the office as from the application. The
+    -- owner with no one signed in is let through, and recorded as 'owner'.
     BOY := _v172_boy('owner', B, IDN);
-    v := _v172_owner(BOY, 'born', B2::text);
-    PERFORM _assert(v = 'id_number_disagrees_with_date_of_birth', format('§147 (owner): a date against his number: %s', v));
-    v := _v172_owner(BOY, 'id_number', to_char(B2, 'YYMMDD') || '5172084');
-    PERFORM _assert(v = 'id_number_disagrees_with_date_of_birth', format('§147 (owner): a number against his date: %s', v));
     PERFORM _as(REG);
     v := _v172_write(BOY, 'id_number', to_char(B2, 'YYMMDD') || '5172084');
     PERFORM _assert(v = '23514:id_number_disagrees_with_date_of_birth', format('§147 (owner): the office''s number against his date: %s', v));
+    PERFORM _assert(_v172_now(BOY) = B || '|' || IDN, format('§147 (owner): the refused number landed: %s', _v172_now(BOY)));
     PERFORM set_config('app.user_id', '', true);
-    v := _v172_owner(BOY, 'id_number', NULL);
-    PERFORM _assert(v = 'set', format('§147 (owner): the owner took his number off: %s', v));
     v := _v172_owner(BOY, 'born', B2::text);
-    PERFORM _assert(v = 'set', format('§147 (owner): the owner''s correction: %s', v));
+    PERFORM _assert(v = 'set', format('§147 (owner): the owner''s own write: %s', v));
     PERFORM _assert(_v172_rows(BOY) = format('%s>%s:owner:-', B, B2), format('§147 (owner): recorded as %s', _v172_rows(BOY)));
+    v := _v172_owner(BOY, 'born', B::text);
+    PERFORM _assert(_v172_rows(BOY) = format('%s>%s:owner:-;%s>%s:owner:-', B, B2, B2, B), format('§147 (owner): recorded as %s', _v172_rows(BOY)));
 
   ELSIF p_case = 'old' THEN
     -- (old) A row that already disagreed before db/172 stands until its date
@@ -47873,11 +47875,14 @@ $m130$;
   --   (door)     player_born_correct(): each refusal, one answer for "not
   --              yours" and "no such boy", the record of the correction
   --   (read)     the office reads the changes; nobody else; no table access
-  --   (owner)    the owner is checked too, and recorded 'owner'
+  --   (owner)    a new ID number is checked too; the owner's own write
+  --              (no one signed in) let through and recorded 'owner'
   --   (old)      a row that disagreed before db/172 stands until written
   --   (grants)   ACLs and definer/invoker of every function
   -- Broken by hand (24 Nov 2026), each went red for its own reason:
-  --   the trigger's ID check out              → (insert) red: the owner's row
+  --   the trigger's ID check out              → (insert) red: the door's row
+  --   the ID check on the owner's own write too → (insert) red: the owner
+  --   the ID check for the application only   → (insert) red: the door's row
   --   the office rule out                     → (office) red: the director
   --   the record trigger dropped              → (capture) red: no row
   --   a capture recorded as a correction      → (capture) red

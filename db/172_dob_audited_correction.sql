@@ -42,8 +42,13 @@
 --       DELETE CASCADE): it is his data, and an erasure takes it.
 --   + trigger player_born_agrees_with_id (BEFORE INSERT OR UPDATE OF born,
 --       id_number): a date of birth and an ID number that disagree are
---       refused (check_violation, id_number_disagrees_with_date_of_birth),
---       for every role, the owner included. And a recorded date changed by
+--       refused (check_violation, id_number_disagrees_with_date_of_birth)
+--       for every write made by or for a signed-in person: the application
+--       role, and every door (a definer, as the owner, under the caller's
+--       session). The one write it lets through is the owner's own with no
+--       one signed in (the SQL Editor, a seed, a walk's fixture), which can
+--       switch any trigger off in any case; that write is still recorded, as
+--       'owner', so it is answerable. And a recorded date changed by
 --       the application role directly (not through a door) is the office's
 --       alone (insufficient_privilege, born_correction_is_the_office): the
 --       import's UPDATE is such a write.
@@ -186,7 +191,9 @@ REVOKE ALL ON player_born_change FROM scrbrd_app;
 CREATE OR REPLACE FUNCTION player_born_checked() RETURNS trigger AS $$
 DECLARE v_from_id date;
 BEGIN
+  -- The owner's own write, no one signed in, is the one let through (above).
   IF NEW.born IS NOT NULL AND NEW.id_number IS NOT NULL
+     AND (app_user_id() IS NOT NULL OR current_user = 'scrbrd_app')
      AND (TG_OP = 'INSERT' OR NEW.born IS DISTINCT FROM OLD.born OR NEW.id_number IS DISTINCT FROM OLD.id_number) THEN
     v_from_id := sa_id_born(NEW.id_number);
     -- An unreadable number carries no date to disagree with (the JS's
