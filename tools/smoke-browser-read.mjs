@@ -1566,9 +1566,11 @@ try {
       // fixture.read and competition.read; no team.read and no
       // medical.status.read. "This week" still draws — its fixtures half
       // needs only fixture.read — but nothing about who is out.
+      // Redesign slice 15: his Today is titled with the date and is matches and results, not the staff sheet: no
+      // "Next fixture", no readiness chips, no "This week" card of staff, and no empty Alerts card.
       { who: /watcher@example\.invalid/, role: "spectator",
-        sees:   ["day-next", "day-week", "day-alerts"],
-        cannot: ["day-out"] },
+        sees:   ["day-title"],
+        cannot: ["day-out", "day-next", "day-week", "ready-squad"] },
       // A pupil (step 4): not the day sheet at all — his own Home, with his
       // next fixture first. Since db/55 (K3, CSA p52) no medical.status.read,
       // so who is out on his side is not on it; his own injury is on Me.

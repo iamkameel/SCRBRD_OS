@@ -11,7 +11,7 @@
  */
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { APP_MATCHES, NARROW_PX, PUBLIC_LIVE_TABS, STRIP_TABS, appPath, parseAppPath, parsePublicPath, publicPath, splitTabs, tabOr } from "../src/lib/matchTabs.js";
+import { APP_MATCHES, COACH_STRIP_TABS, NARROW_PX, PUBLIC_LIVE_TABS, STRIP_TABS, appPath, homeTab, parseAppPath, parsePublicPath, publicPath, splitTabs, tabOr } from "../src/lib/matchTabs.js";
 import { menuCss, TabStrip, panelLabel } from "../src/views/matchcentre/tabStrip.jsx";
 import { GLOBAL_CSS, T } from "../src/design/tokens.js";
 
@@ -24,16 +24,21 @@ const SIX = [
   { id: "partnerships", label: "Partnerships" }, { id: "analytics", label: "Analytics" }, { id: "details", label: "Match details" },
 ];
 const withRole = (id, label) => [SIX[0], { id, label }, ...SIX.slice(1)];
+// Slice 10 (question 7): the coach's tab is his first.
+const COACH = [{ id: "coach", label: "Coach" }, ...SIX];
 const ids = (xs) => xs.map((t) => t.id).join(",");
 
 group("The split");
 {
-  const wide = splitTabs(withRole("coach", "Coach"), false);
-  ok("wide: every tab in the strip, in its order, and no More", ids(wide.strip) === "summary,coach,scorecard,commentary,partnerships,analytics,details" && wide.more.length === 0, ids(wide.strip));
-  const coach = splitTabs(withRole("coach", "Coach"), true);
-  ok("a phone: Summary, Scorecard, Commentary in the strip", ids(coach.strip) === STRIP_TABS.join(","), ids(coach.strip));
-  ok("...the coach's tab first under More, then Partnerships, Analytics, Match details", ids(coach.more) === "coach,partnerships,analytics,details", ids(coach.more));
+  const wide = splitTabs(COACH, false);
+  ok("wide: every tab in the strip, the coach's first, and no More", ids(wide.strip) === "coach,summary,scorecard,commentary,partnerships,analytics,details" && wide.more.length === 0, ids(wide.strip));
+  const coach = splitTabs(COACH, true);
+  ok("a coach's phone: Coach, Summary, Scorecard in the strip (§2.5)", ids(coach.strip) === COACH_STRIP_TABS.join(",") && ids(coach.strip) === "coach,summary,scorecard", ids(coach.strip));
+  ok("...Commentary first under More, then Partnerships, Analytics, Match details", ids(coach.more) === "commentary,partnerships,analytics,details", ids(coach.more));
+  ok("...seven tabs, each once", [...coach.strip, ...coach.more].length === 7 && new Set(ids([...coach.strip, ...coach.more]).split(",")).size === 7);
+  ok("a Coach tab anywhere but first keeps the reader's strip as everyone's", ids(splitTabs(withRole("coach", "Coach"), true).strip) === STRIP_TABS.join(","));
   const cap = splitTabs(withRole("captain", "Captain"), true);
+  ok("a captain's phone: Summary, Scorecard, Commentary in the strip", ids(cap.strip) === STRIP_TABS.join(","), ids(cap.strip));
   ok("...and the captain's the same way", ids(cap.more) === "captain,partnerships,analytics,details", ids(cap.more));
   const plain = splitTabs(SIX, true);
   ok("a reader with no tab of his own: three under More", ids(plain.more) === "partnerships,analytics,details", ids(plain.more));
@@ -48,6 +53,14 @@ group("A tab the reader has, or the Summary");
 ok("a tab he has", tabOr(SIX, "analytics") === "analytics");
 ok("a role tab he does not hold, from an old link: the Summary", tabOr(SIX, "coach") === "summary");
 ok("nothing asked: the Summary", tabOr(SIX, null) === "summary");
+ok("nothing asked, on a page whose default is the Coach tab: the Coach tab", tabOr(COACH, null, "coach") === "coach");
+ok("...the Summary asked: the Summary", tabOr(COACH, "summary", "coach") === "summary");
+ok("...a default the reader does not hold: the Summary", tabOr(SIX, null, "coach") === "summary");
+
+group("The page's default tab (question 7)");
+ok("the coach's, before the first ball: the Coach tab", homeTab(COACH, false) === "coach");
+ok("the coach's, once a ball is bowled: the Summary", homeTab(COACH, true) === "summary");
+ok("anyone else's, before or after: the Summary", homeTab(SIX, false) === "summary" && homeTab(withRole("captain", "Captain"), false) === "summary");
 
 group("The signed-in Match Centre's addresses");
 {
@@ -58,6 +71,9 @@ group("The signed-in Match Centre's addresses");
     const back = parseAppPath(appPath(id, t));
     ok(`${t}: the address reads back as the same fixture and tab`, back?.matchId === id && (back.tab ?? "summary") === t, back);
   }
+  ok("with the Coach tab the default, it is the bare address and the Summary has its segment",
+     appPath(id, "coach", "coach") === `/app/matches/${id}` && appPath(id, "summary", "coach") === `/app/matches/${id}/summary`);
+  ok("...which reads back as the Summary, asked", parseAppPath(`/app/matches/${id}/summary`)?.tab === "summary" && parseAppPath(`/app/matches/${id}`)?.tab === null);
   ok("the list", JSON.stringify(parseAppPath(APP_MATCHES)) === JSON.stringify({ matchId: null, tab: null }) && parseAppPath("/app/matches/") != null);
   ok("a trailing slash is the same address", parseAppPath(`/app/matches/${id}/analytics/`)?.tab === "analytics");
   ok("anything else is not the Match Centre's", [ "/", "/app", "/app/matches/x/y/z", "/app/matches/a%20b", "/app/matches/x/Commentary", "/live/x", "/app/match/x"]

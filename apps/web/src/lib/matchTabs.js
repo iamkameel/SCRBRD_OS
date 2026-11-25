@@ -5,11 +5,19 @@
  *
  * ON A PHONE the strip is Summary, Scorecard and Commentary, and a More
  * control holding the rest in the order the wide strip has them: the reader's
- * own tab (Coach, Captain) where he has one, then Partnerships, Analytics and
+ * own tab (Captain) where he has one, then Partnerships, Analytics and
  * Match details. Every tab is two taps away at most. Wider, every tab shows.
  *
- * ONE ROUTE PER TAB. The Summary is the match's own address; every other tab
- * is a segment after it. The signed-in app: /app/matches/:id and
+ * THE COACH'S PAGE (redesign slice 10; DESIGN_DIRECTION §2.5 and question 7,
+ * Kameel, 19 Nov: "All as recommended"). For a reader with the Coach tab it is
+ * the first tab, at every width, and on a phone the strip is Coach, Summary
+ * and Scorecard, with Commentary first under More: "the tab a role needs most
+ * is never under More". It is the page's default until the first ball
+ * (homeTab below); after it the Summary is, and Coach stays first.
+ *
+ * ONE ROUTE PER TAB. The page's default tab is the match's own address; every
+ * other tab is a segment after it, the Summary's ("/summary") included when
+ * the default is the Coach tab. The signed-in app: /app/matches/:id and
  * /app/matches/:id/commentary, its list /app/matches. The public page keeps
  * the shells it already has, /live/:id (the Summary) and /scorecard/:id, and
  * its other tabs are /live/:id/commentary and the like
@@ -18,6 +26,9 @@
 
 /** The three a phone shows in the strip, in this order. */
 export const STRIP_TABS = Object.freeze(["summary", "scorecard", "commentary"]);
+
+/** The three a phone shows for a reader whose first tab is the Coach tab (§2.5: "Coach: Coach, Summary, Scorecard"). */
+export const COACH_STRIP_TABS = Object.freeze(["coach", "summary", "scorecard"]);
 
 /** The match page's own phone breakpoint (MatchView's `phone`, `.mc-short`). */
 export const NARROW_PX = 640;
@@ -32,19 +43,30 @@ export const NARROW_PX = 640;
  */
 export function splitTabs(tabs, narrow) {
   if (!narrow) return { strip: [...tabs], more: [] };
-  const strip = STRIP_TABS.map((id) => tabs.find((t) => t.id === id)).filter(Boolean);
+  const three = tabs[0]?.id === "coach" ? COACH_STRIP_TABS : STRIP_TABS;
+  const strip = three.map((id) => tabs.find((t) => t.id === id)).filter(Boolean);
   // A menu of one is a tab that would fit: never seen with today's tabs, but
   // the rule holds whatever a later reader's tab list is.
-  const more = tabs.filter((t) => !STRIP_TABS.includes(t.id));
+  const more = tabs.filter((t) => !three.includes(t.id));
   return more.length > 1 ? { strip: /** @type {T[]} */ (strip), more } : { strip: [...tabs], more: [] };
 }
 
 /**
  * The tab to show for an address's tab: the one asked if this reader has it,
- * the Summary otherwise (an old link, a role tab he does not hold).
- * @param {{id: string}[]} tabs  @param {string | null | undefined} asked
+ * the page's default otherwise (no tab asked, an old link, a role tab he does
+ * not hold): the Summary, unless the page says another (homeTab).
+ * @param {{id: string}[]} tabs  @param {string | null | undefined} asked  @param {string} [home]
  */
-export const tabOr = (tabs, asked) => (asked && tabs.some((t) => t.id === asked) ? asked : "summary");
+export const tabOr = (tabs, asked, home = "summary") => (asked && tabs.some((t) => t.id === asked) ? asked
+  : tabs.some((t) => t.id === home) ? home : "summary");
+
+/**
+ * The page's default tab (question 7): the Coach tab, for a reader who has it,
+ * until the first ball; the Summary otherwise, and for everyone once a ball
+ * has been bowled. `bowled`: the log holds a delivery, of any kind.
+ * @param {{id: string}[]} tabs  @param {boolean} bowled
+ */
+export const homeTab = (tabs, bowled) => (!bowled && tabs[0]?.id === "coach" ? "coach" : "summary");
 
 const SEGMENT = /^[a-z]+$/;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -63,12 +85,17 @@ export function parseAppPath(pathname) {
   if (p === APP_MATCHES) return { matchId: null, tab: null };
   const m = /^\/app\/matches\/([^/]+)(?:\/([^/]+))?$/.exec(p);
   if (!m || !ID.test(m[1]) || (m[2] != null && !SEGMENT.test(m[2]))) return null;
-  return { matchId: m[1], tab: m[2] && m[2] !== "summary" ? m[2] : null };
+  return { matchId: m[1], tab: m[2] ?? null };
 }
 
-/** @param {string} matchId  @param {string | null} [tab] */
-export const appPath = (matchId, tab = null) =>
-  `${APP_MATCHES}/${encodeURIComponent(matchId)}${tab && tab !== "summary" ? `/${tab}` : ""}`;
+/**
+ * A fixture's address at a tab. The page's default tab (`home`, the Summary
+ * unless homeTab() says the Coach tab) is the bare address; any other tab,
+ * the Summary included, is its segment.
+ * @param {string} matchId  @param {string | null} [tab]  @param {string} [home]
+ */
+export const appPath = (matchId, tab = null, home = "summary") =>
+  `${APP_MATCHES}/${encodeURIComponent(matchId)}${tab && tab !== home ? `/${tab}` : ""}`;
 
 /** The public page's tabs that live after /live/:id (the Summary is /live/:id, the Scorecard /scorecard/:id). */
 export const PUBLIC_LIVE_TABS = Object.freeze(["commentary", "partnerships", "analytics", "details"]);

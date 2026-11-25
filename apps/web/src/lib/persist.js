@@ -193,6 +193,19 @@ export async function savedMatchLogs() {
   } catch { return null; }
 }
 
+/**
+ * Does this device hold a fixture's saved log (redesign slice 10: is this phone
+ * the one scoring it)? The key alone is asked, never the log, so nothing of
+ * the log (its sides, its boys' names) leaves this module. False when the
+ * store could not be read: the caller offers nothing on a guess.
+ * @param {string} matchId
+ * @returns {Promise<boolean>}
+ */
+export async function hasMatchLog(matchId) {
+  if (!matchId || isPracticeId(matchId) || isPilotId(matchId)) return false;
+  try { return (await (await backend()).keys()).includes(matchKey(matchId)); } catch { return false; }
+}
+
 // ── Plain records, for the stores built on this backend ──────────────
 //
 // A thin door onto the same backend (IndexedDB, then localStorage, then

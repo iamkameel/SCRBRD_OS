@@ -74,7 +74,7 @@ const btn = () => ({ minHeight: "44px", padding: `0 ${T.space.lg}`, background: 
 /** A panel's line when its read did not answer: said, never a blank that reads as "nothing". */
 const Unread = ({ what }) => <p style={quiet()}>{what} could not be read just now. That is not the same as there being nothing.</p>;
 
-export function CoachTab({ match, role, innings, result, commentary, overs, phone, staff, terms, shownRuns, venueLine, eventCount, initialDrawer = false,
+export function CoachTab({ match, role, innings, result, commentary, overs, phone, staff, terms, shownRuns, venueLine, eventCount, initialDrawer = false, weather = null,
   head = null, okAt = null, log = null, setTab = null, onNav = null, onNavProfile = null, onOpenDuties = null }) {
   const gate = staff;
   const panels = gate.panels;
@@ -162,8 +162,9 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: T.space.lg, alignItems: "start" }}>
         {!loading && !played && (
           <>
-            {panels.day && <TheDay match={match} gate={gate} reads={reads} terms={termsNow} sheet={sheet} sides={sides}/>}
+            {/* Flow A (slice 10): the side first, its answers' count leading it, then the day. */}
             {panels.side && <TheSide reads={reads} gate={gate} onPick={mayPick ? () => setPicking(true) : null} opener={picker}/>}
+            {panels.day && <TheDay match={match} gate={gate} reads={reads} terms={termsNow} sheet={sheet} headerWeather={!!weather}/>}
             {panels.load && <TheWeek reads={reads} sheet={sheet}/>}
             {panels.opposition && reads.opposition && (
               <Part label={`${reads.opposition.theirLabel ?? "The opposition"} · dossier`} testid="coach-opposition">
@@ -200,7 +201,12 @@ export function CoachTab({ match, role, innings, result, commentary, overs, phon
 
 // ── P1 · The day ───────────────────────────────────────
 
-function TheDay({ match, gate, reads, terms, sheet, sides }) {
+/**
+ * Only what the page's header does not say (slice 10, Flow A): the header names
+ * the sides, the ground, the start and, where it has it, the weather, so the
+ * day says the conditions, the band, the pitch, the umpires and the bus.
+ */
+function TheDay({ match, gate, reads, terms, sheet, headerWeather }) {
   const p = gate.panels;
   const words = [match.overs ? `${match.overs} overs` : null, ...conditionsWords(terms)].filter(Boolean);
   const band = bandOfTeam(gate.teamCode);
@@ -214,12 +220,11 @@ function TheDay({ match, gate, reads, terms, sheet, sides }) {
   const pitch = pitchWords(reads.pitch);
   const weather = weatherWords(reads.weather);
   return (
-    <Part label={`The day · ${humanDateTime(match.date, match.time)}`} testid="coach-day">
-      <p style={body()}>{sides.home.full} v {sides.away.full}</p>
+    <Part label="The day" testid="coach-day">
       {words.length > 0 && <p data-testid="coach-day-conditions" style={body()}>{words.join(" · ")}</p>}
       {band_ && <p data-testid="coach-day-band" style={body()}>{band_}{directive?.clauseCode ? ` · ${directive.clauseCode}` : ""}</p>}
       {pitch && <p style={quiet()}>Pitch: {pitch}</p>}
-      {weather && <p style={quiet()}>Weather: {weather}{observedStamp(reads.weather, { status: match.status }) ? ` · ${observedStamp(reads.weather, { status: match.status }).text}` : ""}</p>}
+      {weather && !headerWeather && <p style={quiet()}>Weather: {weather}{observedStamp(reads.weather, { status: match.status }) ? ` · ${observedStamp(reads.weather, { status: match.status }).text}` : ""}</p>}
       <p style={quiet()}>Umpires: {umpires.length ? umpires.join(", ") : "none on record"}{scorerOnRecord ? "" : " · no scorer on record"}</p>
       {p.bus && (reads.trips == null ? <Unread what="The bus"/>
         : bus ? (
@@ -244,6 +249,8 @@ function TheSide({ reads, gate, onPick, opener }) {
   const rows = sideRows(reads.readiness, gate.end, gate.panels);
   return (
     <Part label="The side" testid="coach-side">
+      {/* §2.3: a list of answers leads with its count. */}
+      {rows.length > 0 && <p data-testid="coach-side-foot" style={{ ...body(), fontWeight: 600 }}>{sideFoot(rows)}</p>}
       {rows.length === 0 ? <p style={quiet()}>No sheet has been published for this fixture.</p> : (
         <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "2px" }}>
           {rows.map((r) => (
@@ -257,7 +264,6 @@ function TheSide({ reads, gate, onPick, opener }) {
           ))}
         </ol>
       )}
-      <p data-testid="coach-side-foot" style={quiet()}>{sideFoot(rows)}</p>
       {pickButton}
     </Part>
   );
