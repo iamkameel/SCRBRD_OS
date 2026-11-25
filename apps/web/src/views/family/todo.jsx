@@ -173,7 +173,9 @@ export function TodoCard({ todo, matches, onOpen, lead = null, onDayRetry, onDoo
     </OpenRow>
   );
   // Its one ask is the lead's, said above: the card would only count it, so it is not drawn (§2.4).
-  const onlyTheLead = t.held && !t.reading && t.rows.length === 0 && !t.later.line && t.unread === 0;
+  // Nor is it drawn while its reads are still out: a "Reading…" card that then holds nothing but the
+  // lead's ask would flash and go. It appears once the reads say there is something of its own to show.
+  const onlyTheLead = t.reading || (t.held && t.rows.length === 0 && !t.later.line && t.unread === 0);
   const shown = showMore ? t.rows : t.rows.slice(0, SHOWN_ROWS);
   const more = t.rows.length - SHOWN_ROWS;
   return (
