@@ -216,6 +216,61 @@ try {
     ok("...and needs a fixture named", [400, 404, 500].includes((await api("/api/read/match_duties", { token: head })).status));
   }
 
+  // The scorer can be a pupil (redesign slice 13, the other-phone screen).
+  // The roster's scoring row names the holder only to a reader at the
+  // holder's school, a pupil in initials and an adult in full, and to the
+  // holder himself; anybody else reads no name and the screen says
+  // "Someone else" (docs/policy/PUBLIC_DATA.md rule 4).
+  group("The scorer's name: initials for a pupil, and no name outside his school");
+  {
+    const WES = "22222222-2222-2222-2222-222222222222";
+    const wesAdmin = await login("registrar.wes@example.invalid");   // schooladmin at Westville: user.read there
+    const pupil = await login("spectator@example.invalid");          // a pupil on Hilton's 1st XI
+    const scorer = await login("scorer@example.invalid");            // A Wessels, Hilton's scorer
+    const duties = async (token, matchId) => (await api(`/api/read/match_duties?matchId=${matchId}`, { token })).body?.rows ?? [];
+    const named = async (token, matchId) => (await duties(token, matchId)).filter((r) => r.duty === "scoring").map((r) => r.who);
+    const fixture = (await q(
+      `insert into match (school_id, team_code, away_school_id, away_team_code, opponent, starts_at, format, overs, status)
+       values ($1,'1XI',$2,'1XI','Westville Boys'' High 1XI', now() + interval '4 days','T20',20,'scheduled') returning id`,
+      [HIL, WES]))[0].id;
+    const [{ id: kid }] = await q(
+      `insert into app_user (school_id, email, name, role) values ($1, 'smoke.pupilscorer@example.invalid', 'Tiaan Bekker', 'player') returning id`, [HIL]);
+    const [{ id: grown }] = await q(
+      `insert into app_user (school_id, email, name, role) values ($1, 'smoke.adultscorer@example.invalid', 'Andries Wessels', 'scorer') returning id`, [HIL]);
+    const [{ id: wessels }] = await q(`select id from app_user where email = 'scorer@example.invalid'`);
+    const hold = (who) => q(
+      `insert into scoring_session (match_id, school_id, state, holder_user_id, holder_device, lease_until)
+       values ($1, $2, 'active', $3, 'smoke-other-phone', now() + interval '10 minutes')
+       on conflict (match_id) do update set holder_user_id = excluded.holder_user_id, state = 'active', lease_until = excluded.lease_until`,
+      [fixture, HIL, who]);
+
+    await hold(kid);
+    ok("a pupil holds the scoring: his school's director reads him in initials, never his full name",
+       (await named(head, fixture)).join() === "T Bekker", JSON.stringify(await named(head, fixture)));
+    ok("...his side's coach reads the same initials, or no name at all",
+       (await named(coach, fixture)).every((w) => w === "T Bekker" || w === ""), JSON.stringify(await named(coach, fixture)));
+    const wesRows = await duties(wesAdmin, fixture);
+    ok("the other school (Westville's administrator, user.read at Westville) reads no name of him",
+       wesRows.filter((r) => r.duty === "scoring").every((r) => r.who === "") && !JSON.stringify(wesRows).includes("Bekker"), JSON.stringify(wesRows));
+    for (const [who, token] of [["a Hilton guardian", parent], ["a Hilton pupil", pupil]]) {
+      const rows = await duties(token, fixture);
+      ok(`${who} reads no name of him: the screen says "Someone else"`,
+         rows.filter((r) => r.duty === "scoring").every((r) => r.who === "") && !JSON.stringify(rows).includes("Bekker"), JSON.stringify(rows));
+    }
+
+    await hold(grown);
+    ok("an adult holds it: his school's director reads his name in full, as before",
+       (await named(head, fixture)).join() === "Andries Wessels", JSON.stringify(await named(head, fixture)));
+    ok("...and the other school still reads no name",
+       (await named(wesAdmin, fixture)).every((w) => w === ""), JSON.stringify(await named(wesAdmin, fixture)));
+
+    await hold(wessels);
+    ok("the holder reads his own name on his own row", (await named(scorer, fixture)).join() === "A Wessels", JSON.stringify(await named(scorer, fixture)));
+
+    await q(`delete from scoring_session where match_id = $1`, [fixture]);
+    await q(`delete from app_user where id = any($1::uuid[])`, [[kid, grown]]).catch(() => {});
+  }
+
   // SCRBRD-144 (Kameel, 13 Nov 2026: "Anything that's Switched Off for a
   // user should be hidden for that user but still record data"). db/156 hid
   // the umpires on the overlay; signed in, Westville's administrator still

@@ -90,6 +90,20 @@ group("A. PII/clinical resources read the MASKED views (not base tables)");
   ok("...so nothing it returns is logged as a clinical read", !Object.hasOwn(RESTRICTED_FIELDS, "injury_status"));
 }
 
+group("A. match_duties names the scorer only at his school, a pupil in initials (the other-phone screen)");
+{
+  const t = READ_QUERIES.match_duties.text;
+  const arm = t.slice(t.indexOf("select 'scoring'"), t.indexOf("from scoring_session"));
+  ok("the scoring row's name is decided in the read, never a bare u.name", !/coalesce\(u\.name/.test(arm) && /when u\.id = app_user_id\(\) then u\.name/.test(arm));
+  ok("...none for a reader who may not read the holder's account at his school",
+     /when not app_can\('user\.read', u\.school_id, null::text, u\.id,[^)]*\) then null/.test(arm.replace(/\s+/g, " ")));
+  ok("...a pupil (a player account, or a player or selfaccess role) in initials",
+     /u\.player_id is not null or u\.role in \('player', 'selfaccess'\)/.test(arm) && /broadcast_name\(btrim\(u\.name\), 'initials'\)/.test(arm));
+  ok("...and the checks come in that order: himself, his school, a pupil, then an adult in full",
+     arm.indexOf("app_user_id()") < arm.indexOf("'user.read'") && arm.indexOf("'user.read'") < arm.indexOf("u.player_id")
+     && arm.indexOf("u.player_id") < arm.lastIndexOf("else u.name end"));
+}
+
 group("A. The handler does no RBAC of its own");
 {
   // Same query text regardless of role — the DB decides what comes back.
