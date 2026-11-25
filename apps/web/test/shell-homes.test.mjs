@@ -91,15 +91,19 @@ group("Needs you lands on the fix");
      eq(coachRows.map((r) => [r.id, r.where]), [["s7", "U15A v Kearsney"], ["s6", "U14B v Michaelhouse"]]));
   // Kameel, 25 Nov: S10 is the organiser's; his own side's rows name the boy from the queue's own readiness read.
   const named = { offices: [], results: null, potm: null, readsOf: (/** @type {string} */ id) => (id === "m1" ? { readiness: [
-    { playerId: "t", name: "T Bekker", team: "U15A", side: "home", selected: true, clinicallyRestricted: true, declaredStatus: "available", reason: "A family funeral", note: "hamstring" }] } : null),
+    { playerId: "t", name: "T Bekker", team: "U15A", side: "home", selected: true, clinicallyRestricted: true, declaredStatus: "available", reason: "A family funeral", note: "hamstring" },
+    { playerId: "r", name: "R Pillay", team: "U15A", side: "home", selected: true, clinicallyRestricted: false, declaredStatus: "unavailable", reason: "A family funeral", note: "hamstring" }] } : null),
     groups: [{ id: "m1", school: "hil", team: "U15A", end: "home", mayStatus: true, label: "U15A v Kearsney", rows: [
       { id: "m1:S3:restricted", rule: "S3", state: "open", count: 1, fact: "1 restricted boy on the sheet", owner: "the U15A coach or team manager" },
+      { id: "m1:S3:unavailable", rule: "S3", state: "open", count: 1, fact: "1 marked unavailable on the sheet", owner: "the U15A coach or team manager" },
       { id: "m1:S10", rule: "S10", state: "open", count: 1, fact: "No playing conditions are set", owner: "the competition's organiser" }] }] };
   const hisRows = needsYouRows(/** @type {any} */ (named), [{ role: "coach", school: "hil", team: "U15A" }]);
-  ok("his own side: 'T Bekker is restricted', named and marked so; no reason or note; the organiser's row left off",
-     eq(hisRows.map((r) => [r.fact, r.named]), [["T Bekker is restricted", true]]) && !/funeral|hamstring/.test(JSON.stringify(hisRows)));
-  ok("...the director's same rows stay a count, and the organiser's row is off his too",
-     eq(needsYouRows(/** @type {any} */ (named), [{ role: "directorofsport", school: "hil" }]).map((r) => [r.fact, r.named ?? false]), [["1 restricted boy on the sheet", false]]));
+  ok("his own side: 'R Pillay is marked unavailable', named and marked so; the restricted boy a count, unnamed (red-team Q1); no reason or note; the organiser's row left off",
+     eq(hisRows.map((r) => [r.fact, r.named ?? false]), [["1 restricted boy on the sheet", false], ["R Pillay is marked unavailable", true]])
+     && !/Bekker|funeral|hamstring/.test(JSON.stringify(hisRows)));
+  ok("...the director's same rows stay counts, and the organiser's row is off his too",
+     eq(needsYouRows(/** @type {any} */ (named), [{ role: "directorofsport", school: "hil" }]).map((r) => [r.fact, r.named ?? false]),
+        [["1 restricted boy on the sheet", false], ["1 marked unavailable on the sheet", false]]));
   ok("...the director, the office there: the office's row stays on his", eq(needsYouRows(/** @type {any} */ (qs), [{ role: "directorofsport", school: "hil" }]).map((r) => r.id), ["s7", "o4", "s6"]));
 }
 

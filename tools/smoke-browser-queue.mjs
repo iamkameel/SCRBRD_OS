@@ -520,6 +520,20 @@ try {
       ok(`his own side's unanswered row names the boys (${n7} of them), never a count alone: '${s7named?.fact}'`,
          n7 > 0 && (await s.page.locator(`[data-testid="needs-you-row"][data-rule="S7"][data-match="${A}"]`).getAttribute("data-named")) === "true"
          && new RegExp(`^[A-Z][^,]+(, [^,]+)? (and ${n7 > 2 ? `${n7 - 2} more ` : "[^,]+ "})?ha(s|ve) not answered$`).test(s7named?.fact ?? "") && !/^\d/.test(s7named?.fact ?? ""), s7named?.fact);
+      // A restricted boy is a health fact: a count on Today for every reader, his own side's coach too (Kameel, 25 Nov,
+      // red-team Q1); the name is on the side the row opens. "Marked unavailable" is the family's answer, and named.
+      const s3A = (theirs.get(A) ?? []).filter((r) => r.rule === "S3");
+      const restrictedA = s3A.find((r) => /restricted/.test(r.fact));
+      ok("(the stage: A has a restricted boy on the sheet on his To resolve, as a count)", /^\d+ restricted boys? on the sheet$/.test(restrictedA?.fact ?? ""), JSON.stringify(s3A));
+      const s3rows = await s.page.$$eval(`[data-testid="needs-you-row"][data-rule="S3"][data-match="${A}"]`, (els) => els.map((e) => ({
+        named: e.getAttribute("data-named"), fact: e.querySelector('[data-testid="needs-you-fact"]')?.textContent ?? "" })));
+      const restrictedRow = s3rows.find((r) => /restricted/.test(r.fact));
+      ok(`his own side's restricted row on Needs you stays a count, never a name: '${restrictedRow?.fact ?? "(not among the first rows)"}'`,
+         s3rows.length > 0 && s3rows.every((r) => !/ (is|are) restricted$/.test(r.fact))
+         && (!restrictedRow || (restrictedRow.fact === restrictedA?.fact && restrictedRow.named !== "true")), JSON.stringify(s3rows));
+      const outRow = s3rows.find((r) => /marked unavailable/.test(r.fact));
+      ok(`...and his own side's 'marked unavailable' row names the boy: '${outRow?.fact ?? "(not among the first rows)"}'`,
+         !outRow || (outRow.named === "true" && /^[A-Z][^\d]* (is|are) marked unavailable$/.test(outRow.fact)), JSON.stringify(outRow));
       const s7 = shown.find((r) => r.rule === "S7" && r.match === A);
       ok("each row names its fixture: A's unanswered row says 'QA Kearsney XI'", !!s7 && /QA Kearsney XI/.test(s7.line), JSON.stringify(s7));
       ok("...and its deadline, already past, as 'before the toss (…)', never 'was due' or 'overdue'", /before the toss \((\w{3} )?\d\d:\d\d\)/.test(s7?.line ?? "") && !/was due|overdue/i.test(await inner(s.page, "needs-you")), s7?.line);

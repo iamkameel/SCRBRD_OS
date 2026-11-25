@@ -1,19 +1,24 @@
 /**
- * THE COACH'S OWN SIDE, BY NAME (redesign slice 11 follow-up; Kameel, 25 Nov,
- * as recommended: "His OWN side's rows may name the boy ('T Bekker is
- * restricted · Swap him'), never a diagnosis or reason; school-wide rows, the
- * director's and the office's rows stay counts").
+ * THE COACH'S OWN SIDE, BY NAME (redesign slice 11 follow-up; Kameel, 25 Nov:
+ * "His OWN side's rows may name the boy, never a diagnosis or reason;
+ * school-wide rows, the director's and the office's rows stay counts"; and
+ * later the same day: "name boys only for 'has not answered' and 'marked
+ * unavailable'; restricted stays a count, the name a tap deeper").
  *
  * The queue's rows are counts by design (GA-I09 §5, D8) and lib/queue.js holds
- * no name. This module words one of them again, for one reader only: a coach,
+ * no name. This module words two of them again, for one reader only: a coach,
  * assistant coach or team manager whose own team assignment is that fixture's
- * side. The names come from the readiness read the queue already made for the
- * fixture, the same rows his Coach tab lists by name, through the same sets the
- * queue counts (cockpit.js `unanswered`, `onSheetAs`), so the names and the
- * count are one fact. Nothing is read here, and nothing but `name` is taken
- * from a row: never a reason, a note, an injury's nature or a return date.
- * Where the names do not account for the whole count, the row keeps its count.
- * Pure.
+ * side. Only the family's own facts are named: who has not answered (S7) and
+ * who is marked unavailable (S3). A restricted boy is the injury record's
+ * status tier, a health fact, so that row stays a count ("1 restricted boy on
+ * the sheet") on Today, where anyone beside the phone reads it; its name is on
+ * the side the row opens. The names come from the readiness read the queue
+ * already made for the fixture, the same rows his Coach tab lists by name,
+ * through the same sets the queue counts (cockpit.js `unanswered`, `onSheetAs`),
+ * so the names and the count are one fact. Nothing is read here, and nothing
+ * but `name` is taken from a row: never a reason, a note, an injury's nature
+ * or a return date. Where the names do not account for the whole count, the
+ * row keeps its count. Pure.
  */
 import { TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
 import { onSheetAs, unanswered } from "./cockpit.js";
@@ -42,8 +47,8 @@ export function nameList(names, count) {
 
 /**
  * A row's fact with names, for his own side, or null to keep the count. S7: everyone asked who has not answered;
- * S3: those on the sheet restricted, or marked unavailable. Names only: the reason an absence was given, a note, an
- * injury and a return date are never taken.
+ * S3: those on the sheet marked unavailable. A restricted row is never named here (null: it keeps its count). Names
+ * only: the reason an absence was given, a note, an injury and a return date are never taken.
  * @param {{rule: string, id: string, count: number}} row
  * @param {any[] | null | undefined} readiness  the readiness read the queue made for this fixture
  * @param {{team: string | null, end: "home" | "away", status: boolean}} side
@@ -52,7 +57,6 @@ export function nameList(names, count) {
 export function namedFact(row, readiness, side) {
   if (!readiness) return null;
   const set = row.rule === "S7" ? unanswered(readiness, side.team)
-    : row.id.endsWith(":S3:restricted") ? onSheetAs(readiness, side.end, { status: side.status }, "restricted")
     : row.id.endsWith(":S3:unavailable") ? onSheetAs(readiness, side.end, { status: side.status }, "unavailable")
     : null;
   if (!set || set.length !== row.count || !row.count) return null;
@@ -61,5 +65,5 @@ export function namedFact(row, readiness, side) {
   const who = nameList(names, set.length);
   const one = set.length === 1;
   if (row.rule === "S7") return `${who} ${one ? "has" : "have"} not answered`;
-  return `${who} ${one ? "is" : "are"} ${row.id.endsWith(":restricted") ? "restricted" : "marked unavailable"}`;
+  return `${who} ${one ? "is" : "are"} marked unavailable`;
 }

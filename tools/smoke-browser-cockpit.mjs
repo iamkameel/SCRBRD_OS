@@ -742,6 +742,12 @@ try {
     return !n ? "no needs-you" : !x ? "no next" : (x.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING ? "match first" : "needs-you first"); });
   ok("match day, before the toss: the match card leads his Today, and Needs you is under it", order === "match first", order);
   ok("...the side in a line: ten named, five to chase, two restricted", /10 named/.test(await inner(d.page, "matchday-side")) && /2 restricted/.test(await inner(d.page, "matchday-side")), await inner(d.page, "matchday-side"));
+  // Kameel, 25 Nov (red-team Q1): a restricted boy is a count on Today, his own coach's too; the names are on the side.
+  const nyFacts = await d.page.$$eval('[data-testid="needs-you-row"]', (els) => els.map((e) => ({ rule: e.getAttribute("data-rule"), match: e.getAttribute("data-match"),
+    named: e.getAttribute("data-named"), fact: e.querySelector('[data-testid="needs-you-fact"]')?.textContent ?? "" })));
+  const restrictedNy = nyFacts.filter((r) => /restricted/.test(r.fact));
+  ok(`...on Needs you a restricted boy is a count, never his name (${restrictedNy.map((r) => `'${r.fact}'`).join(", ") || "not among the rows shown"})`,
+     restrictedNy.every((r) => /^\d+ restricted boys? on the sheet$/.test(r.fact) && r.named !== "true") && !nyFacts.some((r) => /Bekker|Pillay/.test(r.fact) && /restricted/.test(r.fact)), JSON.stringify(nyFacts));
   await tid(d.page, "matchday-signals").click({ timeout: 4000 });
   await afterReads(d.page, 3500);
   ok("one tap on the count opens the Coach tab of that fixture, with the drawer open", await tid(d.page, "mc-coach").count() === 1 && await tid(d.page, "signals").count() === 1);

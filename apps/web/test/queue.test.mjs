@@ -509,9 +509,16 @@ group("The coach follow-ups (Kameel, 25 Nov, as recommended)");
   const by = (id) => own.rows.find((r) => r.id.endsWith(id));
   const sideOf = { team: own.team, end: own.end, status: own.mayStatus };
   const said = [namedFact(by(":S3:restricted"), side, sideOf), namedFact(by(":S3:unavailable"), side, sideOf), namedFact(by(":S7"), side, sideOf)];
-  ok("3. his own side's rows name the boy: 'T Bekker is restricted', 'R Pillay is marked unavailable', 'Q One, Q Two and 1 more have not answered'",
-     said.join("|") === "T Bekker is restricted|R Pillay is marked unavailable|Q One, Q Two and 1 more have not answered", said);
-  ok("...NEVER a reason, a note, an injury, its severity or phase, or a return date", said.every((t) => !/funeral|Durban|family|hamstring|physio|strain|moderate|rehab|2026|18 Oct|Oct/i.test(t)), said);
+  ok("3. his own side's rows name the boy for the family's facts: 'R Pillay is marked unavailable', 'Q One, Q Two and 1 more have not answered'",
+     said[1] === "R Pillay is marked unavailable" && said[2] === "Q One, Q Two and 1 more have not answered", said);
+  ok("...a restricted boy is a health fact: never named on Today, his own side included; the row keeps its count (red-team Q1)",
+     said[0] === null && namedFact(by(":S3:restricted"), side, { ...sideOf, status: true }) === null && by(":S3:restricted").fact === "1 restricted boy on the sheet", said[0]);
+  ok("...and a boy both restricted and marked unavailable is never named as unavailable to a reader of the status tier", (() => {
+    const both = [rd("b", { name: "B Both", selected: true, clinicallyRestricted: true, declaredStatus: "unavailable" })];
+    const r = fixtureRows({ match: SAT, gate: gateOf("coach", "U15A"), now: THU, reads: answered({ readiness: both }) }).rows;
+    return !r.some((x) => x.id.endsWith(":S3:unavailable")) && r.filter((x) => x.id.endsWith(":S3:restricted")).every((x) => namedFact(x, both, sideOf) === null);
+  })());
+  ok("...NEVER a reason, a note, an injury, its severity or phase, or a return date", said.filter(Boolean).every((t) => !/funeral|Durban|family|hamstring|physio|strain|moderate|rehab|2026|18 Oct|Oct/i.test(t)), said);
   ok("...the queue's own rows stay counts, with no name in them", own.rows.every((r) => !/Bekker|Pillay|Q One/.test(r.fact)) && by(":S3:restricted").fact === "1 restricted boy on the sheet");
   ok("...a name list: one, two, then 'and N more'", nameList(["A"], 1) === "A" && nameList(["A", "B"], 2) === "A and B" && nameList(["A", "B", "C"], 3) === "A, B and 1 more");
   ok("...a row the names cannot account for, or a missing name, keeps its count", namedFact({ ...by(":S7"), count: 4 }, side, sideOf) === null
@@ -523,6 +530,7 @@ group("The coach follow-ups (Kameel, 25 Nov, as recommended)");
        .every((as) => !ownSide(as, { school: HIL, team: "U15A" })));
   const lib = readFileSync(new URL("../src/lib/queueNames.js", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   ok("...the module takes nothing from a row but its name, and reads nothing", !/\.(reason\w*|note|injury\w*|severity|phase|returnDate|rtw\w*|byWhom|declaredByName)\b/.test(lib) && !/api\(|fetch\(|readLive|useLive/.test(lib));
+  ok("...and has no way to say 'restricted' with a name: the word is not in its code", !/restricted/.test(lib));
 
   // 4 · The bus before the match day: one fact for a lift holder too.
   const bus = answered({ trips: [{ school: HIL, state: "booked", capacity: 4, seatsTaken: 0 }] });

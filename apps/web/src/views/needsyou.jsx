@@ -28,7 +28,9 @@ export const NEEDS_YOU_SHOWN = 3;
  * fixture it is about (`where`), so two squads' rows never read alike. The
  * organiser's rows (S10) are left out the same way for a reader who does not
  * hold the organiser's right (Kameel, 25 Nov). On his own side, a row names
- * the boy (lib/queueNames.js), never a reason; every other row stays a count.
+ * the boy who has not answered or is marked unavailable (lib/queueNames.js),
+ * never a reason; a restricted boy stays a count ("1 restricted boy on the
+ * sheet"), named on the side the row opens; every other row stays a count.
  * @param {ReturnType<typeof useQueue>} q
  * @param {any[] | null} [assignments]  the session's own, to tell who is the office where
  * @returns {(import("../lib/queue.js").Row & {where?: string})[]}
@@ -40,8 +42,9 @@ export function needsYouRows(q, assignments = null) {
     ...(q.results ? open(q.results.rows) : []),
     ...(q.potm ? open(q.potm.rows) : []),
     ...q.groups.flatMap((g) => {
-      // His own side's rows name the boy (Kameel, 25 Nov), from the readiness read the queue made for it; any other
-      // reader's, and any row the names cannot account for, stay counts.
+      // His own side's rows name the boy who has not answered or is marked unavailable (Kameel, 25 Nov), from the
+      // readiness read the queue made for it; a restricted boy, any other reader's rows, and any row the names cannot
+      // account for, stay counts.
       const own = ownSide(assignments, g);
       const readiness = own ? q.readsOf?.(g.id)?.readiness ?? null : null;
       return splitForReader(g, assignments).mine.map((r) => {
@@ -61,7 +64,8 @@ export function needsYouRows(q, assignments = null) {
  * Drawn only for a reader who is offered To resolve (Q17: someone who can act
  * on a row), and only when a row is open or a read failed: nothing waiting
  * draws nothing, and the day sheet below says the day. A school-wide row is a
- * count, never a child's name (GA-I09 §5); the names are a tap deeper.
+ * count, never a child's name (GA-I09 §5), and so is a restricted boy on his
+ * own side; the names are a tap deeper.
  *
  * The set-up list (EXPERIENCE_PASS §1.9, §2.7; Slice 6) leads it for a school with no fixtures yet: drawn from the
  * same queue rows and the rows Today already reads (`matchesAnswered`, `players`), with no read of its own.

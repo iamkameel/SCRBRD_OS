@@ -33,6 +33,12 @@
  * What it never says (design §5): no child's name, no medical, safeguarding or
  * disciplinary detail, and no "done", "ready" or percentage. Counts and the
  * names of reads only; apps/web/test/queue.test.mjs holds the source to it.
+ * One reader hears two rows again by name, and not from this file (Kameel,
+ * 25 Nov): on Today, a coach, assistant coach or team manager of that side is
+ * told who has not answered (S7) and who is marked unavailable (S3), by
+ * lib/queueNames.js, from the readiness read this queue already made. A
+ * restricted boy is a health fact and stays a count for every reader; his
+ * name is on the side the row opens. No other row names anybody.
  *
  * Pure, so it is proved under plain node: no DOM, no database, no clock (the
  * caller passes `now`).
