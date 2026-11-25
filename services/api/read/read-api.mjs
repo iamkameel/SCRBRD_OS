@@ -230,6 +230,26 @@ const BAND_ORDER = (/** @type {string} */ col) =>
   `case ${col} when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`;
 
 /**
+ * AN ANSWER'S OWN WORDS ARE ITS WRITER'S AND THE STAFF'S (Kameel, 25 Nov).
+ * A family's answer about a Saturday carries a reason and a note "for the
+ * coach". Whoever may read the answer reads its status and who gave it; the
+ * reason and the note come back only to the person who wrote them
+ * (declared_by) and to a staff reader of that fixture's answers: one who
+ * holds `availability.read` there on an assignment that names nobody, which
+ * a guardian's and a pupil's own assignments never are (app_can() refuses a
+ * person-scoped role when no person is given). So the boy does not read his
+ * mother's note, the other guardian does not read it, and neither screen can
+ * send it again under another name. Null otherwise, as for an answer with no
+ * note.
+ * @param {string} row      the alias of the answer's row (declared_by)
+ * @param {string} school   SQL for the fixture's school
+ * @param {string} team     SQL for the fixture's team
+ * @param {string} fixture  SQL for the fixture's id
+ */
+const ANSWER_WORDS_SEEN = (row, school, team, fixture) =>
+  `(${row}.declared_by = app_user_id() or app_can('availability.read', ${school}, ${team}, null::uuid, ${fixture}))`;
+
+/**
  * One governed read.
  * @typedef {object} ReadQuery
  * @property {string} text                                   the SQL
@@ -1891,8 +1911,9 @@ export const READ_QUERIES = {
                   -- The fixture as it stands, in the same words, so a screen
                   -- sets "now" beside "was" on one clock.
                   availability_fixture_words(m.starts_at, m.ground_id, m.format, m.overs) as fixture_words,
-                  a.reason_kind,
-                  a.note,
+                  -- Its writer's and the staff's only (ANSWER_WORDS_SEEN).
+                  (case when ${ANSWER_WORDS_SEEN("a", "m.school_id", "m.team_code", "m.id")} then a.reason_kind end) as reason_kind,
+                  (case when ${ANSWER_WORDS_SEEN("a", "m.school_id", "m.team_code", "m.id")} then a.note end)        as note,
                   a.declared_at,
                   -- Who said it. A selector reading "declared by the coach"
                   -- knows to check on a Friday; "declared by the player" they
@@ -1950,7 +1971,10 @@ export const READ_QUERIES = {
    * `was_stale` says the fixture had moved from under it by then.
    */
   availability_history: {
-    text: `select h.player_id, p.full_name, h.status, h.reason_kind, h.note,
+    text: `select h.player_id, p.full_name, h.status,
+                  -- Its writer's and the staff's only, as the live answer's (ANSWER_WORDS_SEEN).
+                  (case when ${ANSWER_WORDS_SEEN("h", "match_school(h.match_id)", "match_team(h.match_id)", "h.match_id")} then h.reason_kind end) as reason_kind,
+                  (case when ${ANSWER_WORDS_SEEN("h", "match_school(h.match_id)", "match_team(h.match_id)", "h.match_id")} then h.note end)        as note,
                   h.declared_at, d.name as declared_by_name, coalesce(d.is_self, false) as self_declared,
                   availability_fixture_words(h.fixture_starts_at, h.fixture_ground_id,
                                              h.fixture_format, h.fixture_overs) as fixture_words,
@@ -2679,7 +2703,8 @@ export const READ_QUERIES = {
                   e.status                    as declared_status,
                   a.status                    as said_status,
                   e.moved                     as needs_reconfirming,
-                  a.reason_kind,
+                  -- Its writer's and the staff's only, as the availability read's (ANSWER_WORDS_SEEN).
+                  (case when ${ANSWER_WORDS_SEEN("a", "m.school_id", "m.team_code", "m.id")} then a.reason_kind end) as reason_kind,
                   coalesce(d.is_self, false)  as self_declared,
                   d.name                      as declared_by_name,
                   -- THE PHYSIO'S HALF. True is restricted, false is clear —
