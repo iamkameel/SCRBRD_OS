@@ -49,6 +49,9 @@ const ALLOWED = [
     why: "the players and guardians imports' `find`: the office matching a file's row to a boy by name, and " +
          "whether his birthday is already on record decides insert or update. As the office, under RLS; the " +
          "value is compared, never returned to a client." },
+  { file: "services/api/io/import-api.mjs", column: "id_number", count: 1,
+    why: "the players import's `idOnFile` (db/172 review S1): asked only for the school office, whether the ID number " +
+         "on a boy's record is another than the file's; one boolean, compared in SQL, never returned to a client." },
 ];
 
 /** @param {string} dir @returns {string[]} */

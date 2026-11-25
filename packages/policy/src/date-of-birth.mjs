@@ -139,7 +139,13 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
   // date changed by anyone but the school office.
   born_correction_is_the_office:
     "Only the school office may change a date of birth already on his record.",
+  id_number_change_is_the_office:
+    "Only the school office may change an ID number already on his record.",
   born_in_future: "A date of birth cannot be in the future.",
+  // Said instead of a disagreement with the ID number on file to a person who
+  // may not read ID numbers (review N1): it tells him neither that one is on
+  // file nor what date it carries.
+  born_needs_the_office: "The school office must record this date of birth.",
 });
 
 /**
@@ -150,4 +156,5 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
 export const BORN_REFUSED_BY_DB = Object.freeze([
   "id_number_disagrees_with_date_of_birth",
   "born_correction_is_the_office",
+  "id_number_change_is_the_office",
 ]);

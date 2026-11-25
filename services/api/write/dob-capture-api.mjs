@@ -45,7 +45,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export function bornRefusal(e) {
   if (!e || !BORN_REFUSED_BY_DB.includes(e.message)) return null;
-  return { status: e.message === "born_correction_is_the_office" ? 403 : 422, error: e.message };
+  return { status: e.message.endsWith("_is_the_office") ? 403 : 422, error: e.message };
 }
 
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
@@ -53,6 +53,7 @@ export function dobCaptureRoutes({ pool, secret }) {
   return {
     // POST /api/players/:id/date-of-birth { born?, idNumber? }
     capture: async (req, res) => {
+      let office = false;
       try {
         const b = req.body || {};
         const dob = resolveBirthDate({ born: b.born, idNumber: b.idNumber });
@@ -60,6 +61,12 @@ export function dobCaptureRoutes({ pool, secret }) {
         const { born, idNumber } = dob;
 
         await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          // Asked before the write, while the transaction can still answer:
+          // a refusal against the ID number on file is said in those words to
+          // the office alone (review N1).
+          office = (await client.query(
+            `select player_born_office(m.school_id) as office from player_masked m where m.id = $1`,
+            [req.params.id])).rows[0]?.office === true;
           const { rows } = await client.query(
             `update player set born = $2, id_number = coalesce(id_number, $3)
               where id = $1 and born is null
@@ -76,6 +83,9 @@ export function dobCaptureRoutes({ pool, secret }) {
         });
       } catch (/** @type {any} */ e) {
         const named = bornRefusal(e);
+        if (named?.error === "id_number_disagrees_with_date_of_birth" && !office) {
+          return res.status(422).json({ error: "born_needs_the_office" });
+        }
         if (named) return res.status(named.status).json({ error: named.error });
         if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
         const status = e.code === "42501" ? 403 : (e.status || 500);

@@ -45,13 +45,17 @@
 --       refused (check_violation, id_number_disagrees_with_date_of_birth)
 --       for every write made by or for a signed-in person: the application
 --       role, and every door (a definer, as the owner, under the caller's
---       session). The one write it lets through is the owner's own with no
---       one signed in (the SQL Editor, a seed, a walk's fixture), which can
---       switch any trigger off in any case; that write is still recorded, as
+--       session). The one write it lets through is the owner's own, logged
+--       in as the owner, with no one signed in (the SQL Editor, a seed, a
+--       walk's fixture); a door the application calls is never it. The owner
+--       can switch any trigger off in any case; that write is still recorded, as
 --       'owner', so it is answerable. And a recorded date changed by
---       the application role directly (not through a door) is the office's
---       alone (insufficient_privilege, born_correction_is_the_office): the
---       import's UPDATE is such a write.
+--       the application (logged in as scrbrd_app, directly or through any
+--       door: session_user, which no definer changes) is the office's alone
+--       (insufficient_privilege, born_correction_is_the_office), and so is a
+--       change to an ID number already on file (id_number_change_is_the_office;
+--       not recorded: whether ID changes are recorded is Kameel's open
+--       question). The import's UPDATE is such a write.
 --   + trigger player_born_changes_are_recorded (AFTER UPDATE OF born): the
 --       row above, whenever born changes. No path writes born without it.
 --   + player_born_office(school)  the school office: pupil_claim_office()
@@ -189,11 +193,16 @@ REVOKE ALL ON player_born_change FROM scrbrd_app;
 -- scrbrd_app writing directly (the capture route, the import) meets the
 -- office rule; a door (a definer, running as the owner) has asked its own.
 CREATE OR REPLACE FUNCTION player_born_checked() RETURNS trigger AS $$
-DECLARE v_from_id date;
+DECLARE
+  v_from_id date;
+  -- The application wrote this: as itself, or through a door (a definer runs
+  -- as the owner, so current_user alone would not say; the login role does,
+  -- and no definer changes it).
+  v_app boolean := current_user = 'scrbrd_app' OR session_user = 'scrbrd_app';
 BEGIN
   -- The owner's own write, no one signed in, is the one let through (above).
   IF NEW.born IS NOT NULL AND NEW.id_number IS NOT NULL
-     AND (app_user_id() IS NOT NULL OR current_user = 'scrbrd_app')
+     AND (app_user_id() IS NOT NULL OR v_app)
      AND (TG_OP = 'INSERT' OR NEW.born IS DISTINCT FROM OLD.born OR NEW.id_number IS DISTINCT FROM OLD.id_number) THEN
     v_from_id := sa_id_born(NEW.id_number);
     -- An unreadable number carries no date to disagree with (the JS's
@@ -204,11 +213,23 @@ BEGIN
               HINT = 'The ID number carries a different date of birth to the one given.';
     END IF;
   END IF;
+  -- The office rule, for the date and for the number: the school whose
+  -- record it was (OLD) decides.
   IF TG_OP = 'UPDATE' AND OLD.born IS NOT NULL AND NEW.born IS DISTINCT FROM OLD.born
-     AND current_user = 'scrbrd_app' AND NOT player_born_office(NEW.school_id) THEN
+     AND v_app AND NOT player_born_office(OLD.school_id) THEN
     RAISE EXCEPTION 'born_correction_is_the_office'
       USING ERRCODE = 'insufficient_privilege',
             HINT = 'Only the school office may change a date of birth already on record.';
+  END IF;
+  -- An ID number on file is the office's to change (review S1): otherwise a
+  -- file could carry a new number and a date that agrees with it, and the
+  -- number on his record would no longer decide anything. Not recorded: a
+  -- record of ID number changes is Kameel's open question.
+  IF TG_OP = 'UPDATE' AND OLD.id_number IS NOT NULL AND NEW.id_number IS DISTINCT FROM OLD.id_number
+     AND v_app AND NOT player_born_office(OLD.school_id) THEN
+    RAISE EXCEPTION 'id_number_change_is_the_office'
+      USING ERRCODE = 'insufficient_privilege',
+            HINT = 'Only the school office may change an ID number already on record.';
   END IF;
   RETURN NEW;
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
@@ -253,6 +274,11 @@ RETURNS TABLE (ok boolean, reason text, was date, born date) AS $$
 #variable_conflict use_column
 DECLARE p record; v_from_id date;
 BEGIN
+  -- Who is asking first, and only then the lock (review N2): a caller who
+  -- is not the office holds no row of anybody's.
+  IF NOT player_born_office((SELECT x.school_id FROM player x WHERE x.id = p_player)) THEN
+    RETURN QUERY SELECT false, 'not_permitted'::text, NULL::date, NULL::date; RETURN;
+  END IF;
   SELECT x.id, x.school_id, x.born, x.id_number INTO p FROM player x WHERE x.id = p_player FOR UPDATE;
   IF NOT FOUND OR NOT player_born_office(p.school_id) THEN
     RETURN QUERY SELECT false, 'not_permitted'::text, NULL::date, NULL::date; RETURN;

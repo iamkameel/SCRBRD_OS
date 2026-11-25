@@ -15660,6 +15660,9 @@ BEGIN
   BEGIN
     IF p_what = 'born' THEN UPDATE player SET born = p_value::date WHERE id = p_player;
     ELSIF p_what = 'capture' THEN UPDATE player SET born = p_value::date WHERE id = p_player AND born IS NULL;
+    -- The import's own shape: a date and a number in one statement ("date|number").
+    ELSIF p_what = 'both' THEN UPDATE player SET born = coalesce(split_part(p_value, '|', 1)::date, born),
+                                                 id_number = coalesce(split_part(p_value, '|', 2), id_number) WHERE id = p_player;
     ELSE UPDATE player SET id_number = p_value WHERE id = p_player; END IF;
     GET DIAGNOSTICS n = ROW_COUNT;
   EXCEPTION WHEN check_violation OR insufficient_privilege THEN
@@ -15670,6 +15673,26 @@ BEGIN
   PERFORM set_config('app.born_how', '', true);
   RETURN n || ' rows';
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+
+-- A door of the kind db/172's review (S2) feared: a definer that writes born
+-- or id_number for whoever calls it, asking nothing. Throwaway, here only:
+-- "n rows" or "sqlstate:message".
+CREATE OR REPLACE FUNCTION _v172_door(p_player uuid, p_what text, p_value text) RETURNS text AS $$
+DECLARE n int; st text; msg text;
+BEGIN
+  IF p_what = 'born' THEN UPDATE player SET born = p_value::date WHERE id = p_player;
+  ELSE UPDATE player SET id_number = p_value WHERE id = p_player; END IF;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n || ' rows';
+EXCEPTION WHEN check_violation OR insufficient_privilege THEN
+  GET STACKED DIAGNOSTICS st = RETURNED_SQLSTATE, msg = MESSAGE_TEXT;
+  RETURN st || ':' || msg;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Is this file's own login a superuser (a local cluster, CI)? Only then can a
+-- case log in as the application for a moment (SET SESSION AUTHORIZATION).
+CREATE OR REPLACE FUNCTION _v172_super() RETURNS boolean AS $$
+  SELECT rolsuper FROM pg_roles WHERE rolname = session_user
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 -- One case of §147, run as the caller (scrbrd_app, under each person's
 -- session in turn). Raises on its first failure.
@@ -15686,7 +15709,7 @@ DECLARE
   B   date := make_date(extract(year FROM sa_today())::int - 14, 5, 17);
   B2  date := make_date(extract(year FROM sa_today())::int - 14, 5, 18);
   IDN text := to_char(make_date(extract(year FROM sa_today())::int - 14, 5, 17), 'YYMMDD') || '5172084';
-  BOY uuid; v text; n int; ok_ boolean; why text; r record; SUP uuid;
+  BOY uuid; BOY2 uuid; v text; v2 text; v3 text; v4 text; v5 text; n int; ok_ boolean; why text; r record; SUP uuid;
 BEGIN
   PERFORM set_config('app.user_id', '', true);
 
@@ -15816,7 +15839,7 @@ BEGIN
     SUP := _v168_support('v172');
     PERFORM _as(SUP);
     v := _v172_write(BOY, 'born', B2::text);
-    PERFORM _assert(v = '42501:born_correction_is_the_office' OR v = '0 rows', format('§147 (office): a support hour: %s', v));
+    PERFORM _assert(v = '42501:born_correction_is_the_office', format('§147 (office): a support hour: %s', v));
 
   ELSIF p_case = 'door' THEN
     -- (door) player_born_correct(): the office's, at his school only, with
@@ -15912,6 +15935,70 @@ BEGIN
     SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, B) x;
     PERFORM _assert(ok_, format('§147 (old): the number''s own date was refused: %s', why));
     PERFORM _assert(_v172_now(BOY) = B || '|' || IDN, format('§147 (old): his record is %s', _v172_now(BOY)));
+
+  ELSIF p_case = 'idswap' THEN
+    -- (idswap) An ID number on file is the office's to change (review S1):
+    -- the director of sport, who may update the row and may not read the
+    -- number, is refused another number, even one that agrees with the date;
+    -- and on a boy with no date, the date and a forged agreeing number in
+    -- one statement (the import's shape) are refused, the date not taken.
+    BOY := _v172_boy('idswap', B, IDN);
+    PERFORM _as(DOS);
+    v := _v172_write(BOY, 'id_number', to_char(B, 'YYMMDD') || '5999081');
+    PERFORM _assert(v = '42501:id_number_change_is_the_office', format('§147 (idswap): the director''s number: %s', v));
+    PERFORM _as(COACH);
+    v := _v172_write(BOY, 'id_number', to_char(B, 'YYMMDD') || '5999081');
+    PERFORM _assert(v = '0 rows', format('§147 (idswap): a coach reached the row: %s', v));
+    PERFORM _assert(_v172_now(BOY) = B || '|' || IDN, format('§147 (idswap): his number moved: %s', _v172_now(BOY)));
+    PERFORM _as(REG);
+    v := _v172_write(BOY, 'id_number', to_char(B, 'YYMMDD') || '5999081');
+    PERFORM _assert(v = '1 rows', format('§147 (idswap): the office could not change it: %s', v));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _born_constraint(false);
+    BOY := _v172_boy('idswap legacy', NULL, IDN);
+    PERFORM _born_constraint(true);
+    PERFORM _as(DOS);
+    v := _v172_write(BOY, 'both', (sa_today() - interval '19 years')::date || '|' || to_char((sa_today() - interval '19 years')::date, 'YYMMDD') || '5000080', 'import');
+    PERFORM _assert(v = '42501:id_number_change_is_the_office', format('§147 (idswap): a date and a forged number in one: %s', v));
+    PERFORM _assert(_v172_now(BOY) = '-|' || IDN AND _v172_rows(BOY) = '', format('§147 (idswap): the forged date landed: %s / %s', _v172_now(BOY), _v172_rows(BOY)));
+    -- A number where there was none is a fill, the director's as before.
+    PERFORM set_config('app.user_id', '', true);
+    BOY := _v172_boy('idswap fill', B, NULL);
+    PERFORM _as(DOS);
+    v := _v172_write(BOY, 'id_number', IDN);
+    PERFORM _assert(v = '1 rows', format('§147 (idswap): filling a missing number: %s', v));
+
+  ELSIF p_case = 'definer' THEN
+    -- (definer) A door the application calls is not the owner (review S2):
+    -- logged in as scrbrd_app, a definer that writes born for anyone, with no
+    -- one signed in or as the director of sport, meets the ID check, the
+    -- office rule and the ID number rule; the office through it passes.
+    -- Needs a superuser login to log in as the application for a moment;
+    -- elsewhere (the managed host) it is skipped and says so.
+    IF NOT _v172_super() THEN
+      RAISE NOTICE '§147 (definer): skipped, this login cannot log in as the application';
+      RETURN;
+    END IF;
+    BOY := _v172_boy('definer', B, IDN);
+    BOY2 := _v172_boy('definer noid', B, NULL);
+    PERFORM set_config('app.user_id', '', true);
+    SET SESSION AUTHORIZATION scrbrd_app;
+    v := _v172_door(BOY, 'born', B2::text);
+    v2 := _v172_door(BOY2, 'born', B2::text);
+    PERFORM _as(DOS);
+    v3 := _v172_door(BOY, 'id_number', to_char(B, 'YYMMDD') || '5999081');
+    v4 := _v172_door(BOY2, 'born', B2::text);
+    PERFORM _as(REG);
+    v5 := _v172_door(BOY2, 'born', B2::text);
+    PERFORM set_config('app.user_id', '', true);
+    RESET SESSION AUTHORIZATION;
+    SET ROLE scrbrd_app;
+    PERFORM _assert(v = '23514:id_number_disagrees_with_date_of_birth', format('§147 (definer): no one signed in, against his number: %s', v));
+    PERFORM _assert(v2 = '42501:born_correction_is_the_office', format('§147 (definer): no one signed in, a recorded date: %s', v2));
+    PERFORM _assert(v3 = '42501:id_number_change_is_the_office', format('§147 (definer): the director, his number: %s', v3));
+    PERFORM _assert(v4 = '42501:born_correction_is_the_office', format('§147 (definer): the director, a recorded date: %s', v4));
+    PERFORM _assert(v5 = '1 rows', format('§147 (definer): the office through the door: %s', v5));
+    PERFORM _assert(_v172_rows(BOY2) = format('%s>%s:correction:%s', B, B2, REG), format('§147 (definer): recorded as %s', _v172_rows(BOY2)));
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The doors and the pure reader are the application's; the two
@@ -47878,6 +47965,10 @@ $m130$;
   --   (owner)    a new ID number is checked too; the owner's own write
   --              (no one signed in) let through and recorded 'owner'
   --   (old)      a row that disagreed before db/172 stands until written
+  --   (idswap)   an ID number on file is the office's to change; a date and
+  --              a forged number in one statement refused (review S1)
+  --   (definer)  logged in as the application, a definer door meets every
+  --              rule (review S2); skipped where the login is no superuser
   --   (grants)   ACLs and definer/invoker of every function
   -- Broken by hand (24 Nov 2026), each went red for its own reason:
   --   the trigger's ID check out              → (insert) red: the door's row
@@ -47894,6 +47985,9 @@ $m130$;
   --   the door's future check out             → (door) red: tomorrow taken
   --   the read's office filter out            → (read) red: the principal
   --   the table granted to the application    → (read) red
+  -- and on the review's fixes (25 Nov 2026):
+  --   the ID number rule out                  → (idswap) red: the director
+  --   the app test by current_user alone      → (definer) red: no one signed in
   PERFORM _v172_case('pin');
   PERFORM _v172_case('insert');
   PERFORM _v172_case('capture');
@@ -47902,6 +47996,8 @@ $m130$;
   PERFORM _v172_case('read');
   PERFORM _v172_case('owner');
   PERFORM _v172_case('old');
+  PERFORM _v172_case('idswap');
+  PERFORM _v172_case('definer');
   PERFORM _v172_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/172 (section 147) ─────────────────────────────────────────
