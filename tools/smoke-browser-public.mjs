@@ -168,6 +168,30 @@ try {
   let body = await text(v.page);
   ok("Summary: nothing the rule forbids", leaks(body).length === 0, leaks(body).join(","));
   if (SHOTS) await v.page.screenshot({ path: `${SHOTS}/public-live-summary.png`, fullPage: true });
+  if (SHOTS) {
+    // Redesign slice 14: the shell's pages at 390 and 1366, both themes (PUBLIC_SHOTS=<dir>).
+    for (const width of [390, 1366]) for (const theme of ["floodlit", "daylight"]) {
+      const shot = async (/** @type {string} */ name, /** @type {string} */ path, /** @type {(p: any) => Promise<void>} */ prep, /** @type {(p: any) => Promise<void>} */ settle) => {
+        const ctx = await browser.newContext({ viewport: { width, height: 844 }, deviceScaleFactor: 1, extraHTTPHeaders: { "x-forwarded-for": `10.84.1.${++ipN}` } });
+        const page = await ctx.newPage();
+        await page.addInitScript((t) => { try { localStorage.setItem("scrbrd:theme", t); } catch { /* none */ } }, theme);
+        await prep(page);
+        await page.goto(`${BASE}${path}`, { waitUntil: "commit" });
+        await settle(page);
+        await page.screenshot({ path: `${SHOTS}/s14-${name}-${width}-${theme}.png`, fullPage: true });
+        await ctx.close();
+      };
+      const none = async () => {};
+      await shot("live", `/live/${pub}`, none, async (p) => { await p.waitForSelector('[data-testid="public-match"]', { timeout: 10000 }); await p.waitForTimeout(600); });
+      await shot("missing", `/live/${MISSING}`, none, async (p) => { await p.waitForSelector('[data-testid="public-header"]', { timeout: 10000 }); await p.waitForTimeout(300); });
+      await shot("loading", `/live/${pub}`, async (p) => { await p.route("**/api/public/matches/**", () => {}); },
+        async (p) => { await p.waitForSelector('[data-testid="public-skeleton"]', { timeout: 10000 }); await p.waitForTimeout(300); });
+      await shot("error", `/live/${pub}`, async (p) => { await p.route("**/api/public/matches/**", (r) => r.abort()); },
+        async (p) => { await p.waitForSelector('[data-testid="public-error"]', { timeout: 10000 }); await p.waitForTimeout(300); });
+      await shot("homewait", "/", async (p) => { await p.route("**/api/public/live", async (r) => { await new Promise((x) => setTimeout(x, 2500)); await r.continue(); }); },
+        async (p) => { await p.waitForSelector('[data-testid="home-waiting"]', { timeout: 10000 }); await p.waitForTimeout(300); });
+    }
+  }
 
   group("2. Names by the rule, tab by tab");
   await tab(v.page, "scorecard");
