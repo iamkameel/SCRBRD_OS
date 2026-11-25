@@ -268,10 +268,10 @@ function LoadPanel({ rows }) {
                     aria-expanded={openClause===r.playerId}
                     onClick={()=>setOpenClause(openClause===r.playerId?null:r.playerId)}
                     title={`${r.clause.code} — ${r.clause.title}`}
-                    // §3.5: 44px to tap (T.floor.target); the clause was a 20px chip in the row.
-                    style={{marginLeft:"6px",display:"inline-flex",alignItems:"center",minHeight:px(T.floor.target),verticalAlign:"middle",padding:"0 8px",borderRadius:D.pill,cursor:"pointer",
-                      border:`1px solid ${D.border}`,background:"transparent",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>
-                    {r.clause.code} · {r.clause.title}</button>}</td>
+                    // §3.5: 44px to tap (T.floor.target). The chip keeps its size; the button around it is the 44px.
+                    style={{marginLeft:"6px",display:"inline-flex",alignItems:"center",minHeight:px(T.floor.target),verticalAlign:"middle",padding:0,cursor:"pointer",
+                      border:"none",background:"transparent",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>
+                    <span style={{padding:"1px 6px",borderRadius:D.pill,border:`1px solid ${D.border}`}}>{r.clause.code} · {r.clause.title}</span></button>}</td>
                 <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.overs7d} · {r.overs28d} · {r.longestSpell7d}</td>
                 <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.sessions7d} ({r.minutes7d}m)</td>
                 <td style={{padding:"6px 8px"}}>
