@@ -81,7 +81,8 @@
 --       gate and a guardian's yes still decide that). md5-guarded, and
 --       checked to be db/168's text with that block and nothing else.
 --   + family_register_withdraw(row), family_register_rows(school, state),
---     family_register_redact_due(school), family_register_redact(school),
+--     family_register_redact_due(school), family_register_redact(school) (a
+--     used row's address cleared on Q3's rule: family_register_due_on()),
 --     family_register_status(school)   the office's.
 --   + family_register_line(request)   the office's line on a request the
 --       list did not link: details_disagree · uploader_lapsed ·
@@ -206,10 +207,18 @@ CREATE TABLE IF NOT EXISTS family_register (
   CONSTRAINT family_register_reason_shape CHECK ((outcome = 'requested') = (outcome_reason IS NOT NULL)),
   CONSTRAINT family_register_open_or_done CHECK (NOT (claimed_at IS NOT NULL AND withdrawn_at IS NOT NULL)),
   CONSTRAINT family_register_withdrawn_names_who CHECK ((withdrawn_at IS NULL) = (withdrawn_by IS NULL)),
-  -- A claimed row is the record of what happened, and is kept as it is.
-  CONSTRAINT family_register_redacted_unclaimed CHECK (redacted_at IS NULL OR claimed_at IS NULL)
+  -- A cleared row has no address; it may have been claimed (Q3, §8's clear).
+  CONSTRAINT family_register_redacted_named CHECK (redacted_at IS NULL OR email LIKE 'redacted+%@redacted.invalid')
 );
--- A paste of an earlier cut of this file made the table without it.
+-- A paste of an earlier cut of this file made the table without these, and
+-- with a rule that kept a claimed row's address for ever (Kameel's Q3, 26 Nov).
+ALTER TABLE family_register DROP CONSTRAINT IF EXISTS family_register_redacted_unclaimed;
+DO $named$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'family_register'::regclass AND conname = 'family_register_redacted_named') THEN
+    ALTER TABLE family_register ADD CONSTRAINT family_register_redacted_named CHECK (redacted_at IS NULL OR email LIKE 'redacted+%@redacted.invalid');
+  END IF;
+END $named$;
 ALTER TABLE family_register ADD COLUMN IF NOT EXISTS granted_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL;
 ALTER TABLE family_register ADD COLUMN IF NOT EXISTS granted_self_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS family_register_one_open
@@ -896,15 +905,56 @@ RETURNS TABLE (id uuid, player_id uuid, player_name text, team_code text, email 
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION family_register_rows(uuid,text) FROM PUBLIC;
 
--- Unclaimed rows ninety days past their date or their withdrawal, not yet
--- cleared (P2-D13). The office's, at that school.
+-- When a row's address is due to be cleared (P2-D13; Kameel's Q3, 26 Nov
+-- 2026), or NULL while it is kept:
+--   unclaimed   90 days after its claim-by date, or after its withdrawal
+--   used up without a link (requested, recognised)
+--               90 days after its request was decided (a request still
+--               waiting keeps it); a row with no request (a pupil's claim)
+--               90 days after it was used
+--   made a link (granted)
+--               while the link lives, and 90 days after it ended
+--   its claimant's account erased
+--               at once: erasure follows the same clear
+CREATE OR REPLACE FUNCTION family_register_due_on(p_row uuid) RETURNS date AS $$
+  SELECT CASE
+           WHEN r.redacted_at IS NOT NULL THEN NULL
+           WHEN r.claimed_at IS NULL THEN
+             CASE WHEN r.withdrawn_at IS NOT NULL THEN sa_date(r.withdrawn_at) + 90 ELSE r.valid_until + 90 END
+           WHEN r.claimed_by IS NULL THEN sa_date(r.claimed_at)
+           WHEN r.outcome = 'granted' THEN
+             CASE WHEN r.granted_assignment IS NOT NULL AND EXISTS (
+                         SELECT 1 FROM role_assignment a
+                          WHERE a.id = r.granted_assignment AND a.active
+                            AND (r.kind = 'pupil' OR EXISTS (
+                                  SELECT 1 FROM assignment_subject g
+                                   WHERE g.assignment_id = a.id AND g.player_id = r.player_id
+                                     AND g.verification_state IN ('pending', 'verified')
+                                     AND (g.valid_until IS NULL OR g.valid_until > sa_today()))))
+                  THEN NULL
+                  ELSE coalesce(
+                    (SELECT max(e.ends_on) FROM guardian_link_ending e
+                      WHERE e.assignment_id = r.granted_assignment AND e.player_id = r.player_id),
+                    (SELECT max(sa_date(e.ended_at)) FROM role_assignment_ending e WHERE e.assignment_id = r.granted_assignment),
+                    (SELECT coalesce(a.valid_until, sa_date(a.revoked_at)) FROM role_assignment a WHERE a.id = r.granted_assignment),
+                    sa_date(r.claimed_at)) + 90 END
+           WHEN r.claimed_request IS NOT NULL THEN
+             (SELECT CASE WHEN q.state = 'pending' THEN NULL ELSE sa_date(coalesce(q.decided_at, r.claimed_at)) + 90 END
+                FROM role_request q WHERE q.id = r.claimed_request)
+           ELSE sa_date(r.claimed_at) + 90
+         END
+    FROM family_register r WHERE r.id = p_row
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_due_on(uuid) FROM PUBLIC;
+
+-- The rows whose address is due to be cleared and is not yet. The office's,
+-- at that school.
 CREATE OR REPLACE FUNCTION family_register_redact_due(p_school uuid)
 RETURNS TABLE (id uuid, player_id uuid, email text, kind text, valid_until date, withdrawn_at timestamptz, due_on date) AS $$
   SELECT r.id, r.player_id, r.email, r.kind, r.valid_until, r.withdrawn_at, d.due_on
     FROM family_register r
-    CROSS JOIN LATERAL (SELECT CASE WHEN r.withdrawn_at IS NOT NULL THEN (sa_date(r.withdrawn_at) + 90)
-                                    ELSE r.valid_until + 90 END AS due_on) d
-   WHERE r.school_id = p_school AND r.claimed_at IS NULL AND r.redacted_at IS NULL
+    CROSS JOIN LATERAL (SELECT family_register_due_on(r.id) AS due_on) d
+   WHERE r.school_id = p_school AND r.redacted_at IS NULL
      AND d.due_on <= sa_today()
      AND app_user_id() IS NOT NULL AND NOT app_pad_scoped() AND pupil_claim_office(p_school)
    ORDER BY d.due_on, r.id
@@ -912,8 +962,8 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg
 REVOKE ALL ON FUNCTION family_register_redact_due(uuid) FROM PUBLIC;
 
 -- "Clear N expired rows": the address goes; the child, the kind, who listed
--- it and the dates stay, so the record of what the office listed survives
--- without the address. A person presses it; nothing runs unattended.
+-- it, what came of it and the dates stay, so the record of what the office
+-- listed survives without the address. A person presses it; nothing runs unattended.
 CREATE OR REPLACE FUNCTION family_register_redact(p_school uuid) RETURNS integer AS $$
 DECLARE v_ids uuid[];
 BEGIN
@@ -1115,7 +1165,8 @@ DECLARE
                              'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                              'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
                              'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
-                             'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)'];
+                             'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)',
+                             'family_register_due_on(uuid)'];
 BEGIN
   FOREACH f IN ARRAY v_doors LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure);
@@ -1215,7 +1266,8 @@ BEGIN
                                'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                                'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
                                'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
-                               'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)']) LOOP
+                               'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)',
+                               'family_register_due_on(uuid)']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/174: % does not pin its search_path', f;

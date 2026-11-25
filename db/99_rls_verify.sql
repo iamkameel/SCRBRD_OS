@@ -18413,6 +18413,25 @@ BEGIN
   UPDATE app_user SET player_id = p_player, school_id = '11111111-1111-1111-1111-111111111111' WHERE id = u;
   RETURN u;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Time passing, as the owner: a request decided, an ending, p_days ago; a
+-- claimant's account erased (what claimed_by's ON DELETE SET NULL leaves).
+CREATE OR REPLACE FUNCTION _v174_decided_ago(p_request uuid, p_days integer) RETURNS void AS $$
+  UPDATE role_request SET decided_at = now() - make_interval(days => p_days) WHERE id = p_request
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v174_ended_ago(p_assignment uuid, p_days integer) RETURNS void AS $$
+  UPDATE role_assignment_ending SET ended_at = now() - make_interval(days => p_days) WHERE assignment_id = p_assignment;
+  UPDATE guardian_link_ending SET ended_at = now() - make_interval(days => p_days), ends_on = sa_today() - p_days
+   WHERE assignment_id = p_assignment;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v174_claimed_ago(p_row uuid, p_days integer) RETURNS void AS $$
+  UPDATE family_register SET claimed_at = now() - make_interval(days => p_days) WHERE id = p_row
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v174_erased(p_row uuid) RETURNS void AS $$
+  UPDATE family_register SET claimed_by = NULL WHERE id = p_row
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v174_email(p_row uuid) RETURNS text AS $$
+  SELECT email FROM family_register WHERE id = p_row
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- One row listed, as p_as (the application under his session): 'ok' and
 -- the row's id in p_row, or the row's problem (or the call's, line 0).
 CREATE OR REPLACE FUNCTION _v174_list(p_as uuid, p_player uuid, p_email text, p_kind text DEFAULT 'guardian',
@@ -19074,6 +19093,62 @@ BEGIN
     SELECT * INTO r FROM _v174_ask(U, 'guardian', _v174_born(BOY));
     PERFORM _assert(r.answer = 'sent' AND _v174_link(U, BOY) = '', format('§149 (mailbox): a pupil''s account was linked as a parent: %s', r.answer));
 
+  ELSIF p_case = 'keep' THEN
+    -- (keep) Q3 (Kameel, 26 Nov 2026): a row used up without a link is
+    -- cleared 90 days after its request is decided (kept while it waits);
+    -- a row that made a link keeps its address while the link lives and for
+    -- 90 days after it ends; an erased claimant's row is cleared at once.
+    BOY := _v174_boy(T || 'a', 14); U := _v174_google(T || '.wrong');
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.wrong@example.invalid'); ROW_ := r.row_id;
+    SELECT * INTO r FROM _v174_ask(U, 'guardian', _v174_born(BOY) + 1); Q := r.req;
+    PERFORM _v174_claimed_ago(ROW_, 200);
+    PERFORM _as(REG);
+    PERFORM family_register_redact(HIL);
+    PERFORM _assert(_v174_email(ROW_) NOT LIKE 'redacted+%', '§149 (keep): a used row was cleared while its request waits');
+    PERFORM _assert(_decide93(Q, false) = 'ok', '§149 (keep): the office could not decline');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v174_decided_ago(Q, 89);
+    PERFORM _as(REG);
+    PERFORM family_register_redact(HIL);
+    PERFORM _assert(_v174_email(ROW_) NOT LIKE 'redacted+%', '§149 (keep): a used row was cleared 89 days after its decision');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v174_decided_ago(Q, 91);
+    PERFORM _as(REG);
+    SELECT count(*) INTO n FROM family_register_redact_due(HIL) d WHERE d.id = ROW_;
+    PERFORM _assert(n = 1, '§149 (keep): a used row 91 days after its decision is not due');
+    PERFORM family_register_redact(HIL);
+    PERFORM _assert(_v174_email(ROW_) LIKE 'redacted+%', '§149 (keep): the clear left a used row''s address');
+    PERFORM set_config('app.user_id', '', true);
+    -- A row that made a link: kept while it lives, however old.
+    BOY2 := _v174_boy(T || 'b', 13); U2 := _v174_google(T || '.mum');
+    SELECT * INTO r FROM _v174_list(REG, BOY2, 'v174.' || T || '.mum@example.invalid'); ROW2 := r.row_id;
+    SELECT * INTO r FROM _v174_ask(U2, 'guardian', _v174_born(BOY2));
+    PERFORM _assert(r.answer = 'linked', '§149 (keep): the list did not link her');
+    PERFORM _v174_claimed_ago(ROW2, 400);
+    PERFORM _as(REG);
+    PERFORM family_register_redact(HIL);
+    PERFORM _assert(_v174_email(ROW2) NOT LIKE 'redacted+%', '§149 (keep): a live link''s row was cleared');
+    Q := (_v92_assignment(U2, 'guardian', HIL)).id;
+    SELECT coalesce(e.reason, 'ok') INTO v FROM role_assignment_end(Q, 'Verify 174: listed in error.') e;
+    PERFORM _assert(v = 'ok', format('§149 (keep): the office could not end the link: %s', v));
+    PERFORM family_register_redact(HIL);
+    PERFORM _assert(_v174_email(ROW2) NOT LIKE 'redacted+%', '§149 (keep): the row was cleared the day its link ended');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v174_ended_ago(Q, 91);
+    PERFORM _as(REG);
+    PERFORM family_register_redact(HIL);
+    PERFORM _assert(_v174_email(ROW2) LIKE 'redacted+%', '§149 (keep): 91 days after its link ended the row keeps its address');
+    PERFORM set_config('app.user_id', '', true);
+    -- Erasure follows the same clear: at once.
+    BOY := _v174_boy(T || 'c', 12); U := _v174_google(T || '.gone');
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.gone@example.invalid'); ROW_ := r.row_id;
+    SELECT * INTO r FROM _v174_ask(U, 'guardian', _v174_born(BOY) + 1);
+    PERFORM _v174_erased(ROW_);
+    PERFORM _as(REG);
+    PERFORM family_register_redact(HIL);
+    PERFORM _assert(_v174_email(ROW_) LIKE 'redacted+%', '§149 (keep): an erased claimant''s row keeps its address');
+    PERFORM set_config('app.user_id', '', true);
+
   ELSIF p_case = 'grants' THEN
     -- (grants) The doors are scrbrd_app's alone; the rest, nobody's.
     FOREACH v IN ARRAY ARRAY['family_register_upload(uuid,jsonb,boolean,uuid[])', 'family_register_claim(uuid,date)',
@@ -19090,7 +19165,8 @@ BEGIN
                              'family_register_try(uuid,uuid,text,date,uuid)', 'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                              'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
                              'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
-                             'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)'] LOOP
+                             'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)',
+                             'family_register_due_on(uuid)'] LOOP
       PERFORM _assert(_v168_acl(v) = '', format('§149 (grants): %s is granted %s', v, _v168_acl(v)));
     END LOOP;
   ELSE
@@ -51708,6 +51784,8 @@ $m130$;
   --              waits for "Confirm his date"
   --   (mailbox)  Q5: one address as a parent's and the pupil's own refused;
   --              a parent's row on a pupil's address here refused
+  --   (keep)     Q3: a used row's address cleared 90 days after its decision,
+  --              a link's 90 days after it ends, an erased claimant's at once
   --   (grants)   ACLs of every function
   -- Broken by hand (25 Nov 2026), each went red for its own reason:
   --   the uploader's authority not asked        → (departed) red: linked
@@ -51725,6 +51803,9 @@ $m130$;
   --   a parent's row on a pupil's address let in     → (mailbox) red
   --   the shared address let in, in the file          → (mailbox) red
   --   the shared address let in, against the list     → (mailbox) red
+  --   a used row due before its request is decided  → (keep) red
+  --   a live link's row due                         → (keep) red
+  --   an erased claimant's row not due at once        → (keep) red
   --   the revoked address let into the upload   → (revoked) red
   --   the requester shown her own line          → (date) red
   --   a pupil under 18 let in on player         → (pupil) red: in
@@ -51749,6 +51830,7 @@ $m130$;
   PERFORM _v174_case('pupilend');
   PERFORM _v174_case('adult');
   PERFORM _v174_case('mailbox');
+  PERFORM _v174_case('keep');
   PERFORM _v174_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/174 (section 149) ─────────────────────────────────────────
