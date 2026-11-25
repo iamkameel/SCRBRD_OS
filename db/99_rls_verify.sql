@@ -17898,6 +17898,18 @@ CREATE OR REPLACE FUNCTION _v174_link_id(p_person uuid, p_player uuid) RETURNS u
    WHERE a.person_id = p_person AND a.role = 'guardian' AND a.active AND g.player_id = p_player
      AND g.verification_state IN ('pending', 'verified') ORDER BY g.created_at DESC LIMIT 1
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A second child on an existing guardian assignment, linked and verified
+-- by hand (the owner writes it, as an office's hand link on the same
+-- assignment would read): no grant door writes one, which is the point.
+CREATE OR REPLACE FUNCTION _v174_second_child(p_assignment uuid, p_player uuid, p_by uuid) RETURNS void AS $$
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, created_by, valid_from)
+  VALUES (p_assignment, p_player, 'parent', 'verified', p_by, now(), 'pending', p_by, sa_today() - 10)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Is this assignment live? (past row security)
+CREATE OR REPLACE FUNCTION _v174_live(p_assignment uuid) RETURNS boolean AS $$
+  SELECT active FROM role_assignment WHERE id = p_assignment
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A person's ended guardian link to a boy, made here (revoked by the office).
 CREATE OR REPLACE FUNCTION _v174_revoked_link(p_person uuid, p_player uuid, p_by uuid) RETURNS void AS $$
 DECLARE a uuid;
@@ -18519,6 +18531,42 @@ BEGIN
     PERFORM _assert(_v174_req(Q) = 'granted:' || REG, format('§149 (revoke): a refused revoke moved the request: %s', _v174_req(Q)));
     PERFORM set_config('app.user_id', '', true);
 
+  ELSIF p_case = 'perchild' THEN
+    -- (perchild) "List-made" is per child. The grant door writes a new
+    -- assignment for every grant, so a list-made assignment holds one child;
+    -- were a second child on it, linked by hand and his only verified link,
+    -- End role and the revoke both keep db/08's rule for him.
+    BOY := _v174_boy(T || 'a', 14); BOY2 := _v174_boy(T || 'b', 12); U := _v174_google(T || '.mum');
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.mum@example.invalid');
+    SELECT * INTO r FROM _v174_ask(U, 'guardian', _v174_born(BOY));
+    PERFORM _assert(r.answer = 'linked', format('§149 (perchild): the list did not link her: %s', r.answer));
+    PERFORM _v174_second_child((_v92_assignment(U, 'guardian', HIL)).id, BOY2, REG);
+    PERFORM _as(REG);
+    SELECT e.reason INTO v FROM role_assignment_end((_v92_assignment(U, 'guardian', HIL)).id, 'Verify 174: listed in error.') e;
+    PERFORM _assert(v = 'last_verified_link', format('§149 (perchild): End role took a hand-made child''s only link with it: %s', coalesce(v, 'ok')));
+    SELECT x.reason INTO v FROM guardian_link_revoke(_v174_link_id(U, BOY2), 'office', 'Verify 174: revoked by hand.') x;
+    PERFORM _assert(v = 'last_verified_link', format('§149 (perchild): the hand-made child''s only link was revoked: %s', coalesce(v, 'ok')));
+    -- The list's own child on it may still be revoked, alone.
+    SELECT coalesce(x.reason, 'ok') INTO v FROM guardian_link_revoke(_v174_link_id(U, BOY), 'office', 'Verify 174: listed in error.') x;
+    PERFORM _assert(v = 'ok', format('§149 (perchild): the list-made child''s link could not be revoked: %s', v));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v174_link(U, BOY2) LIKE 'verified|%', format('§149 (perchild): the hand-made child''s link reads %s', _v174_link(U, BOY2)));
+
+  ELSIF p_case = 'pupilend' THEN
+    -- (pupilend) A boy of 18 the list let in holds `player` and his own
+    -- record's role; End role on the row's `player` ends both.
+    BOY := _v174_boy(T, 18, 60); U := _v174_google(T || '.e');
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.e@example.invalid', 'pupil');
+    SELECT * INTO r FROM _v174_ask(U, 'player', _v174_born(BOY));
+    PERFORM _assert(r.answer = 'in', format('§149 (pupilend): the list did not let him in: %s', r.answer));
+    Q := (_v92_assignment(U, 'selfaccess', HIL)).id;
+    PERFORM _as(REG);
+    SELECT coalesce(e.reason, 'ok') INTO v FROM role_assignment_end((_v92_assignment(U, 'player', HIL)).id, 'Verify 174: listed in error.') e;
+    PERFORM _assert(v = 'ok', format('§149 (pupilend): the office could not end his player role: %s', v));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(Q IS NOT NULL AND NOT _v174_live(Q) AND _v92_held(U, HIL) = '',
+      format('§149 (pupilend): ending player left him holding %s', _v92_held(U, HIL)));
+
   ELSIF p_case = 'grants' THEN
     -- (grants) The doors are scrbrd_app's alone; the rest, nobody's.
     FOREACH v IN ARRAY ARRAY['family_register_upload(uuid,jsonb,boolean,uuid[])', 'family_register_claim(uuid,date)',
@@ -18534,7 +18582,8 @@ BEGIN
                              'family_register_child_words(uuid)', 'family_register_notice(uuid,text,text)',
                              'family_register_try(uuid,uuid,text,date,uuid)', 'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                              'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
-                             'family_register_made(uuid)', 'family_register_requeue(uuid)'] LOOP
+                             'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
+                             'family_register_after_end(uuid,text)'] LOOP
       PERFORM _assert(_v168_acl(v) = '', format('§149 (grants): %s is granted %s', v, _v168_acl(v)));
     END LOOP;
   ELSE
@@ -51111,6 +51160,9 @@ $m130$;
   --              the request back in Requests with its line; a hand-made
   --              only link still refused
   --   (revoke)   the same through guardian_link_revoke()
+  --   (perchild) list-made is per child: a hand-made child on the same
+  --              assignment keeps the rule
+  --   (pupilend) End role on a pupil's list-made player ends his selfaccess too
   --   (grants)   ACLs of every function
   -- Broken by hand (25 Nov 2026), each went red for its own reason:
   --   the uploader's authority not asked        → (departed) red: linked
@@ -51121,6 +51173,8 @@ $m130$;
   --   the row's dates and withdrawal not asked  → (open) red: the claim raised
   --   the typed address matched as well         → (address) red: linked
   --   any provider's sign-in matched, not Google's only → (address) red: linked
+  --   list-made asked of the assignment, not the child → (perchild) red
+  --   a pupil's selfaccess not ended with his player   → (pupilend) red
   --   the revoked address let into the upload   → (revoked) red
   --   the requester shown her own line          → (date) red
   --   a pupil under 18 let in on player         → (pupil) red: in
@@ -51141,6 +51195,8 @@ $m130$;
   PERFORM _v174_case('q11');
   PERFORM _v174_case('end');
   PERFORM _v174_case('revoke');
+  PERFORM _v174_case('perchild');
+  PERFORM _v174_case('pupilend');
   PERFORM _v174_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/174 (section 149) ─────────────────────────────────────────

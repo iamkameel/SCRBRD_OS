@@ -181,6 +181,9 @@ CREATE TABLE IF NOT EXISTS family_register (
   -- The assignment the list's grant wrote (outcome granted): what "a link the
   -- list made" means to End role (§8b), whatever later happens to the request.
   granted_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL,
+  -- A pupil's row: the `selfaccess` assignment the same grant wrote beside
+  -- his `player` one, so ending one ends both (§8b).
+  granted_self_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL,
   -- granted     the link (or a pupil's `player`) was written
   -- recognised  a pupil under 18's claim was recognised; nothing opened
   -- requested   used up, and the office decides (outcome_reason says why)
@@ -200,6 +203,7 @@ CREATE TABLE IF NOT EXISTS family_register (
 );
 -- A paste of an earlier cut of this file made the table without it.
 ALTER TABLE family_register ADD COLUMN IF NOT EXISTS granted_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL;
+ALTER TABLE family_register ADD COLUMN IF NOT EXISTS granted_self_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS family_register_one_open
   ON family_register (school_id, player_id, email, kind)
   WHERE claimed_at IS NULL AND withdrawn_at IS NULL AND redacted_at IS NULL;
@@ -654,7 +658,14 @@ BEGIN
   END IF;
 
   PERFORM family_register_use(t.row_id, v_me, t.identity_id, p_request, 'granted', NULL);
-  UPDATE family_register SET granted_assignment = v_asg WHERE id = t.row_id;
+  UPDATE family_register
+     SET granted_assignment = v_asg,
+         -- A pupil: the door wrote his own record's role beside his `player` one.
+         granted_self_assignment = CASE WHEN v_kind = 'pupil' THEN
+           (SELECT a.id FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+             WHERE a.person_id = v_me AND a.role = 'selfaccess' AND a.active AND g.player_id = t.player_id
+               AND g.relationship = 'self' ORDER BY a.created_at DESC, a.id LIMIT 1) END
+   WHERE id = t.row_id;
   PERFORM family_register_log('family_register.claim', r.school_id, ARRAY[t.row_id]);
   -- The office is told, with End link beside the row on the family list.
   SELECT u.name INTO v_by FROM app_user u WHERE u.id = t.uploaded_by;
@@ -886,104 +897,109 @@ CREATE OR REPLACE FUNCTION family_register_line(p_request uuid) RETURNS text AS 
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
 
--- ── 8b · End role on a link the list made (Kameel, 25 Nov 2026) ────────
+-- ── 8b · Ending a link the list made (Kameel, 25 Nov 2026) ──────────
 -- "Yes: a link the list made may always be ended by the office; the family
 -- goes back to the office's queue to be linked by hand." db/08's last-link
--- rule (role_assignment_end(), db/77 as db/128 left it) keeps every other
--- link: only a guardian assignment the family list itself granted may be
--- ended while it is a minor's last verified link. Ending it reopens the
--- request it was granted on, pending and with no child chosen, so it waits
--- in Requests for a person to decide; the office's line says why
--- (family_register_line() 'link_ended'). Nothing of the date she typed is
+-- rule keeps every other link. "List-made" is asked per child: the row's
+-- child and the assignment its grant wrote (granted_assignment). The grant
+-- door writes a new assignment for every request it grants (db/92, as
+-- db/169 left it: one INSERT INTO role_assignment per grant), and §149
+-- (perchild) holds the rule when another child sits on the same assignment
+-- all the same. Ending a list-made guardian link reopens the request it was
+-- granted on, pending and with no child chosen, so it waits in Requests for
+-- a person to decide; the office's line says why (family_register_line()
+-- 'link_ended'). Ending a pupil's list-made `player` role ends his own
+-- record's role (`selfaccess`) with it. Nothing of the date she typed is
 -- anywhere to bring back.
 
--- Was this guardian assignment granted by the family list?
-CREATE OR REPLACE FUNCTION family_register_made(p_assignment uuid) RETURNS boolean AS $$
-  SELECT p_assignment IS NOT NULL AND EXISTS (
+-- Was this child's link on this assignment granted by the family list?
+CREATE OR REPLACE FUNCTION family_register_made(p_assignment uuid, p_player uuid) RETURNS boolean AS $$
+  SELECT p_assignment IS NOT NULL AND p_player IS NOT NULL AND EXISTS (
     SELECT 1 FROM family_register r
-     WHERE r.outcome = 'granted' AND r.kind = 'guardian' AND r.granted_assignment = p_assignment)
+     WHERE r.outcome = 'granted' AND r.kind = 'guardian'
+       AND r.granted_assignment = p_assignment AND r.player_id = p_player)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- Internal, called by role_assignment_end() after the office ended a link
--- the list made: the request it was granted on goes back to the queue. A
+-- Internal: the requests the list granted on this assignment (for this
+-- child, or for every child when p_player is NULL) go back to the queue. A
 -- request of hers already waiting there is left as it is.
-CREATE OR REPLACE FUNCTION family_register_requeue(p_assignment uuid) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION family_register_requeue(p_assignment uuid, p_player uuid) RETURNS void AS $$
 BEGIN
-  IF NOT family_register_made(p_assignment) THEN RETURN; END IF;
   BEGIN
     UPDATE role_request q
        SET state = 'pending', decided_by = NULL, decided_at = NULL, decided_note = NULL,
            assignment_id = NULL, player_id = NULL
-     WHERE q.id IN (SELECT r.claimed_request FROM family_register r WHERE r.granted_assignment = p_assignment)
+     WHERE q.id IN (SELECT r.claimed_request FROM family_register r
+                     WHERE r.outcome = 'granted' AND r.kind = 'guardian' AND r.granted_assignment = p_assignment
+                       AND (p_player IS NULL OR r.player_id = p_player))
        AND q.assignment_id = p_assignment AND q.role = 'guardian' AND q.state = 'granted';
   EXCEPTION WHEN unique_violation THEN
     NULL;
   END;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- role_assignment_end(), re-emitted from the body in place: its last-link
--- refusal asks family_register_made(), and a guardian ending requeues. Only
--- over db/128's body (its md5) or this file's own; checked in §11 to differ
--- by exactly these two edits.
-DO $end$
-DECLARE
-  v_fn  regprocedure := 'role_assignment_end(uuid,text)'::regprocedure;
-  v_src text := (SELECT prosrc FROM pg_proc WHERE oid = 'role_assignment_end(uuid,text)'::regprocedure);
-  v_def text;
-  v_a   text := '    IF v_player IS NOT NULL THEN' || chr(10) || '      RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
-  v_a2  text := '    -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
-             || '    IF v_player IS NOT NULL AND NOT family_register_made(a.id) THEN' || chr(10)
-             || '      RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
-  v_b   text := '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
-  v_b2  text := '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
-             || '  IF a.role = ''guardian'' THEN PERFORM family_register_requeue(a.id); END IF;' || chr(10)
-             || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
+-- Internal, called by role_assignment_end() once an assignment has ended:
+-- a list-made guardian link's requests requeue; a list-made pupil's own
+-- record's role ends with his `player` role, through the same door, with
+-- the same reason.
+CREATE OR REPLACE FUNCTION family_register_after_end(p_assignment uuid, p_reason text) RETURNS void AS $$
+DECLARE v_self uuid;
 BEGIN
-  IF md5(v_src) = 'd4e6dd793dc2ba3f136f7c543e671f40' THEN RETURN; END IF;   -- a second paste
-  IF md5(v_src) IS DISTINCT FROM '3ea136016eb3607d6c6e07c66c8fefba' THEN
-    RAISE EXCEPTION 'db/174: role_assignment_end() is neither db/128''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v_src);
-  END IF;
-  IF (length(v_src) - length(replace(v_src, v_a, ''))) / length(v_a) <> 1
-     OR (length(v_src) - length(replace(v_src, v_b, ''))) / length(v_b) <> 1 THEN
-    RAISE EXCEPTION 'db/174: role_assignment_end() does not hold its last-link refusal and its last RETURN once each';
-  END IF;
-  v_def := pg_get_functiondef(v_fn);
-  v_def := replace(replace(v_def, v_a, v_a2), v_b, v_b2);
-  EXECUTE v_def;
-END $end$;
+  PERFORM family_register_requeue(p_assignment, NULL);
+  FOR v_self IN
+    SELECT r.granted_self_assignment FROM family_register r JOIN role_assignment a ON a.id = r.granted_self_assignment
+     WHERE r.outcome = 'granted' AND r.kind = 'pupil' AND r.granted_assignment = p_assignment AND a.active
+  LOOP
+    PERFORM 1 FROM role_assignment_end(v_self, p_reason);
+  END LOOP;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- guardian_link_revoke() (db/109, as db/128 left it), the office's other way
--- of ending a link (Kameel, 25 Nov: "the office's revoke is one way of
--- ending it"): the same two edits, from the body in place, over its md5 or
--- this file's own; checked in §11.
-DO $revoke$
-DECLARE
-  v_fn  regprocedure := 'guardian_link_revoke(uuid,text,text)'::regprocedure;
-  v_src text := (SELECT prosrc FROM pg_proc WHERE oid = 'guardian_link_revoke(uuid,text,text)'::regprocedure);
-  v_def text;
-  v_a   text := '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN' || chr(10)
-             || '    RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
-  v_a2  text := '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1' || chr(10)
-             || '     -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
-             || '     AND NOT family_register_made(g.assignment_id) THEN' || chr(10)
-             || '    RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
-  v_b   text := '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
-  v_b2  text := '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
-             || '  PERFORM family_register_requeue(g.assignment_id);' || chr(10)
-             || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
+-- The two doors that end a link, re-emitted from their bodies in place,
+-- each md5-guarded over the body before it (as db/128 and the files after
+-- it left them) or this file's own, and checked in §11 to differ by exactly
+-- these edits. role_assignment_end() (db/77): its last-link query leaves out
+-- a child whose link the list made, and every ending is handed to
+-- family_register_after_end(). guardian_link_revoke() (db/109, the office's
+-- other way of ending a link): its last-link test leaves out a list-made
+-- link, and a revoke requeues that child's request.
+DROP TABLE IF EXISTS _db174_edits;
+CREATE TEMP TABLE _db174_edits (fn text, was_md5 text, mine_md5 text, a text, a2 text, b text, b2 text);
+INSERT INTO _db174_edits VALUES
+  ('role_assignment_end(uuid,text)', '3ea136016eb3607d6c6e07c66c8fefba', 'd168ec7fe5d37f81a751673c7fa83075',
+   '       AND s.is_minor AND s.live_links <= 1' || chr(10) || '     LIMIT 1;',
+   '       AND s.is_minor AND s.live_links <= 1' || chr(10)
+     || '       -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
+     || '       AND NOT family_register_made(a.id, g.player_id)' || chr(10) || '     LIMIT 1;',
+   '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END',
+   '  -- db/174: a list-made link''s family back to Requests; a list-made pupil''s own record with him.' || chr(10)
+     || '  PERFORM family_register_after_end(a.id, v_why);' || chr(10)
+     || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END'),
+  ('guardian_link_revoke(uuid,text,text)', 'a5d51d1d63d288560a5ce9532f64bac8', 'aa238fc2a451a4ad36e36a6c17c87c69',
+   '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN',
+   '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1' || chr(10)
+     || '     -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
+     || '     AND NOT family_register_made(g.assignment_id, g.player_id) THEN',
+   '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END',
+   '  -- db/174: a list-made link''s family back to Requests, to be linked by hand.' || chr(10)
+     || '  PERFORM family_register_requeue(g.assignment_id, g.player_id);' || chr(10)
+     || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END');
+DO $edits$
+DECLARE e record; v_src text; v_def text;
 BEGIN
-  IF md5(v_src) = '4d42aebaf78fa8642295a6c66985e8db' THEN RETURN; END IF;   -- a second paste
-  IF md5(v_src) IS DISTINCT FROM 'a5d51d1d63d288560a5ce9532f64bac8' THEN
-    RAISE EXCEPTION 'db/174: guardian_link_revoke() is neither db/128''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v_src);
-  END IF;
-  IF (length(v_src) - length(replace(v_src, v_a, ''))) / length(v_a) <> 1
-     OR (length(v_src) - length(replace(v_src, v_b, ''))) / length(v_b) <> 1 THEN
-    RAISE EXCEPTION 'db/174: guardian_link_revoke() does not hold its last-link refusal and its last RETURN once each';
-  END IF;
-  v_def := pg_get_functiondef(v_fn);
-  v_def := replace(replace(v_def, v_a, v_a2), v_b, v_b2);
-  EXECUTE v_def;
-END $revoke$;
+  FOR e IN SELECT * FROM _db174_edits LOOP
+    v_src := (SELECT prosrc FROM pg_proc WHERE oid = e.fn::regprocedure);
+    CONTINUE WHEN md5(v_src) = e.mine_md5;   -- a second paste
+    IF md5(v_src) IS DISTINCT FROM e.was_md5 THEN
+      RAISE EXCEPTION 'db/174: % is neither the body before this file nor this file''s (md5 %); factor the version now in place and move its hash', e.fn, md5(v_src);
+    END IF;
+    IF (length(v_src) - length(replace(v_src, e.a, ''))) / length(e.a) <> 1
+       OR (length(v_src) - length(replace(v_src, e.b, ''))) / length(e.b) <> 1 THEN
+      RAISE EXCEPTION 'db/174: % does not hold its last-link test and its last RETURN once each', e.fn;
+    END IF;
+    v_def := replace(replace(pg_get_functiondef(e.fn::regprocedure), e.a, e.a2), e.b, e.b2);
+    EXECUTE v_def;
+  END LOOP;
+END $edits$;
 
 
 -- ── 9 · Q11: a declined pupil claim tells the DSO ──────────────────
@@ -1026,7 +1042,8 @@ DECLARE
                              'family_register_try(uuid,uuid,text,date,uuid)',
                              'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                              'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
-                             'family_register_made(uuid)', 'family_register_requeue(uuid)'];
+                             'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
+                             'family_register_after_end(uuid,text)'];
 BEGIN
   FOREACH f IN ARRAY v_doors LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure);
@@ -1084,29 +1101,14 @@ BEGIN
   IF position(v_block IN v_new) = 0 OR md5(replace(v_new, v_block, '')) IS DISTINCT FROM '026263290b4c3ebba66bbfe172c2a1d3' THEN
     RAISE EXCEPTION 'db/174: pupil_claim_send() is not db/168''s with the family list''s one block';
   END IF;
-  -- role_assignment_end(): db/128's body with §8b's two edits, and nothing else.
-  v_new := (SELECT prosrc FROM pg_proc WHERE oid = 'role_assignment_end(uuid,text)'::regprocedure);
-  IF md5(replace(replace(v_new,
-        '    -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
-        || '    IF v_player IS NOT NULL AND NOT family_register_made(a.id) THEN',
-        '    IF v_player IS NOT NULL THEN'),
-        '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
-        || '  IF a.role = ''guardian'' THEN PERFORM family_register_requeue(a.id); END IF;' || chr(10), ''))
-     IS DISTINCT FROM '3ea136016eb3607d6c6e07c66c8fefba' THEN
-    RAISE EXCEPTION 'db/174: role_assignment_end() is not db/128''s with §8b''s two edits';
-  END IF;
-  -- guardian_link_revoke(): db/128's body with §8b's two edits, and nothing else.
-  v_new := (SELECT prosrc FROM pg_proc WHERE oid = 'guardian_link_revoke(uuid,text,text)'::regprocedure);
-  IF md5(replace(replace(v_new,
-        '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1' || chr(10)
-        || '     -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
-        || '     AND NOT family_register_made(g.assignment_id) THEN',
-        '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN'),
-        '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
-        || '  PERFORM family_register_requeue(g.assignment_id);' || chr(10), ''))
-     IS DISTINCT FROM 'a5d51d1d63d288560a5ce9532f64bac8' THEN
-    RAISE EXCEPTION 'db/174: guardian_link_revoke() is not db/128''s with §8b''s two edits';
-  END IF;
+  -- role_assignment_end() and guardian_link_revoke(): each the body before
+  -- this file with §8b's two edits, and nothing else.
+  FOR f, v, w IN SELECT e.fn, e.was_md5, md5(replace(replace((SELECT prosrc FROM pg_proc WHERE oid = e.fn::regprocedure), e.a2, e.a), e.b2, e.b))
+                   FROM _db174_edits e LOOP
+    IF w IS DISTINCT FROM v THEN
+      RAISE EXCEPTION 'db/174: % is not the body before this file with §8b''s two edits', f;
+    END IF;
+  END LOOP;
   -- ONE DOOR (db/92 §8, "one door, two callers", as it stands now): the
   -- office's decision, the staff register, the pupil's yes (db/169) and
   -- the family list. Nothing else names it.
@@ -1140,7 +1142,8 @@ BEGIN
                                'family_register_try(uuid,uuid,text,date,uuid)',
                                'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                                'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
-                               'family_register_made(uuid)', 'family_register_requeue(uuid)']) LOOP
+                               'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
+                               'family_register_after_end(uuid,text)']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/174: % does not pin its search_path', f;
