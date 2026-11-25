@@ -232,8 +232,16 @@ try {
             + (select count(*) from access_log l where l::text like '%' || $1 || '%')
             + (select count(*) from notification n where n::text like '%' || $1 || '%') as n`, [wrongDay]))[0].n;
     ok("the date he typed is in no row", Number(hits) === 0, hits);
+    // db/08's rule stands: a minor's last verified link is not ended (link the other guardian first).
+    const last = await api(`/api/assignments/${mumAssignment}/end`, { method: "POST", token: office, body: { reason: "Listed in error by the office; checked with the family." } });
+    ok("his only verified link is not ended, said in words (db/08's last-link rule)", last.status === 409 && last.body?.error === "last_verified_link" && inWords(last.body?.detail), last.body);
+    const [dad] = await q(`insert into app_user (school_id, email, name, role) values ($1, $2, 'Walk Other Parent', 'guardian') returning id`, [HIL, addr_("other")]);
+    const [ra] = await q(`insert into role_assignment (person_id, role, school_id, valid_from) values ($1, 'guardian', $2, sa_today() - 10) returning id`, [dad.id, HIL]);
+    const [reg] = await q(`select id from app_user where email = 'registrar@example.invalid'`);
+    await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, created_by, valid_from)
+             values ($1, $2, 'parent', 'verified', $3, now(), 'pending', $3, sa_today() - 10)`, [ra.id, A.id, reg.id]);
     const end = await api(`/api/assignments/${mumAssignment}/end`, { method: "POST", token: office, body: { reason: "Listed in error by the office; checked with the family." } });
-    ok("the office ends the link the list made", end.status === 200 && end.body?.ended === true, end.body);
+    ok("with his other parent linked, the office ends the link the list made", end.status === 200 && end.body?.ended === true, end.body);
     const read = await api(`/api/family-list/${HIL}?state=claimed`, { token: office });
     ok("...and the row has no link to end any more", (read.body?.rows ?? []).find((x) => x.email === addr_("mum"))?.live_assignment === null, read.body?.rows);
     const coachEnd = await api(`/api/family-list/rows/${read.body?.rows?.[0]?.id}/withdraw`, { method: "POST", token: coach });
