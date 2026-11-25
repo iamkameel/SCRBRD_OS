@@ -191,7 +191,7 @@ try {
   // Safeguarding Policy p52: a child's medical needs are "not in general view
   // to other ... children". db/55 withdrew medical.status.read from `player`,
   // so a pupil reads no team-mate's injury row at all, at any tier.
-  const pupil = await login("spectator@example.invalid");   // assignment: player
+  const pupil = await login("mate@example.invalid");   // assignment: player
   const pupilInjuries = await read("injuries", pupil);
   ok("a pupil reads no team-mate's injury — not that he is out, nor until when (K3)",
      pupilInjuries.length === 0);

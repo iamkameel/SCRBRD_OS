@@ -31,8 +31,8 @@ try {
   const parent = await login("parent@example.invalid"), coach = await login("coach@example.invalid"), wes = await login("coach.wes@example.invalid");
   const otherMum = await login("parent.whitfield@example.invalid"), boy = await login("pillay@example.invalid"), watcher = await login("watcher@example.invalid");
   const wesOffice = await login("registrar.wes@example.invalid");
-  // A pupil of his own side (the seed's spectator@ account holds `player` on the 1st XI).
-  const mate = await login("spectator@example.invalid");
+  // A pupil of his own side (the seed's mate@, T Bekker's account, holds `player` on the 1st XI).
+  const mate = await login("mate@example.invalid");
 
   // CRI-3.2, tap-to-passport ("parent own child; coach squad; public nothing").
   // A finished match on the real log: Hilton's 1XI bat (R Pillay, J Whitfield,

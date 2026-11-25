@@ -374,13 +374,14 @@ INSERT INTO app_user (id, school_id, email, name, role) VALUES
   ('88888888-0000-0000-0000-000000000014', '11111111-1111-1111-1111-111111111111',
    'platform@example.invalid', 'Platform Ops', 'platformadmin');
 
--- A `player` names his side (REACH-D4, db/108): the account seeded as
--- spectator@example.invalid is a pupil on the 1st XI. Until 15 October 2026
--- it was seeded with no team, which reaches every side at the school;
--- tools/sql/fix-player-without-team.sql ends that row on a database that
--- still holds it.
+-- The account seeded as spectator@example.invalid is a spectator. Until
+-- db/173 it held `player` on the 1st XI and named no boy, which db/169 let
+-- through by its id; db/173 ends that role on a database that holds it and
+-- closes any account holding a pupil's role that names no boy (Kameel, 20
+-- and 25 Nov 2026). The walks' team-mate on the 1st XI is mate@ below, who
+-- names his boy.
 INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
-  ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'player',          '11111111-1111-1111-1111-111111111111', '1XI'),
+  ('a5510000-0000-0000-0000-000000000001', '88888888-0000-0000-0000-000000000001', 'spectator',       '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000002', '88888888-0000-0000-0000-000000000002', 'scout',           '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000003', '88888888-0000-0000-0000-000000000003', 'medical',         '11111111-1111-1111-1111-111111111111', NULL),
   ('a5510000-0000-0000-0000-000000000004', '88888888-0000-0000-0000-000000000004', 'coach',           '11111111-1111-1111-1111-111111111111', '1XI'),
@@ -915,20 +916,45 @@ INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
   ('a5510000-0000-0000-0000-000000000057', '88888888-0000-0000-0000-000000000057', 'dso',
    '11111111-1111-1111-1111-111111111111', NULL);
 
+-- mate@: T Bekker's own account, a pupil on the 1st XI holding `player` and
+-- nothing about himself (no self access), so a walk reads the side as a
+-- team-mate does. Until db/173 the walks used spectator@ for this, which held
+-- `player` and named no boy. He names his boy, so db/169's gate asks for a
+-- yes in force for T Bekker: the school's, written below with the others.
+INSERT INTO app_user (id, school_id, email, name, role, player_id, teams) VALUES
+  ('88888888-0000-0000-0000-000000000173', '11111111-1111-1111-1111-111111111111',
+   'mate@example.invalid', 'T Bekker', 'player', 'aaaaaaaa-0000-0000-0000-000000000002', '{1XI}');
+INSERT INTO role_assignment (id, person_id, role, school_id, team_code) VALUES
+  ('a5510000-0000-0000-0000-000000000173', '88888888-0000-0000-0000-000000000173', 'player',
+   '11111111-1111-1111-1111-111111111111', '1XI');
+
 -- db/169 (SCRBRD-140 Migration B): the seed's pupils were enrolled the way a
--- school's were before db/169, so their own links' "granted" stamp is
--- carried over as the office's yes, exactly as db/169 §6 does on a live
--- database at the paste. The seed runs after the migrations, so it asks for
--- the carry-over itself.
---
--- The seeded spectator@ account holds `player` on the 1st XI and names no
--- boy: the seeded test account (production and the demo hold the same row,
--- tools/sql/fix-player-without-team.sql). db/169 closes such an account
--- (Kameel, 20 Nov, A) but not this one, by its id: it is the test cast's,
--- not a child's, and the walks read the 1st XI as it.
+-- school's were before db/169, so their own links' "granted" stamp stands as
+-- the school's yes, as db/169 §6 carried it over on a live database at the
+-- paste. The seed runs after the migrations, and db/173 holds the carry-over
+-- to links stamped before db/169's first paste, so the seed writes that yes
+-- itself: the carry-over's own rows, for the seed's own links.
 DO $seed164$
 BEGIN
-  IF to_regprocedure('pupil_signin_carry_over()') IS NOT NULL THEN
-    PERFORM pupil_signin_carry_over();
+  IF to_regclass('pupil_signin_consent') IS NOT NULL THEN
+    INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, terms_version, given_at, school_id)
+    SELECT DISTINCT ON (g.player_id) g.player_id, 'yes', 'enrolled', g.verified_by, left(u.name, 200), g.consent_version,
+           coalesce(g.consent_at, g.verified_at, g.created_at), coalesce(a.school_id, p.school_id)
+      FROM assignment_subject g
+      JOIN role_assignment a ON a.id = g.assignment_id
+      JOIN player p ON p.id = g.player_id
+      LEFT JOIN app_user u ON u.id = g.verified_by
+     WHERE g.relationship = 'self' AND g.verification_state = 'verified' AND g.consent_state = 'granted'
+       AND a.active AND (g.valid_until IS NULL OR g.valid_until > sa_today())
+       AND (p.born IS NULL OR majority_on(p.born) > sa_today())
+       AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = g.player_id)
+     ORDER BY g.player_id, g.consent_at NULLS LAST, g.id;
+    -- mate@'s boy has no own link; the school's yes for him all the same,
+    -- given by the office, as the others' are.
+    INSERT INTO pupil_signin_consent (player_id, answer, how, given_by, given_by_name, terms_version, given_at, school_id)
+    SELECT 'aaaaaaaa-0000-0000-0000-000000000002', 'yes', 'enrolled', u.id, left(u.name, 200), 'popia-2026-01', now(),
+           '11111111-1111-1111-1111-111111111111'
+      FROM app_user u WHERE u.id = '88888888-0000-0000-0000-00000000000c'
+       AND NOT EXISTS (SELECT 1 FROM pupil_signin_consent x WHERE x.player_id = 'aaaaaaaa-0000-0000-0000-000000000002');
   END IF;
 END $seed164$;

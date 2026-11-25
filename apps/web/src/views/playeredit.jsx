@@ -148,6 +148,9 @@ function CaptureBirthday({ role, player }) {
   const [busy, setBusy] = useState(false);
   const idBorn = useId(), idNo = useId();
   const missing = gaps.some((g) => g.kind === "no_dob" && g.playerId === player.id);
+  // An ID number, first or not, is the office's to write (db/173): the field
+  // is the office's alone, and the server refuses it from anyone else.
+  const office = mayCorrectBirthday(role);
   if (!missing) return null;
   const check = (v.born || v.idNumber) ? resolveBirthDate({ born: v.born, idNumber: v.idNumber }) : null;
   const save = async () => {
@@ -165,8 +168,10 @@ function CaptureBirthday({ role, player }) {
       <p style={note(false)}>None is on record for {player.name}.</p>
       <label htmlFor={idBorn} style={{ ...note(false), display: "block" }}>Date of birth</label>
       <input id={idBorn} type="date" value={v.born} onChange={(e) => setV((x) => ({ ...x, born: e.target.value }))} style={field()} data-testid="edit-dob-born"/>
-      <label htmlFor={idNo} style={{ ...note(false), display: "block" }}>ID number (or use the date above)</label>
-      <input id={idNo} value={v.idNumber} onChange={(e) => setV((x) => ({ ...x, idNumber: e.target.value }))} style={field()} placeholder="13 digits"/>
+      {office && <>
+        <label htmlFor={idNo} style={{ ...note(false), display: "block" }}>ID number (or use the date above)</label>
+        <input id={idNo} value={v.idNumber} onChange={(e) => setV((x) => ({ ...x, idNumber: e.target.value }))} style={field()} placeholder="13 digits"/>
+      </>}
       {check && check.ok === false && <p role="alert" style={note(true)}>{BIRTH_DATE_MESSAGE[check.reason] || check.reason}</p>}
       <Go disabled={busy || !check?.ok} onClick={save} testid="edit-dob-save">Record it</Go>
       {said.text && <p role={said.bad ? "alert" : "status"} style={note(said.bad)}>{said.text}</p>}

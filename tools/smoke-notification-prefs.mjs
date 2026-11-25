@@ -45,10 +45,10 @@ const idOf = async (/** @type {string} */ email) => (await q(`select id from app
 try {
   for (let i = 0; i < 60; i++) { try { const r = await api("/api/health"); if (r.body?.db === "ok") break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
   // A second run starts where the first did: no preferences for the walk's people.
-  const people = ["parent@example.invalid", "parent.whitfield@example.invalid", "spectator@example.invalid", "coach@example.invalid"];
+  const people = ["parent@example.invalid", "parent.whitfield@example.invalid", "mate@example.invalid", "coach@example.invalid"];
   await q(`delete from notification_pref where person_id in (select id from app_user where email = any($1))`, [people]);
   const parent = await login("parent@example.invalid"), otherMum = await login("parent.whitfield@example.invalid");
-  const pupil = await login("spectator@example.invalid"), coach = await login("coach@example.invalid");
+  const pupil = await login("mate@example.invalid"), coach = await login("coach@example.invalid");
   const parentId = await idOf("parent@example.invalid"), otherMumId = await idOf("parent.whitfield@example.invalid");
 
   group("Each person is offered the switches D20 gives them, all on");

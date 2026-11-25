@@ -119,8 +119,11 @@ BEGIN
      OR to_regprocedure('declined_claim_notice(uuid,text,text,uuid)') IS NULL OR to_regprocedure('request_cooldown_open(uuid)') IS NULL
      OR to_regprocedure('feature_enabled(text,uuid,uuid)') IS NULL OR to_regprocedure('majority_on(date)') IS NULL
      OR to_regprocedure('sa_today()') IS NULL OR to_regprocedure('person_is_pupil(uuid)') IS NULL
-     OR to_regclass('pupil_claim') IS NULL OR to_regclass('auth_identity') IS NULL OR to_regclass('duty_suspension') IS NULL THEN
-    RAISE EXCEPTION 'db/174: role_request_grant_as() (db/92), db/168''s pupil claim, db/169''s pupil_signin_after_yes(), declined_claim_notice() (db/93), feature_enabled() (db/08), majority_on() (db/62) or sa_today() (db/128) is missing; apply them first';
+     OR to_regclass('pupil_claim') IS NULL OR to_regclass('auth_identity') IS NULL OR to_regclass('duty_suspension') IS NULL
+     -- db/173 first: it makes a first date that makes a boy 18 the office's,
+     -- and the list lets a boy of 18 in on that date.
+     OR to_regprocedure('player_born_confirm(uuid)') IS NULL OR to_regprocedure('player_born_confirmed(uuid)') IS NULL THEN
+    RAISE EXCEPTION 'db/174: role_request_grant_as() (db/92), db/168''s pupil claim, db/169''s pupil_signin_after_yes(), declined_claim_notice() (db/93), feature_enabled() (db/08), majority_on() (db/62), sa_today() (db/128) or db/173''s player_born_confirm() is missing; apply them first';
   END IF;
   -- pupil_claim_send(): db/168's, or this file's own (a second paste).
   v := md5((SELECT prosrc FROM pg_proc WHERE oid = 'pupil_claim_send(uuid,text,text,date)'::regprocedure));

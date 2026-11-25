@@ -17,7 +17,8 @@
  * (apps/web/src/lib/ownSignin.js).
  *
  * Routes (all signed in; a pad's resume credential reaches nothing here):
- *   GET  /api/players/:id/own-signin            the family's and the office's read
+ *   GET  /api/players/:id/own-signin            the family's and the office's read; for her
+ *                                               yes, `account`: what the recognised account typed (db/173)
  *   POST /api/players/:id/own-signin { allow }  the guardian's own tap (true: allow, false: stop)
  *   POST /api/players/:id/own-signin/office { formOnFile: true, formSignedBy, formSignedOn } | { withdrawn: true } | { retry: true }
  *                                               the office: the signed form on file, with who signed
@@ -141,7 +142,14 @@ export function pupilSigninRoutes({ pool, secret }) {
       const { rows } = await client.query(`select * from pupil_signin_state($1)`, [playerOf(req)]);
       // Nothing for anybody but his family and the office: the same as an id that is no boy.
       if (!rows[0]) throw err("not_permitted", 403);
-      return { ownSignIn: ownSigninState(rows[0]) };
+      // Q3 (Kameel, 25 Nov 2026; db/173): for her yes, what the account the
+      // office recognised as him typed, and the day it did. Nothing else of
+      // it; null when there is none she may be shown.
+      const { rows: [a] } = await client.query(
+        `select typed_name, typed_year, to_char(recognised_on, 'YYYY-MM-DD') as recognised_on
+           from pupil_signin_account($1)`, [playerOf(req)]);
+      return { ownSignIn: ownSigninState(rows[0]),
+               account: a ? { typedName: a.typed_name, typedYear: a.typed_year ?? null, recognisedOn: a.recognised_on } : null };
     }),
 
     set: handle(async (client, req) => {

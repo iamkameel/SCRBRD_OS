@@ -204,6 +204,26 @@ try {
   await pool.query(`update player set born = null where id = $1`, [P_U13]);
   await restoreBornConstraint();
   ok("B Khumalo is now a plain gap", (await gaps(registrar)).some((r) => r.kind === "no_dob" && r.player_id === P_U13));
+  // db/173 (Kameel, 25 Nov 2026): an ID number, first or not, is the office's
+  // to write, and so is a first date that makes him 18.
+  const dirId = await capture(P_U13, director, { idNumber: "1104075800085" });
+  ok("the director of sport may not record an ID number (db/173)",
+     dirId.status === 403 && dirId.body?.error === "id_number_needs_the_office", JSON.stringify(dirId.body));
+  const adultDay = (await q(`select to_char(sa_today() - interval '19 years', 'YYYY-MM-DD') d`))[0].d;
+  const dirAdult = await capture(P_U13, director, { born: adultDay });
+  ok("...nor a first date that makes him 18, in the words a non-office caller is always given",
+     dirAdult.status === 422 && dirAdult.body?.error === "born_needs_the_office", JSON.stringify(dirAdult.body));
+  ok("...and nothing landed", (await q(`select born, id_number from player where id = $1`, [P_U13]))[0].born === null);
+  const add = (token, body) => api("/api/players", { method: "POST", token, body: { schoolId: HIL, teamCode: "U16A", ...body } });
+  const dirAdd = await add(director, { fullName: "Adult Addboy", born: adultDay });
+  ok("the director's Add Player with a date that makes him 18 is refused",
+     dirAdd.status === 422 && dirAdd.body?.error === "born_needs_the_office", JSON.stringify(dirAdd.body));
+  const dirAddId = await add(director, { fullName: "Id Addboy", idNumber: "1104075800085" });
+  ok("...and with an ID number", dirAddId.status === 403 && dirAddId.body?.error === "id_number_needs_the_office", JSON.stringify(dirAddId.body));
+  const offAdd = await add(registrar, { fullName: "Adult Addboy", born: adultDay });
+  ok("...while the office's goes in, recorded as its capture",
+     offAdd.status === 200 && (await q(`select c.how, c.by_office from player_born_change c where c.player_id = $1`, [offAdd.body?.id]))
+       .map((r) => `${r.how}:${r.by_office}`).join() === "capture:true", JSON.stringify(offAdd.body));
   const byId = await capture(P_U13, registrar, { idNumber: "1104075800085" });
   ok("the birthday is read out of the ID number", byId.status === 200 && byId.body?.bornFrom === "id_number", JSON.stringify(byId.body));
   ok("...the date it decodes to", (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_U13]))[0].b === "2011-04-07");
@@ -239,8 +259,10 @@ try {
   const same = await correct(P_U16, registrar, { born: u16New, reason: WHY });
   ok("the date already on record is answered unchanged", same.status === 200 && same.body?.unchanged === true, JSON.stringify(same.body));
   const log = await changes(P_U16, registrar);
-  ok("the office reads one change: before, after, how, by whom",
-     log.status === 200 && log.body?.born === u16New && log.body?.changes?.length === 1
+  // Two rows since db/173: the correction, and before it the seed's first date (the owner's).
+  ok("the office reads the change: before, after, how, by whom; and the first date before it",
+     log.status === 200 && log.body?.born === u16New && log.body?.changes?.length === 2
+       && log.body.changes[1].how === "owner" && log.body.changes[1].was === null && log.body.changes[1].became === u16
        && log.body.changes[0].was === u16 && log.body.changes[0].became === u16New
        && log.body.changes[0].how === "correction" && /\S/.test(log.body.changes[0].by ?? "")
        && log.body.changes[0].reason === WHY, JSON.stringify(log.body));

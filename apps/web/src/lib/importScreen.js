@@ -88,7 +88,25 @@ export function importSummary(report) {
   if (report.inserted) parts.push(`${report.inserted} added`);
   if (report.updated) parts.push(`${report.updated} updated`);
   if (report.unchanged) parts.push(`${report.unchanged} already in place`);
-  return `Imported ${plural(report.rows, "row")}${parts.length ? `: ${parts.join(", ")}` : ""}.`;
+  const out = report.leftOut?.length ? ` ${plural(report.leftOut.length, "line")} left out, for the school office.` : "";
+  return `Imported ${plural(report.rows, "row")}${parts.length ? `: ${parts.join(", ")}` : ""}.${out}`;
+}
+
+/**
+ * db/173: the office's one tick for the lines whose first date makes a boy 18
+ * ("I have checked these {n} dates against the register"), or null when the
+ * Check asks for none. The count is what Import sends back as `adultsChecked`.
+ * @param {any} report a dry-run report
+ * @returns {{ count: number, words: string, lines: string[] } | null}
+ */
+export function adultTick(report) {
+  const n = report?.adults?.count ?? 0;
+  if (!report?.needsTick || !n) return null;
+  return {
+    count: n,
+    words: `I have checked ${n === 1 ? "this date" : `these ${n} dates`} of birth against the school's register`,
+    lines: (report.adults.lines ?? []).map((/** @type {any} */ l) => `Line ${l.line}: ${l.fullName} is 18 by this date.`),
+  };
 }
 
 /** The server's refusal codes (import-api.mjs and the door in front of it), in the office's words. */

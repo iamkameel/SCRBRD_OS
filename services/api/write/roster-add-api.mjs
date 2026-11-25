@@ -15,6 +15,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resolveBirthDate } from "@scrbrd/policy/date-of-birth";
+import { bornRefusal } from "./dob-capture-api.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
@@ -99,6 +100,10 @@ export function rosterAddRoutes({ pool, secret }) {
                      bornFrom: dob.source, ...(dob.warning ? { warning: dob.warning } : {}) });
         });
       } catch (/** @type {any} */ e) {
+        // db/172's and db/173's refusals by name: a first date that makes him
+        // 18, or an ID number, from anyone but the office.
+        const named = bornRefusal(e);
+        if (named) return res.status(named.status).json({ error: named.error });
         if (e.code === "23514") return res.status(422).json({ error: "refused", detail: e.message });
         if (e.code === "23503") return res.status(404).json({ error: "no_such_school" });
         const status = e.code === "42501" ? 403 : (e.status || 500);
