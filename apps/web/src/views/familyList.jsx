@@ -190,7 +190,7 @@ function SchoolFamilyList({ school, players }) {
       )}
       {due > 0 && (
         <div style={{ marginTop: "10px" }}>
-          <div style={sub()}>An unclaimed row's address is cleared ninety days after its claim-by date or its withdrawal. The child, the kind and who listed it stay on the record.</div>
+          <div style={sub()}>A row's address is cleared 90 days after its claim-by date or its withdrawal; once used, 90 days after the request was answered; once it made a link, 90 days after the link ends. The child, the kind and who listed it stay on the record.</div>
           <Act disabled={busy === "clear"} onClick={clear} data-testid="family-list-clear">{busy === "clear" ? "Clearing…" : clearWords(due)}</Act>
         </div>
       )}
