@@ -464,6 +464,9 @@ try {
       `select c.how, to_char(c.was,'YYYY-MM-DD') was, to_char(c.became,'YYYY-MM-DD') became, c.by_id
          from player_born_change c join player p on p.id = c.player_id
         where p.school_id = $1 and p.full_name = $2 order by c.at`, [HIL, name]));
+    // Changes to a date already on record: since db/173 a first date is a row
+    // too (`was` empty), which these checks are not about.
+    const changedOf = async (name) => (await changesOf(name)).filter((c) => c.was !== null);
     const bornOf = async (name) => (await q(
       `select to_char(born,'YYYY-MM-DD') b from player where school_id = $1 and full_name = $2`, [HIL, name]))[0]?.b;
 
@@ -474,7 +477,7 @@ try {
        clash.body?.committed === false && Number(clash.body?.errors?.[0]?.line) === 2 && clash.body?.errors?.[0]?.column === "born"
          && /ID number on his record/.test(clash.body?.errors?.[0]?.message ?? ""), JSON.stringify(clash.body?.errors));
     ok("...and his date stands, with nothing recorded",
-       (await bornOf("From Id")) === "2011-04-07" && (await changesOf("From Id")).length === 0);
+       (await bornOf("From Id")) === "2011-04-07" && (await changedOf("From Id")).length === 0);
 
     // K Dlamini has no ID number on file.
     const was = await bornOf("K Dlamini");
@@ -502,11 +505,11 @@ try {
        byOffice.body?.committed === false && byOffice.body?.errors?.[0]?.column === "born"
          && /corrected from Edit Profile, with a reason/.test(byOffice.body?.errors?.[0]?.message ?? ""),
        JSON.stringify(byOffice.body?.errors));
-    ok("...and his date stands, with nothing recorded", (await bornOf("K Dlamini")) === was && (await changesOf("K Dlamini")).length === 0);
+    ok("...and his date stands, with nothing recorded", (await bornOf("K Dlamini")) === was && (await changedOf("K Dlamini")).length === 0);
     const again = await importCsv("players", office, {
       csv: `full_name,team_code,born\nK Dlamini,U16B,${was}\n`, schoolId: HIL, commit: true });
     ok("...while the office's file carrying the date already on record goes in, and records nothing",
-       again.body?.committed === true && (await changesOf("K Dlamini")).length === 0, JSON.stringify(again.body?.errors));
+       again.body?.committed === true && (await changedOf("K Dlamini")).length === 0, JSON.stringify(again.body?.errors));
     // A new boy's first date is the file's, and since db/173 it is recorded too, `was` empty.
     const newBoy = await importCsv("players", office, {
       csv: "full_name,team_code,born\nFirst Date Boy,U15A,2011-05-05\n", schoolId: HIL, commit: true });
@@ -609,11 +612,12 @@ try {
     const byCoach = await importCsv("players", coach, { csv: file, schoolId: HIL, commit: true });
     ok("a coach's file writes nothing", byCoach.body?.committed !== true && (await named("Adult Lineboy")) === 0, JSON.stringify(byCoach.body));
 
-    // A database refusal is sent as its code, never its detail (RT N7c).
+    // A database refusal is sent by its message, never its detail, which for
+    // a constraint lists the failing row.
     const bad = await importCsv("players", office, { csv: `full_name,team_code,born\nBad Sideboy,ZZ9,${minor}\n`, schoolId: HIL });
     const said = bad.body?.errors?.[0]?.message ?? "";
-    ok("a constraint the file broke is reported by its code, with none of the row",
-       /refused by the database \(23514\)/.test(said) && !/Failing row|Bad Sideboy/.test(said), said);
+    ok("a constraint the file broke is reported by its name, with none of the row",
+       /player_team_code_known/.test(said) && !/Failing row|Bad Sideboy|ZZ9/.test(said), said);
   }
 
   group("A round trip");

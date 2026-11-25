@@ -570,8 +570,8 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
         // that makes him 18 today. Decided here, before the database is
         // asked, so the answer is the same whatever is on file. The office's
         // lines go in on its tick; anyone else's are left out of the file.
-        if (def.adults && today && values.born && !found.rows[0]?.born && isEighteenOn(values.born, today)) {
-          adults.push({ line, fullName: values.full_name });
+        if (def.adults && today && values.born && !found.rows[0]?.born && isEighteenOn(String(values.born), String(today))) {
+          adults.push({ line, fullName: String(values.full_name) });
           if (!office) {
             leftOut.push({ line, column: "born", message: BIRTH_DATE_MESSAGE.born_needs_the_office });
             continue;
@@ -597,11 +597,12 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
         // A refusal the kind names (db/172's, on a birthday) is read first:
         // its own words, on its own column.
         const named = BORN_REFUSED_BY_DB.includes(e.message) ? def.refusals?.[e.message] : undefined;
-        // Never a Postgres `detail` (it can carry the failing row's values):
-        // the code, in a sentence (RT N7c).
+        // Never a Postgres `detail`, which for a constraint can list the
+        // failing row's columns: the message alone (a constraint's name, or
+        // the database's own sentence for the line).
         refused.push(named ? { line, column: named.column, message: (!office && named.notOffice) || named.message } : { line, column: null,
           message: e.code === "42501" ? "not permitted at this school"
-                 : `refused by the database (${typeof e.code === "string" ? e.code : "error"})` });
+                 : (e.message || `refused by the database (${typeof e.code === "string" ? e.code : "error"})`) });
         // The savepoint has to be rolled back before the transaction will
         // accept another statement — without this, one bad row aborts the rest
         // and every subsequent line reports the same useless error.

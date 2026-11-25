@@ -24,7 +24,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { IMPORTS } from "../../../services/api/io/import-api.mjs";
 import { isCapability } from "@scrbrd/policy/capabilities";
 import { roleGrants } from "@scrbrd/policy/roles";
-import { IMPORT_KINDS, MAX_FILE_BYTES, checkSummary, errorWords, importSummary, kindsHeld, mayImport, refusalWords } from "../src/lib/importScreen.js";
+import { IMPORT_KINDS, MAX_FILE_BYTES, adultTick, checkSummary, errorWords, importSummary, kindsHeld, mayImport, refusalWords } from "../src/lib/importScreen.js";
 import { NOT_STAFF, rolesPresent, staffFrom } from "../src/lib/staff.js";
 import { ROLES } from "../src/design/roles.js";
 import { ImportPanel, canImport } from "../src/views/importer.jsx";
@@ -96,6 +96,14 @@ group("The words");
   ok("no answer at all is said as that", /did not answer/.test(refusalWords(new Error("x"))));
   ok("a prototype name is not a code", /did not answer/.test(refusalWords({ code: "constructor" })));
   ok("the size cap sits under the server's 256 KB body limit", MAX_FILE_BYTES < 256 * 1024);
+  // db/173: the office's tick for the lines that make a boy 18, and the lines left out for anyone else.
+  const t = adultTick({ needsTick: true, adults: { count: 2, lines: [{ line: 3, fullName: "A Botha" }, { line: 9, fullName: "B Cele" }] } });
+  ok("the office is asked to tick the count it was shown", t?.count === 2 && /checked these 2 dates of birth against the school's register/.test(t.words), t);
+  ok("...naming each line", t?.lines.join("|") === "Line 3: A Botha is 18 by this date.|Line 9: B Cele is 18 by this date.");
+  ok("...one is singular", /checked this date of birth/.test(adultTick({ needsTick: true, adults: { count: 1, lines: [] } })?.words ?? ""));
+  ok("no tick when the Check asks for none", adultTick({ needsTick: false, adults: { count: 2, lines: [] } }) === null && adultTick({}) === null);
+  ok("an Import says how many lines were left out, for the office",
+     importSummary({ rows: 3, inserted: 2, leftOut: [{}] }) === "Imported 3 rows: 2 added. 1 line left out, for the school office.");
 }
 
 group("Staff: the people who hold a staff role at the school");

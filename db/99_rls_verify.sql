@@ -17840,6 +17840,20 @@ BEGIN
   PERFORM set_config('app.born_how', '', true);
   RETURN b::text;
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- A door that adds a boy for whoever calls it, asking nothing: a definer
+-- under the caller's session, as the owner. Throwaway, here only: his id, or
+-- "sqlstate:message".
+CREATE OR REPLACE FUNCTION _v173_door_add(p_tag text, p_born date) RETURNS text AS $$
+DECLARE b uuid; st text; msg text;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'U16A', 'Verify Oneseventhree ' || initcap(p_tag), 'Oneseventhree', 173, 'batter', p_born)
+  RETURNING id INTO b;
+  RETURN b::text;
+EXCEPTION WHEN check_violation OR insufficient_privilege THEN
+  GET STACKED DIAGNOSTICS st = RETURNED_SQLSTATE, msg = MESSAGE_TEXT;
+  RETURN st || ':' || msg;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- How many boys called p_tag the owner can see: whether a refused add landed.
 CREATE OR REPLACE FUNCTION _v173_named(p_tag text) RETURNS integer AS $$
   SELECT count(*)::int FROM player WHERE full_name = 'Verify Oneseventhree ' || initcap(p_tag)
@@ -17915,7 +17929,11 @@ BEGIN
     PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s adult date: %s', v));
     v := _v173_add('first today', TODAY18, NULL);
     PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s date of 18 today: %s', v));
-    PERFORM _assert(_v173_named('first adult') = 0 AND _v173_named('first today') = 0, '§148 (first): a refused boy landed');
+    -- Through a door under his session (a definer, as the owner): the same.
+    v := _v173_door_add('first door', ADULT);
+    PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s adult date through a door: %s', v));
+    PERFORM _assert(_v173_named('first adult') = 0 AND _v173_named('first today') = 0 AND _v173_named('first door') = 0,
+                    '§148 (first): a refused boy landed');
     BOY := _v173_add('first tomorrow', TOMORROW18, NULL)::uuid;
     PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:f', TOMORROW18, DOS), format('§148 (first): 18 tomorrow, recorded %s', _v173_rows(BOY)));
     BOY := _v173_add('first minor', B, NULL)::uuid;
@@ -18030,11 +18048,13 @@ BEGIN
     PERFORM _assert(r.action = 'Confirmed a date of birth', format('§148 (coming): the audit log reads %s', row_to_json(r)));
     SELECT * INTO r FROM audit_log(HIL, ARRAY['dob']) a WHERE a.detail->>'how' = 'owner' AND a.detail->>'became' = ADULT::text AND NOT (a.detail ? 'was') LIMIT 1;
     PERFORM _assert(r.action = 'SCRBRD recorded a date of birth', format('§148 (coming): the owner''s first date reads %s', row_to_json(r)));
-    -- A write after the confirm: listed again, as the owner's.
+    -- A write after the confirm, even one back to the confirmed date: listed
+    -- again, as the owner's.
     PERFORM _v173_owner_born(BOY, NEAR - 1);
+    PERFORM _v173_owner_born(BOY, NEAR);
     PERFORM _as(REG);
     PERFORM _assert(EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = BOY AND u.how = 'owner'),
-                    '§148 (coming): re-dated after the confirm, he is not listed again');
+                    '§148 (coming): re-dated after the confirm, and back, he is not listed again');
     -- Confirmed at Hilton, then moved: Westville's office is asked again.
     SELECT x.ok INTO ok_ FROM player_born_confirm(BOY2) x;
     PERFORM _assert(ok_, '§148 (coming): the confirm before the move');
