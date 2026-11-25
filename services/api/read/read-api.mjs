@@ -2427,6 +2427,9 @@ export const READ_QUERIES = {
                   r.player_id, r.note, r.state, r.requested_at, r.decided_at, r.decided_note, d.name as decided_by_name,
                   -- Not asked by its person signed in as himself (db/84): the retired /api/onboard's rows.
                   r.asked_unverified,
+                  -- db/174: why the family list did not link it, for the office of its school only
+                  -- (family_register_line() answers NULL to anybody else, the asker included).
+                  family_register_line(r.id) as family_line,
                   r.person_id = app_user_id() as mine,
                   (r.state = 'pending'
                    and app_can('user.role.assign', r.school_id, '*', '00000000-0000-0000-0000-000000000000'::uuid,

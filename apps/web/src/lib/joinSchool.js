@@ -24,6 +24,13 @@
  *      the same sentence whoever the child is. The screen never says "found",
  *      "not found", "no such pupil" or anything shaped like them: a form that
  *      did would be an oracle for which children attend a school.
+ *      THE FAMILY LIST (db/174, Kameel 18 Nov 2026, Q1 and Q2): one optional
+ *      field, his date of birth. It travels beside the request as `born`,
+ *      never in the note, and the server compares it with the school's own
+ *      list for the address Google verified and drops it. Where the school
+ *      listed her for that child and switched the list on, she is linked at
+ *      once and reads the terms next ("You're linked"); anything else, for
+ *      whatever reason, reads the one sentence a request always reads.
  *   3. A PUPIL UNDER EIGHTEEN ASKS FOR NO ROLE (SCRBRD-140 honesty model, Q3,
  *      Kameel 18 Nov 2026). He may say "I am a pupil here": a pupil's claim
  *      (POST /api/pupil/claim, db/168, lib/pupilClaim.js), which asks for
@@ -54,6 +61,25 @@ export const KINDS = Object.freeze([
 export const RELATIONSHIPS = Object.freeze(["Mother", "Father", "Guardian", "Other"]);
 
 export const NOTE_MAX = 300;
+
+/**
+ * A date of birth as typed in a date field: YYYY-MM-DD and a real day, or
+ * null. Only ever sent as `born`; never put in a note.
+ * @param {unknown} v
+ */
+export function bornField(v) {
+  const s = String(v ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const t = new Date(`${s}T12:00:00Z`);
+  return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === s ? s : null;
+}
+
+/** The optional field (Q2), in the words Kameel decided. */
+export const BORN_FIELD = Object.freeze({
+  parent: "His date of birth (lets the school's list confirm you at once)",
+  pupil: "Your date of birth (lets the school's list confirm you at once)",
+  hint: "Optional. It is checked against the school's own list and not kept.",
+});
 export const CHILD_MAX = 80;
 export const YEAR_MAX = 20;
 export const EXTRA_MAX = 160;
@@ -87,12 +113,14 @@ export function buildRequest(kind, schoolId, f = {}) {
   if (kind === "parent") {
     if (clean(f.child).length < 2) return { ok: false, problem: "Type your child's name, as the school would have it." };
     if (!RELATIONSHIPS.includes(f.relationship)) return { ok: false, problem: "Say how you are related to your child." };
-    return { ok: true, body: { role: "guardian", schoolId, note: parentNote(f) } };
+    const born = bornField(f.born);
+    return { ok: true, body: { role: "guardian", schoolId, note: parentNote(f), ...(born ? { born } : {}) } };
   }
   if (kind === "pupil") {
     // Only an adult still at school asks for a role; under 18 he sends a pupil's claim instead (rule 3).
     if (f.adult !== "yes") return { ok: false, problem: "A pupil under 18 asks for no role. Tell your school who you are instead, or ask the office for a sign-in code." };
-    return { ok: true, body: { role: "player", schoolId, note: clean(f.extra).slice(0, EXTRA_MAX) || null } };
+    const born = bornField(f.born);
+    return { ok: true, body: { role: "player", schoolId, note: clean(f.extra).slice(0, EXTRA_MAX) || null, ...(born ? { born } : {}) } };
   }
   // Q10: following is not a request. The spectator request ("Ask the school for
   // its signed-in view") is asked from a followed school's card (spectatorAsk()).
@@ -159,13 +187,26 @@ export const withdrew = (r) => Number(r?.withdrawn) > 0;
 export function sentWords(kind, schoolName) {
   const at = schoolName || "the school";
   if (kind === "parent") {
-    return `Your request has gone to ${at}. The school office will check with you before anything is linked to your account: nothing is linked automatically, and nothing about any child is shown to you until they have.`;
+    return `Your request has gone to ${at}. Somebody there will answer. Nothing about any child is shown to you until the school has checked who you are.`;
   }
   if (kind === "pupil") {
     return `Your request has gone to ${at}. The office will match it to your place on the school's list and answer.`;
   }
   if (kind === "staff") return `Your request has gone to ${at}. Somebody there will answer it, and you will see the answer here.`;
   return `Your request has gone to ${at}. Somebody there will answer it, and you will see the answer here.`;
+}
+
+/**
+ * What the family list's match says (db/174, design §2.4). `family` is the
+ * server's: 'linked' (a parent, her link written, the terms next), 'in' (a
+ * pupil of 18 given his own account); anything else is null, and the
+ * screen says sentWords() as it always has.
+ * @param {unknown} family
+ */
+export function familyWords(family) {
+  if (family === "linked") return { title: "You're linked", text: "Read and agree to the school's terms. Nothing about your child is shown to you until you have." };
+  if (family === "in") return { title: "You're in", text: "The school's list confirmed you." };
+  return null;
 }
 
 /**

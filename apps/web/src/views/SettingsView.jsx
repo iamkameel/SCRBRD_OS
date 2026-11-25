@@ -33,6 +33,7 @@ import { WaysToSignIn } from "./signins.jsx";
 import { SignOutEverywhere } from "./signoutall.jsx";
 import { ClaimsPanel } from "./claims.jsx";
 import { PupilClaimsPanel } from "./pupilClaims.jsx";
+import { FamilyListPanel } from "./familyList.jsx";
 // SCRBRD-083 C4 (db/47): a school's names-off switch per age group.
 import { NamesOffPanel } from "./publicname.jsx";
 // SCRBRD-142 phase 2: the school lists its published matches on the home page.
@@ -354,6 +355,8 @@ function PeoplePart({ role, users: usersFromApp, setUsers: setUsersFromApp, onDi
         )}
         {/* db/168: a pupil under 18 who said "I am a pupil here". The office and the principal answer it. */}
         {signedIn() && holdsCapability(role, "guardian.link.manage") && <PupilClaimsPanel players={PLAYERS}/>}
+        {/* db/174: the family list. The office and the principal list a child's parents' and the pupil's own addresses. */}
+        {signedIn() && holdsCapability(role, "guardian.link.manage") && <FamilyListPanel players={PLAYERS}/>}
         <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
                    noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}
                    canEdit={canEdit} pupilsHere={pupilsHere} coding={coding}

@@ -16,19 +16,20 @@
  * answers a code, which becomes a status here and words on the screen
  * (apps/web/src/lib/pupilClaim.js).
  *
- * THE DATE OF BIRTH. Dropped here, never passed on, until the family list
- * (Migration C) has something to compare it with (the re-review's open point
- * 2): a date sent anyway is not read, not checked and not forwarded, so it
- * is never a bind parameter a host's statement log could keep. The client
- * never sends one (lib/pupilClaim.js buildClaim()). db/168's function keeps
- * its p_born argument, DEFAULT NULL, for Migration C.
+ * THE DATE OF BIRTH (db/174, the family list). Optional. Shape-checked here
+ * (YYYY-MM-DD, a real day) and passed to pupil_claim_send(), which compares
+ * it with the family list's `pupil` rows for his verified address and drops
+ * it: never stored, never logged, never answered. It travels as one bind
+ * parameter, so a host whose statement log keeps parameters would keep it:
+ * DEPLOYING.md's db/174 section says to keep that log off. Anything else
+ * sent as `born` is not forwarded.
  *
  * Routes (all signed in; a pad's resume credential reaches nothing here):
  *   GET  /api/pupil/state                 his own: { claim: null | { state, schoolId, schoolName, name, year,
  *                                           saidOn, sentOn, keepUntil, safeguarding },
  *                                           ownSignIn: { pupil, open } }  (db/169: state 'closed' when a
  *                                           no closed his page again)
- *   POST /api/pupil/claim { schoolId, name, year? }   { ok: true } or { error }; a `born` is dropped
+ *   POST /api/pupil/claim { schoolId, name, year?, born? }   { ok: true } or { error } (db/174: `born` tries the family list)
  *   POST /api/pupil/remove                his own account, now (only an account that is nothing but a claim);
  *                                         an account kept for a safeguarding concern answers not_a_claim,
  *                                         the same as any other account (re-review S3(a): whoever holds his
@@ -43,6 +44,7 @@
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { safeErr } from "../log-safe.mjs";
+import { bornOf } from "./family-register-api.mjs";
 /** @import { RouteDeps, Handler } from "../api-types.mjs" */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -152,8 +154,10 @@ export function pupilClaimRoutes({ pool, secret }) {
       const school = schoolOf(b.schoolId);
       const name = typeof b.name === "string" ? b.name.slice(0, 200) : "";
       const year = typeof b.year === "string" ? b.year.slice(0, 100) : null;
-      // b.born is not read (until Migration C): see the file's head.
-      const { rows } = await client.query(`select * from pupil_claim_send($1, $2, $3)`, [school, name, year]);
+      // db/174: his date of birth, if he typed one, tries the family list; it is
+      // compared in the database and dropped (never stored, never logged).
+      const born = bornOf(b.born);
+      const { rows } = await client.query(`select * from pupil_claim_send($1, $2, $3, $4::date)`, [school, name, year, born]);
       return verdict(rows[0]);
     }),
 
