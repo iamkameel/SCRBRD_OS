@@ -319,8 +319,10 @@ try {
   B = await openAs(/Director of Sport/);
   ok("the director of sport signs in", (await B.page.locator('[data-testid="os-main"]').count()) > 0);
   ok("opened the same fixture", await openPad(B));
-  ok("B is offered Take over: A's handover is pending", /Take over/i.test(await B.text()));
-  await tid(B.page, "open-handover").first().click({ timeout: 3000 });
+  // Redesign slice 13 (Flow E): B holds nothing of the match, so the pad opens on who is handing over and the code.
+  ok("B is offered the handover code: A's handover is pending",
+     await until(B.page, async () => (await tid(B.page, "other-phone").getAttribute("data-kind", { timeout: 500 }).catch(() => null)) === "handover", 8000), (await B.text()).slice(0, 200));
+  await tid(B.page, "other-phone-code").click({ timeout: 3000 });
   await B.page.waitForTimeout(300);
   await B.page.fill('[data-testid="handover-code-entry"]', code);
   await tid(B.page, "handover-claim").click({ timeout: 3000 });

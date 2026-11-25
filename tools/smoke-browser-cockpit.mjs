@@ -411,8 +411,9 @@ try {
     ok(`${label}: signs in and opens the fixture`, signed && entered);
     ok(`${label}: the policy says ${want.enters ? "enters" : "does not enter"}; the screen has ${tabs.includes("coach") ? "the tab" : "no tab"}`, tabs.includes("coach") === !!want.enters, tabs.join());
     if (want.enters) {
-      // CRI-1.3: on a phone the strip is Summary, Scorecard, Commentary; his tab leads the More menu.
-      ok(`${label}: the Coach tab leads the More menu, after the strip's three`, tabs.join() === "summary,scorecard,commentary,coach,partnerships,analytics,details", tabs.join());
+      // Slice 10 (question 7): on a phone his strip is Coach, Summary, Scorecard; Commentary leads the More menu.
+      ok(`${label}: the Coach tab leads the strip, then Summary and Scorecard, the rest under More`, tabs.join() === "coach,summary,scorecard,commentary,partnerships,analytics,details", tabs.join());
+      ok(`${label}: before the first ball the fixture opens on the Coach tab`, await tid(s.page, "mc-tab-coach").getAttribute("aria-selected").catch(() => null) === "true");
       await coachTab(s.page);
       const p = want.panels;
       const have = { day: await tid(s.page, "coach-day").count() === 1, side: await tid(s.page, "coach-side").count() === 1, load: await tid(s.page, "coach-week").count() === 1 };
@@ -464,13 +465,31 @@ try {
   const c = await open({ viewport: PHONE });
   ok("the coach signs in", await signIn(c.page, "coach@example.invalid"));
   ok("...and opens tonight's fixture", await openMatch(c.page, DAY));
+  // Slice 10 (question 7, Flow A): the page opens on the Coach tab before the first ball, within one screen of the
+  // top: one row under the header (Back and the page's tools), the match, the tabs. No Matches bar above it, no
+  // "Before the toss" card the match line already says, and no Open scorer: he may score it but is not scoring it.
+  ok("SLICE 10: it opens on the Coach tab, the first in his strip", await tid(c.page, "mc-tab-coach").getAttribute("aria-selected").catch(() => null) === "true"
+     && (await c.page.$$eval('[role="tablist"][data-testid="mc-tabs"] [role="tab"]', (els) => els.map((e) => e.getAttribute("data-testid")))).join() === "mc-tab-coach,mc-tab-summary,mc-tab-scorecard");
+  ok("...the address is the fixture's own, with no tab segment", new URL(c.page.url()).pathname === `/app/matches/${DAY}`, c.page.url());
+  ok("...one row under the header: Back and the tools, and no Matches bar", await tid(c.page, "mc-top-row").count() === 1 && await tid(c.page, "home-frame").count() === 0);
+  ok("...no Before the toss card", await tid(c.page, "mc-pretoss").count() === 0);
+  ok("...and no Open scorer: he is not the one scoring it", await tid(c.page, "mc-enter-scoring").count() === 0);
+  {
+    const top = await c.page.evaluate(() => {
+      const t = document.querySelector('[data-testid="mc-coach"]');
+      return t ? Math.round(t.getBoundingClientRect().top + window.scrollY) : null;
+    });
+    ok(`...the Coach tab's content starts within one phone screen of the top (${top}px of 844)`, top != null && top < 844, String(top));
+  }
   await coachTab(c.page);
   const tab = await inner(c.page, "mc-panel-coach");
   dbg("COACH TAB (before)", tab);
   ok("the label names the side", /^COACH/i.test(await inner(c.page, "mc-coach-label")), await inner(c.page, "mc-coach-label"));
   const day = await inner(c.page, "coach-day");
   ok("THE DAY: the overs and the pitch, in words", /20 overs/.test(day) && /firm, good grass cover, even bounce, quick pace/.test(day), day);
-  ok("...the weather, in words", /18° showers, rain likely/.test(day), day);
+  // Slice 10 (Flow A): the weather is the header's to say, once (its match line); the day does not repeat it.
+  const headLine = await inner(c.page, "mc-match-line");
+  ok(`...the weather, in words, said once: in the header's line ("${headLine}")`, /18° showers/i.test(headLine) && !/18°/.test(day), `${headLine} | ${day}`);
   ok("...no umpire and no scorer on record, said", /Umpires: none on record/.test(day) && /no scorer on record/.test(day), day);
   const bus = await inner(c.page, "coach-day-bus");
   ok(`...the bus leaves at ${BUS_AT} on the SA clock, whatever the browser's zone`, bus.includes(`Bus ${BUS_AT} `), bus);
@@ -1004,6 +1023,11 @@ try {
   const lv = await open({ viewport: DESK });
   await signIn(lv.page, "coach@example.invalid");
   ok("the coach opens the live fixture", await openMatch(lv.page, FIELD));
+  // Slice 10: once a ball is bowled the Summary is the default; Coach stays first; the header says which way round.
+  ok("SLICE 10: a ball has been bowled, so it opens on the Summary, the Coach tab still first",
+     await tid(lv.page, "mc-tab-summary").getAttribute("aria-selected").catch(() => null) === "true"
+     && (await lv.page.$$eval('[role="tablist"][data-testid="mc-tabs"] [role="tab"]', (els) => els.map((e) => e.getAttribute("data-testid"))))[0] === "mc-tab-coach");
+  ok(`...and the header says his side's part: "${await inner(lv.page, "mc-our-line").catch(() => "")}"`, /^We're (bowling|batting)$/.test((await inner(lv.page, "mc-our-line").catch(() => "")).trim()));
   await coachTab(lv.page);
   ok("the Board is on it", await tid(lv.page, "coach-board").count() === 1);
   for (const [who, id] of [["Naidoo", NAIDOO], ["Whitfield", WHITFIELD], ["Bekker", BEKKER], ["Seven", SEVEN]]) {
@@ -1056,6 +1080,16 @@ try {
       await wp.page.locator('[data-testid="coach-wheel"] [data-testid="wagon-chip-4"]').count() === 1 && pw.small.length === 0 && pw.tiny.length === 0, [...pw.small, ...pw.tiny].slice(0, 4).join(" · "));
     ok("...phone: the page does not scroll sideways", await wp.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     ok("...phone: no page errors", wp.errors.length === 0 && wp.refusals.length === 0, [...wp.errors, ...wp.refusals].join(" | "));
+    // Slice 10 (question 7): Today's live card leads his side's coach to the Coach tab; "Open scorer" only if he scores it.
+    await go(wp.page, "dashboard");
+    await tid(wp.page, "day-now").first().waitFor({ timeout: 10000 }).catch(() => {});
+    const nowOpen = (await inner(wp.page, "day-now-open")).trim();
+    ok(`SLICE 10: Today's live card leads him to the Coach tab ("${nowOpen}"), with no Open scorer beside it`,
+       nowOpen === "Coach tab" && await tid(wp.page, "day-now-scorer").count() === 0, await inner(wp.page, "day-now"));
+    ok(`...and says his side's part ("${(await inner(wp.page, "day-now-line")).trim()}")`, /^We're (bowling|batting)$/.test((await inner(wp.page, "day-now-line")).trim()));
+    await tid(wp.page, "day-now-open").click({ timeout: 4000 }).catch(() => {});
+    await afterReads(wp.page, 2500);
+    ok("...one tap opens that fixture's Coach tab", await tid(wp.page, "mc-coach").count() === 1 && await tid(wp.page, "mc-tab-coach").getAttribute("aria-selected").catch(() => null) === "true");
     await wp.ctx.close();
   }
   await openDrawer(lv.page);
