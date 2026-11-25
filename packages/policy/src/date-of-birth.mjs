@@ -145,6 +145,7 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
   // A correction carries its reason (Kameel, 25 Nov 2026).
   reason_required: "Say why you are correcting it, for example \"birth certificate seen\".",
   reason_too_long: "Keep the reason to 200 characters.",
+  born_correction_needs_a_reason: "A date of birth on record is corrected on his Edit Profile, with the reason.",
   // Said instead of a disagreement with the ID number on file to a person who
   // may not read ID numbers (review N1): it tells him neither that one is on
   // file nor what date it carries.
@@ -160,4 +161,5 @@ export const BORN_REFUSED_BY_DB = Object.freeze([
   "id_number_disagrees_with_date_of_birth",
   "born_correction_is_the_office",
   "id_number_change_is_the_office",
+  "born_correction_needs_a_reason",
 ]);

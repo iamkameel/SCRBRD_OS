@@ -17054,9 +17054,9 @@ BEGIN
     v := _v172_write(BOY, 'born', B2::text, 'import');
     PERFORM _assert(v = '1 rows', format('§147 (office): the office''s import: %s', v));
     -- Kameel, 25 Nov 2026: a correction carries its reason, so the office's
-    -- own UPDATE, past the door, is refused by the record for want of one.
+    -- own UPDATE, past the door, is refused for want of one.
     v := _v172_write(BOY, 'born', B::text);
-    PERFORM _assert(v LIKE '23514:%player_born_change_reason%', format('§147 (office): the office''s write past the door: %s', v));
+    PERFORM _assert(v = '23514:born_correction_needs_a_reason', format('§147 (office): the office''s write past the door: %s', v));
     PERFORM _assert(_v172_rows(BOY) = format('%s>%s:import:%s', B, B2, REG),
                     format('§147 (office): recorded as %s', _v172_rows(BOY)));
     -- A support hour as the office is not the office (db/70's cut).
@@ -17262,8 +17262,8 @@ BEGIN
     PERFORM _assert(v3 = '42501:id_number_change_is_the_office', format('§147 (definer): the director, his number: %s', v3));
     PERFORM _assert(v4 = '42501:born_correction_is_the_office', format('§147 (definer): the director, a recorded date: %s', v4));
     -- The office through a door that is not the correction door gives no
-    -- reason, so the record refuses it: the one way to correct is the door.
-    PERFORM _assert(v5 LIKE '23514:%player_born_change_reason%', format('§147 (definer): the office through another door: %s', v5));
+    -- reason, so it is refused: the one way to correct is the door.
+    PERFORM _assert(v5 = '23514:born_correction_needs_a_reason', format('§147 (definer): the office through another door: %s', v5));
     PERFORM _assert(_v172_rows(BOY2) = '', format('§147 (definer): recorded as %s', _v172_rows(BOY2)));
 
   ELSIF p_case = 'grants' THEN

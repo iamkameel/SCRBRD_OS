@@ -191,9 +191,10 @@ CREATE TABLE IF NOT EXISTS player_born_change (
 ALTER TABLE player_born_change ADD COLUMN IF NOT EXISTS reason text;
 ALTER TABLE player_born_change DROP CONSTRAINT IF EXISTS player_born_change_reason;
 ALTER TABLE player_born_change ADD CONSTRAINT player_born_change_reason
-  -- coalesce: a CHECK that comes out NULL passes, and a NULL reason must not.
-  CHECK (CASE WHEN how = 'correction' THEN coalesce(reason ~ '\S' AND char_length(reason) <= 200, false)
-              ELSE reason IS NULL END) NOT VALID;   -- a development database's earlier-cut rows stand; every new row is held
+  -- A reason is a correction's alone, and is words. That every correction
+  -- the application makes HAS one is player_born_checked()'s rule (the
+  -- owner's own fixes need none).
+  CHECK (reason IS NULL OR (how = 'correction' AND reason ~ '\S' AND char_length(reason) <= 200)) NOT VALID;   -- a development database's earlier-cut rows stand; every new row is held
 CREATE INDEX IF NOT EXISTS player_born_change_player ON player_born_change (player_id, at);
 ALTER TABLE player_born_change ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON player_born_change FROM PUBLIC;
@@ -233,6 +234,17 @@ BEGIN
       USING ERRCODE = 'insufficient_privilege',
             HINT = 'Only the school office may change a date of birth already on record.';
   END IF;
+  -- A correction the application makes carries its reason (Kameel, 25 Nov
+  -- 2026), which only the door sets (app.born_reason, for its one UPDATE):
+  -- a recorded date is corrected through player_born_correct() or not at
+  -- all. An import says what it is by its `how`.
+  IF TG_OP = 'UPDATE' AND OLD.born IS NOT NULL AND NEW.born IS DISTINCT FROM OLD.born AND v_app
+     AND coalesce(current_setting('app.born_how', true), '') <> 'import'
+     AND coalesce(current_setting('app.born_reason', true), '') !~ '\S' THEN
+    RAISE EXCEPTION 'born_correction_needs_a_reason'
+      USING ERRCODE = 'check_violation',
+            HINT = 'A date of birth on record is corrected through player_born_correct(), with its reason.';
+  END IF;
   -- An ID number on file is the office's to change (review S1): otherwise a
   -- file could carry a new number and a date that agrees with it, and the
   -- number on his record would no longer decide anything. Not recorded: a
@@ -268,8 +280,7 @@ BEGIN
                 WHEN OLD.born IS NULL THEN 'capture'
                 ELSE 'correction' END;
   -- A correction's reason is the door's (app.born_reason, set for its one
-  -- UPDATE). Without one the row's CHECK refuses the write: a recorded date
-  -- is corrected through player_born_correct() or not at all.
+  -- UPDATE); the check above refuses an application correction without one.
   INSERT INTO player_born_change (player_id, school_id, was, became, how, by_id, by_name, reason)
   VALUES (NEW.id, NEW.school_id, OLD.born, NEW.born, v_how,
           v_me, CASE WHEN v_me IS NOT NULL THEN audit_person_label(v_me) END,
