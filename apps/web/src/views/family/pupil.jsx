@@ -25,12 +25,14 @@ import { CareerWagonWheel, DismissalMethodCard } from "../ProfilesView.jsx";
 import { Action, Back, Card, Line, NoneOr, Page, Title } from "./parts.jsx";
 import { ReadState } from "../../ui/primitives.jsx";
 import { readState } from "../../lib/readState.js";
-import { LastMatchCard, LiveCard, NewsCard, NextFixtureCard, NoticesCard, SeasonCard, TrainingCard } from "./cards.jsx";
+import { InjuryLine, LastMatchCard, LiveCard, NewsCard, NextFixtureCard, NoticesCard, SeasonCard, TrainingCard } from "./cards.jsx";
 import { ChildMatches, FixtureDetail, MatchFor } from "./matches.jsx";
 import { Health, TheirRecord } from "./childfile.jsx";
 import { MyLiftLine } from "../lifts.jsx";
-import { CaptainCard } from "./captain.jsx";
-import { TodoCard } from "./todo.jsx";
+import { CaptainCard, captainFixture, useCaptaincy } from "./captain.jsx";
+import { TodoCard, useTodoList } from "./todo.jsx";
+import { leadOf } from "../../lib/homeLead.js";
+import { owes } from "../../lib/todo.js";
 import { Compare } from "../compare.jsx";
 import { SealMark } from "../../ui/sealMark.jsx";
 import { honourWords, isSealed, isWithdrawn, provenanceOf, seasonOnce } from "../../lib/recognitionWords.js";
@@ -84,7 +86,7 @@ export function PupilHome({ role, onNav, onOpenScorer }) {
     return (
       <>
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <MatchFor match={open.match} child={me} role={role} self matches={matches} onBack={() => setOpen(null)}/>
+        <MatchFor match={open.match} child={me} role={role} self matches={matches} backLabel="Home" onBack={() => setOpen(null)}/>
       </>
     );
   }
@@ -92,36 +94,67 @@ export function PupilHome({ role, onNav, onOpenScorer }) {
     return (
       <Page testid="pupil-home">
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <FixtureDetail match={open.match} child={me} role={role} self onBack={() => setOpen(null)}/>
+        <FixtureDetail match={open.match} child={me} role={role} self backLabel="Home" onBack={() => setOpen(null)}/>
       </Page>
     );
   }
+  return <PupilHomeBody me={me} role={role} onNav={onNav} onOpenScorer={onOpenScorer} matches={matches} matchesRead={matchesRead}
+    retry={() => setNonce((n) => n + 1)} setOpen={setOpen}/>;
+}
+
+/**
+ * His Home (redesign slice 8; the role reviews' direction §2.6, §3.1): one
+ * lead, chosen by his match day (lib/homeLead.js), then what is asked of him,
+ * then the quiet rest, then the DSO card. Its own component, so the day's
+ * reads (hooks) are made for him alone, once he is known.
+ */
+function PupilHomeBody({ me, role, onNav, onOpenScorer, matches, matchesRead, retry, setOpen }) {
   const now = Date.now();
-  // §1.9: while his side's match is live, its board leads his Home.
-  const isLive = fixturesOf(matches, me, now).live.length > 0;
-  const live = <LiveCard child={me} matches={matches} self now={now} onFollow={(m) => setOpen({ kind: "match", match: m })}/>;
+  // SCRBRD-138 §1.2: the gate, read once here, from his own honour row; nothing server-side widens.
+  const { cap } = useCaptaincy(me, role, undefined);
+  // GA-I20 A1 (D12): his own list, read once; the lead asks it whether the next fixture's answer is owed.
+  const todo = useTodoList({ child: me, matches, matchesRead, now, self: true });
+  const next = fixturesOf(matches, me, now).upcoming[0] ?? null;
+  // Slice 9: an answer given in the lead keeps the lead where it is for this visit (the row does not move), while the
+  // list reads again so its count is true.
+  const [answeredHere, setAnsweredHere] = useState(/** @type {string | null} */ (null));
+  const owed = owes(todo.t, next?.id) || (next != null && answeredHere === next.id);
+  const lead = leadOf({ matches, child: me, now, captain: !!cap && !!captainFixture(me, matches, now), owed });
+  const onAnswered = () => { setAnsweredHere(next?.id ?? null); todo.retry(); };
+  const toMatch = (m) => setOpen({ kind: "match", match: m });
+  const toFixture = (m) => setOpen({ kind: "fixture", match: m });
+  const captainCard = (place) => <CaptainCard cap={cap} me={me} role={role} matches={matches} now={now} place={place} onOpen={(m, kind) => setOpen({ kind, match: m })}/>;
+  const nextCard = (weight) => (
+    <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={toFixture} weight={weight} cardAbove={lead.kind === "captain"} onAnswered={onAnswered}
+      said={readState(matchesRead, { what: "the fixtures" })} onRetry={retry}/>
+  );
+  const lastCard = (weight) => <LastMatchCard child={me} matches={matches} self now={now} onOpen={toMatch} weight={weight}/>;
   return (
     <Page testid="pupil-home">
       <header style={{ display: "grid", gap: "2px" }}>
         <Title testid="pupil-name">{me.name}</Title>
         <Line quiet>{[me.schoolName, me.team].filter(Boolean).join(" · ")}</Line>
+        {/* Question 6 (a): his open injury, one quiet line, opening his own Health on Me. */}
+        <InjuryLine child={me} role={role} onOpen={onNav ? () => onNav("me") : null}/>
       </header>
-      {isLive && live}
-      <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={(m) => setOpen({ kind: "fixture", match: m })}
-        said={readState(matchesRead, { what: "the fixtures" })} onRetry={() => setNonce((n) => n + 1)}/>
-      {/* GA-I20 A1 (D12): his own list, under his next fixture: his answers,
-          and a consent only where the server says it is his to give. */}
-      <TodoCard child={me} matches={matches} matchesRead={matchesRead} now={now} self
-        onOpen={(m) => setOpen({ kind: "fixture", match: m })}/>
+      {/* The lead: exactly one block (§2.6). */}
+      {lead.kind === "live" && <LiveCard child={me} matches={matches} self now={now} onFollow={toMatch} under={lead.captainUnder ? captainCard("under") : null}/>}
+      {lead.kind === "captain" && captainCard("lead")}
+      {lead.kind === "result" && lastCard("lead")}
+      {(lead.kind === "next" || lead.kind === "none") && nextCard("lead")}
+      {/* Then what is asked of him: the fixture (when it did not lead), his list, his appointment, his captain's card. */}
+      {lead.kind !== "next" && lead.kind !== "none" && (next || lead.kind !== "live") && nextCard("standard")}
+      {/* His answer for the fixture above is not asked twice (§2.6); the count stays the list's own. */}
+      <TodoCard todo={todo} matches={matches} lead={next?.id ?? null} onOpen={toFixture}/>
       {/* Q2: appointed to score, he keeps this app; the appointment is a block here. */}
       <AppointedCard role={role} onOpenScorer={onOpenScorer}/>
-      {/* SCRBRD-138 C1: only for a boy who holds the captaincy honour; under his own next fixture, which stays first. */}
-      <CaptainCard me={me} role={role} matches={matches} now={now} onOpen={(m, kind) => setOpen({ kind, match: m })}/>
+      {/* SCRBRD-138 C1: on any other day, under his own next fixture (question 5 (a) leads with it only on his match day). */}
+      {lead.kind !== "live" && lead.kind !== "captain" && captainCard("card")}
       {/* SCRBRD-124 phase 2 (db/76): his own lifts, for a pupil of eighteen
           still at school (Kameel, 2026-10-01); nothing for anybody younger. */}
       <MyLiftLine/>
-      {!isLive && live}
-      <LastMatchCard child={me} matches={matches} self now={now} onOpen={(m) => setOpen({ kind: "match", match: m })}/>
+      {/* The quiet rest: what there is to read. */}
+      {lead.kind !== "result" && lastCard("quiet")}
       <SeasonCard child={me} role={role} self/>
       <TrainingCard child={me} role={role} now={now}/>
       <NoticesCard child={me} role={role}/>

@@ -84,8 +84,28 @@ function useLive() {
   return { live, answered };
 }
 
-/** How long the page waits for the first read before it settles on the film. */
-const LEAD_WAIT_MS = 600;
+/**
+ * How long the page waits for the first read before it settles on the film.
+ * Redesign slice 14 (DESIGN_DIRECTION §3.5): up to about three seconds, holding
+ * a board-shaped skeleton in the board's place (WaitingBoard), so a slow read
+ * does not lose the match-day board to the film. A read that fails answers at
+ * once (readLive gives null), so a page with nothing to show waits for nothing.
+ */
+const LEAD_WAIT_MS = 3000;
+
+/** The board's place while the first read is out: a card-shaped skeleton, still under reduced motion. aria-hidden; the page says nothing it does not know. */
+function WaitingBoard() {
+  // Not drawn for the first moment: a read that answers at once (most do) never flashes a skeleton.
+  const [late, setLate] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setLate(true), 250); return () => clearTimeout(t); }, []);
+  if (!late) return null;
+  return (
+    <div aria-hidden="true" data-testid="home-waiting" style={{ maxWidth: "960px", margin: "0 auto", padding: `${T.space.lg} ${T.space.lg} 0`, display: "grid", gap: T.space.sm }}>
+      <div className="os-skel" style={{ height: "148px", borderRadius: T.radius.lg, background: T.surface.raised, border: `1px solid ${T.line.subtle}` }}/>
+      <div className="os-skel" style={{ height: "14px", width: "60%", borderRadius: T.radius.sm, background: T.surface.raised }}/>
+    </div>
+  );
+}
 
 /**
  * The first screen, chosen ONCE per visit (EXPERIENCE_PASS §2.3, Q6). From the
@@ -93,7 +113,7 @@ const LEAD_WAIT_MS = 600;
  * a match ended, or a new one started, changes the cards inside the boards
  * already drawn and never what leads, so nothing moves above the reader.
  * Until the read answers (LEAD_WAIT_MS at most) the page waits with the
- * header alone; a read slower than that leaves the film first for the whole
+ * header and a board-shaped skeleton (WaitingBoard); a read slower than that leaves the film first for the whole
  * visit, rather than a board arriving above a hero already painted.
  *
  * Returns null while waiting, else { first, ids }: firstScreen()'s answer and
@@ -199,6 +219,7 @@ function Home() {
     <>
       <Header appHref={APP} logo={SCRBRD_LOGO} live={liveNow} over/>
       <main data-arena={mode} data-first={lead ? lead.first : "wait"} style={lead ? undefined : { minHeight: "100vh" }}>
+        {!lead && <WaitingBoard/>}
         {lead && <>
           {arena?.mode === "3d" && <Arena forced={arena.forced} onFail={fail}/>}
           {leads && <LiveStrip data={top} lead/>}
