@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FAMILY_PROBLEM_WORDS, bornOf, familyClaim } from "./family-register-api.mjs";
+import { FAMILY_PROBLEM_WORDS, bornOf, familyClaim, familyRegisterFail } from "./family-register-api.mjs";
 import { FAMILY_LINE_WORDS, familyLineWords } from "../../../apps/web/src/lib/familyList.js";
 
 let pass = 0, fail = 0;
@@ -60,6 +60,23 @@ group("C. The date she typed: shape only, and only for a guardian or a pupil's o
   ok("a guardian's request is tried", await familyClaim(client, "r", "guardian", "2012-03-04") === "linked" && asked.length === 1);
   const odd = { query: async () => ({ rows: [{ outcome: "found" }] }) };
   ok("an answer that is not linked or in reads as sent", await familyClaim(odd, "r", "player", "2007-01-02") === "sent");
+}
+
+group("D. A Postgres error's own detail never reaches the screen");
+{
+  const answer = (/** @type {any} */ e) => {
+    /** @type {any} */ const out = {};
+    const res = { status(/** @type {number} */ s) { out.status = s; return res; }, json(/** @type {any} */ b) { out.body = b; return res; } };
+    familyRegisterFail(/** @type {any} */ (res), e);
+    return out;
+  };
+  const pg = Object.assign(new Error("new row for relation \"family_register\" violates check constraint"),
+    { code: "23514", severity: "ERROR", detail: "Failing row contains (walk.parent@example.invalid, …)." });
+  const a = answer(pg);
+  ok("a Postgres error answers 500 with a bare code", a.status === 500 && a.body?.error === "error");
+  ok("...and none of its detail or message", !JSON.stringify(a.body).includes("example.invalid") && !("detail" in a.body) && !/violates/.test(JSON.stringify(a.body)));
+  const mine = answer(Object.assign(new Error("not_permitted"), { status: 403, detail: "Only the school office and the principal can use its family list." }));
+  ok("this module's own refusal keeps its words", mine.status === 403 && mine.body?.error === "not_permitted" && /school office/.test(mine.body?.detail ?? ""));
 }
 
 console.log("\n" + "─".repeat(52));

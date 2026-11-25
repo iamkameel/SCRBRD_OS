@@ -25,9 +25,11 @@
 -- ── WHAT MOVES ─────────────────────────────────────────────────────
 --   ~ player_born_checked() (db/172's BEFORE trigger on player), replaced
 --       whole, only over db/172's body or this file's (folded md5, §0).
---       Two new rules, asked first, for every write the application makes
---       (logged in as scrbrd_app, directly or through any door: the same
---       test db/172's office rule makes):
+--       Two new rules, asked first, for every write made by or for a
+--       signed-in person: logged in as scrbrd_app, directly or through any
+--       door, or with a person signed in under any login (a pooler's, a SET
+--       ROLE). db/172's own rules in the same function read the login the
+--       same way from this file on:
 --         born_needs_the_office       a first date (an INSERT with a date,
 --             or none becoming a date) that makes him 18 today, from anyone
 --             but the office of his school;
@@ -36,13 +38,24 @@
 --       Both insufficient_privilege. The owner's own write (the SQL Editor, a
 --       seed) is let through, as before, and recorded as 'owner'.
 --       db/172's four rules stand as they were, after these.
+--       And (Kameel, 26 Nov 2026, the re-dating design's Q8) an office person
+--       who is his own guardian (player_born_own_child()) writes no first date
+--       that makes him 18 (born_own_child), corrects no date and confirms none
+--       (own_child): another office person does, or SCRBRD.
+--   ~ player_born_correct() (db/172), replaced whole, guarded: refuses
+--       own_child.
+--   + player_id_number_change  one row each time an ID number is written
+--       where there was none, changed or taken off: who, when, whether his
+--       school's office. Never the number. RLS on, no policy, no privilege.
 --   ~ player_born_record() (db/172's AFTER trigger), replaced whole, likewise
 --       guarded, and the trigger fires AFTER INSERT too: a new boy written with
 --       a date is one row, `was` empty, `how` capture, import or owner.
 --   ~ player_born_change: `how` may be 'confirmed' (was = became: the office
 --       has checked the date on record), and `by_office` says whether the
 --       person who wrote the row was his school's office at that moment
---       (player_born_office()). Rows written before this file read false.
+--       (player_born_office()), not his own guardian, and, for an import, on
+--       a line the office ticked (Kameel, 26 Nov 2026, Q1). Rows written
+--       before this file read false.
 --   + player_born_confirmed(player)  is the date on record one his school's
 --       office wrote or confirmed, with no write to it since? Owner-only.
 --   + player_born_confirm(player)  the office's "Confirm his date": (ok,
@@ -72,9 +85,13 @@
 --       a pad, a support hour, a platform-wide key, a child's own account, or
 --       a claim held for a safeguarding concern (pupil_claim_held(), db/168),
 --       which reads as none so nothing tips anyone off.
---   ~ pupil_signin_after_yes() (db/169), replaced whole, guarded: a yes does
---       not open the account of a claim held for a safeguarding concern; it
---       answers as if nothing waits (the yes itself stands on record).
+--   ~ pupil_signin_after_yes() (db/169), replaced whole, guarded: for a claim
+--       held for a safeguarding concern a yes moves neither his own link's
+--       stamp nor his account; it answers as if nothing waits (the yes itself
+--       stands on record).
+--   ~ pupil_signin_state() (db/169), replaced whole, guarded: `held` (his
+--       account waits) is never true to his family for such a claim; the
+--       office reads it as before.
 --   ~ The seeded test account's live `player` assignment (app_user
 --       88888888-0000-0000-0000-000000000001, spectator@example.invalid) is
 --       ended: active = false, as db/77 and tools/sql/fix-player-without-team
@@ -85,8 +102,9 @@
 --     listed on "Coming of age" 60 days ahead (Kameel's Q2, for the pilot).
 --   * What follows a correction (his links and stamps re-dated, the office's
 --     follow-up list) is a later migration.
---   * No new table. The screens that show "Coming of age" are a later slice;
---     the roster import's report and tick are services/api/io/import-api.mjs.
+--   * The roster import's report and tick are services/api/io/import-api.mjs;
+--     "Coming of age" is read and confirmed through services/api/write/
+--     dob-capture-api.mjs.
 --
 -- Needs db/172 (player_born_change and its triggers), db/169 (the gate and
 -- the carry-over), and audit_log() as db/172 left it. Takes a short lock on
@@ -119,11 +137,13 @@ $$ LANGUAGE sql STABLE;
 DROP TABLE IF EXISTS pg_temp._v173_bodies;
 CREATE TEMP TABLE _v173_bodies (fn text PRIMARY KEY, shipped text, mine text, file text);
 INSERT INTO _v173_bodies VALUES
-  ('player_born_checked()',     '4214f377cb5bdeade6c1c13ef06a2955', '98bf4060429e9677f7eb291dcee6bd24', 'db/172'),
-  ('player_born_record()',      'd2e91ecba68ca5f7529024903431b250', 'fbeb052c372cedb0ae34bcf4c676c724', 'db/172'),
+  ('player_born_checked()',     '4214f377cb5bdeade6c1c13ef06a2955', 'c850e92291bc7f809e52e2630c422c85', 'db/172'),
+  ('player_born_record()',      'd2e91ecba68ca5f7529024903431b250', '9ba26159d30af8fd6d1cdbeb1ebe70aa', 'db/172'),
   ('pupil_signin_carry_over()', '9aa438021d787f69337360a57554b5ff', 'a83fd786dea8ab57e4d9a83d96c11eb3', 'db/169'),
   ('pupil_signin_open(uuid)',   '8fb155c9ca0bcc28ee7d2436f4f69675', '9f48a4d15b197910c45640601d96c889', 'db/169'),
-  ('pupil_signin_after_yes(uuid,text)', '605c5b3a4c0139b7089f64973ccf51ba', 'cfcbb747f0588ed8b2cce73bc0781c18', 'db/169'),
+  ('pupil_signin_after_yes(uuid,text)', '605c5b3a4c0139b7089f64973ccf51ba', '9af7035afb366ee70ff3c122e8b0789f', 'db/169'),
+  ('pupil_signin_state(uuid)',  '1fae83e1510ed44e67f5e29cc2f82932', 'a6ab3bfe6f7f1d14d2f2ef726505d67d', 'db/169'),
+  ('player_born_correct(uuid,date,text)', 'a40e796fdc611dd18dc662bd2d1a6871', 'a0158aea9702893c476b11e60323a2dd', 'db/172'),
   ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
                                 '25f7df23628e41c73c4e9575e8eb37a3', '5323dd10910de37e623e80302ea9cf93','db/172');
 DO $bodies$
@@ -154,6 +174,24 @@ ALTER TABLE player_born_change ADD CONSTRAINT player_born_change_moved
               ELSE was IS DISTINCT FROM became END);
 
 
+-- ── 1b · Is the caller his own guardian? ───────────────────────────
+-- A live link of the caller's own to the boy, as a guardian (not his own
+-- self link): pending or verified, on an active assignment, not ended. The
+-- re-dating design's Q8 (Kameel, 25 and 26 Nov 2026).
+CREATE OR REPLACE FUNCTION player_born_own_child(p_player uuid) RETURNS boolean AS $$
+  SELECT app_user_id() IS NOT NULL AND EXISTS (
+    SELECT 1 FROM role_assignment a JOIN assignment_subject s ON s.assignment_id = a.id
+     WHERE a.person_id = app_user_id() AND a.role = 'guardian' AND s.player_id = p_player
+       AND s.relationship IS DISTINCT FROM 'self' AND a.active
+       AND s.verification_state IN ('pending', 'verified')
+       AND (a.valid_until IS NULL OR a.valid_until > sa_today())
+       AND (s.valid_until IS NULL OR s.valid_until > sa_today()))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION player_born_own_child(uuid) FROM PUBLIC;
+-- The trigger asks it as the writer; it answers only about the caller.
+GRANT EXECUTE ON FUNCTION player_born_own_child(uuid) TO scrbrd_app;
+
+
 -- ── 2 · The check, as the writer ───────────────────────────────────
 -- SECURITY INVOKER, as db/172 made it: current_user is the role that wrote.
 CREATE OR REPLACE FUNCTION player_born_checked() RETURNS trigger AS $$
@@ -161,8 +199,10 @@ DECLARE
   v_from_id date;
   -- The application wrote this: as itself, or through a door (a definer runs
   -- as the owner, so current_user alone would not say; the login role does,
-  -- and no definer changes it).
-  v_app boolean := current_user = 'scrbrd_app' OR session_user = 'scrbrd_app';
+  -- and no definer changes it); or anyone at all with a person signed in, so
+  -- the rules hold however the application logs in (a pooler's own login, a
+  -- SET ROLE). Only the owner's own write, no one signed in, is none of these.
+  v_app boolean := current_user = 'scrbrd_app' OR session_user = 'scrbrd_app' OR app_user_id() IS NOT NULL;
   -- The school whose record it is: OLD's, as db/172's office rule reads it.
   v_school uuid := CASE WHEN TG_OP = 'INSERT' THEN NEW.school_id ELSE OLD.school_id END;
 BEGIN
@@ -170,7 +210,7 @@ BEGIN
   -- the office's to write. Asked before the ID number is read, so the answer
   -- is the same whatever is on file.
   IF v_app AND NEW.born IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.born IS NULL)
-     AND majority_on(NEW.born) <= sa_today() AND NOT player_born_office(v_school) THEN
+     AND majority_on(NEW.born) <= sa_today() AND NOT coalesce(player_born_office(v_school), false) THEN
     RAISE EXCEPTION 'born_needs_the_office'
       USING ERRCODE = 'insufficient_privilege',
             HINT = 'Only the school office may record a date of birth that makes him 18.';
@@ -178,10 +218,19 @@ BEGIN
   -- db/173: an ID number, first or not, is the office's to write (a change
   -- to one on file is db/172's rule below).
   IF v_app AND NEW.id_number IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.id_number IS NULL)
-     AND NOT player_born_office(v_school) THEN
+     AND NOT coalesce(player_born_office(v_school), false) THEN
     RAISE EXCEPTION 'id_number_needs_the_office'
       USING ERRCODE = 'insufficient_privilege',
             HINT = 'Only the school office may record an ID number.';
+  END IF;
+  -- Kameel, 26 Nov 2026 (the re-dating design's Q8): an office person who is
+  -- his own guardian does not write a first date that makes him 18; another
+  -- office person does, or SCRBRD.
+  IF v_app AND NEW.born IS NOT NULL AND TG_OP = 'UPDATE' AND OLD.born IS NULL
+     AND majority_on(NEW.born) <= sa_today() AND player_born_own_child(NEW.id) THEN
+    RAISE EXCEPTION 'born_own_child'
+      USING ERRCODE = 'insufficient_privilege',
+            HINT = 'Another person at the school office records a date of birth for your own child.';
   END IF;
   -- db/172's rules, as it wrote them. The owner's own write, no one signed
   -- in, is the one let through.
@@ -230,7 +279,8 @@ REVOKE ALL ON FUNCTION player_born_checked() FROM PUBLIC;
 -- How: no one signed in is the owner; the import says so for its own
 -- transaction (app.born_how = 'import', a label and never an authority); a
 -- date where there was none, a new boy's included, is a capture; any other
--- change is a correction. by_office: was the writer his school's office.
+-- change is a correction. by_office: was the writer his school's office (and
+-- not his own guardian), for an import only on a line the office ticked.
 CREATE OR REPLACE FUNCTION player_born_record() RETURNS trigger AS $$
 DECLARE v_me uuid := app_user_id(); v_how text; v_was date;
 BEGIN
@@ -250,7 +300,11 @@ BEGIN
   VALUES (NEW.id, NEW.school_id, v_was, NEW.born, v_how,
           v_me, CASE WHEN v_me IS NOT NULL THEN audit_person_label(v_me) END,
           CASE WHEN v_how = 'correction' THEN nullif(current_setting('app.born_reason', true), '') END,
-          v_me IS NOT NULL AND coalesce(player_born_office(NEW.school_id), false));
+          -- His school's office, and not his own guardian (Q8); an import's
+          -- line only under the office's tick (Kameel, 26 Nov 2026, Q1:
+          -- app.born_ticked, set by the import for that line alone).
+          v_me IS NOT NULL AND coalesce(player_born_office(NEW.school_id), false) AND NOT player_born_own_child(NEW.id)
+          AND (v_how <> 'import' OR coalesce(current_setting('app.born_ticked', true), '') = 'on'));
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION player_born_record() FROM PUBLIC;
@@ -259,6 +313,50 @@ DROP TRIGGER IF EXISTS player_born_changes_are_recorded ON player;
 CREATE TRIGGER player_born_changes_are_recorded
   AFTER INSERT OR UPDATE OF born ON player
   FOR EACH ROW EXECUTE FUNCTION player_born_record();
+
+
+-- ── 3b · An ID number written: who, when, the office or not ────────
+-- Kameel, 25 Nov 2026: an ID number, first or not, is the office's to write.
+-- One row each time one is written where there was none, changed, or taken
+-- off: the boy, his school, how, who (his label as it was), whether he was
+-- his school's office, when. Never the number itself. RLS on, no policy, no
+-- privilege: written by the trigger alone. A row goes with its boy.
+CREATE TABLE IF NOT EXISTS player_id_number_change (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id  uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  school_id  uuid,
+  how        text NOT NULL CONSTRAINT player_id_number_change_how CHECK (how IN ('first', 'changed', 'removed')),
+  by_id      uuid,
+  by_name    text,
+  by_office  boolean NOT NULL DEFAULT false,
+  at         timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS player_id_number_change_player ON player_id_number_change (player_id, at);
+ALTER TABLE player_id_number_change ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON player_id_number_change FROM PUBLIC;
+REVOKE ALL ON player_id_number_change FROM scrbrd_app;
+
+CREATE OR REPLACE FUNCTION player_id_number_record() RETURNS trigger AS $$
+DECLARE v_me uuid := app_user_id(); v_how text;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.id_number IS NULL THEN RETURN NULL; END IF;
+    v_how := 'first';
+  ELSE
+    IF NEW.id_number IS NOT DISTINCT FROM OLD.id_number THEN RETURN NULL; END IF;
+    v_how := CASE WHEN OLD.id_number IS NULL THEN 'first' WHEN NEW.id_number IS NULL THEN 'removed' ELSE 'changed' END;
+  END IF;
+  INSERT INTO player_id_number_change (player_id, school_id, how, by_id, by_name, by_office)
+  VALUES (NEW.id, NEW.school_id, v_how, v_me, CASE WHEN v_me IS NOT NULL THEN audit_person_label(v_me) END,
+          v_me IS NOT NULL AND coalesce(player_born_office(NEW.school_id), false));
+  RETURN NULL;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION player_id_number_record() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS player_id_numbers_are_recorded ON player;
+CREATE TRIGGER player_id_numbers_are_recorded
+  AFTER INSERT OR UPDATE OF id_number ON player
+  FOR EACH ROW EXECUTE FUNCTION player_id_number_record();
 
 
 -- ── 4 · Is his date the office's? ──────────────────────────────────
@@ -295,6 +393,10 @@ BEGIN
   IF p.born IS NULL THEN
     RETURN QUERY SELECT false, 'born_required'::text; RETURN;
   END IF;
+  -- Q8 (Kameel, 26 Nov 2026): not his own guardian.
+  IF player_born_own_child(p_player) THEN
+    RETURN QUERY SELECT false, 'own_child'::text; RETURN;
+  END IF;
   IF player_born_confirmed(p_player) THEN
     RETURN QUERY SELECT true, 'unchanged'::text; RETURN;
   END IF;
@@ -304,6 +406,61 @@ BEGIN
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION player_born_confirm(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION player_born_confirm(uuid) TO scrbrd_app;
+
+
+-- ── 5b · The office's correction, not of his own child ─────────────
+-- db/172's door, with one refusal more (Q8).
+CREATE OR REPLACE FUNCTION player_born_correct(p_player uuid, p_born date, p_reason text)
+RETURNS TABLE (ok boolean, reason text, was date, born date) AS $$
+#variable_conflict use_column
+-- Trimmed of every kind of space, as the route's trim() trims it.
+DECLARE p record; v_from_id date; v_why text := regexp_replace(p_reason, '^\s+|\s+$', '', 'g');
+BEGIN
+  -- Who is asking first, and only then the lock (review N2): a caller who
+  -- is not the office holds no row of anybody's.
+  IF NOT player_born_office((SELECT x.school_id FROM player x WHERE x.id = p_player)) THEN
+    RETURN QUERY SELECT false, 'not_permitted'::text, NULL::date, NULL::date; RETURN;
+  END IF;
+  SELECT x.id, x.school_id, x.born, x.id_number INTO p FROM player x WHERE x.id = p_player FOR UPDATE;
+  IF NOT FOUND OR NOT player_born_office(p.school_id) THEN
+    RETURN QUERY SELECT false, 'not_permitted'::text, NULL::date, NULL::date; RETURN;
+  END IF;
+  IF p_born IS NULL THEN
+    RETURN QUERY SELECT false, 'born_required'::text, p.born, NULL::date; RETURN;
+  END IF;
+  -- db/173 (Q8, Kameel, 25 and 26 Nov 2026): an office person who is his own
+  -- guardian does not correct his date; another office person does.
+  IF player_born_own_child(p_player) THEN
+    RETURN QUERY SELECT false, 'own_child'::text, p.born, NULL::date; RETURN;
+  END IF;
+  -- A reason is asked only of a correction (review B N8): filling a missing
+  -- date is a capture, and asks for none. It is words: at least one letter
+  -- or digit (review B N1).
+  IF p.born IS NULL THEN
+    v_why := NULL;
+  ELSIF v_why IS NULL OR v_why !~ '[[:alnum:]]' THEN
+    RETURN QUERY SELECT false, 'reason_required'::text, p.born, NULL::date; RETURN;
+  END IF;
+  IF char_length(v_why) > 200 THEN
+    RETURN QUERY SELECT false, 'reason_too_long'::text, p.born, NULL::date; RETURN;
+  END IF;
+  IF p_born > sa_today() THEN
+    RETURN QUERY SELECT false, 'born_in_future'::text, p.born, NULL::date; RETURN;
+  END IF;
+  IF p.born IS NOT DISTINCT FROM p_born THEN
+    RETURN QUERY SELECT true, 'unchanged'::text, p.born, p.born; RETURN;
+  END IF;
+  v_from_id := CASE WHEN p.id_number IS NOT NULL THEN sa_id_born(p.id_number) END;
+  IF v_from_id IS NOT NULL AND v_from_id <> p_born THEN
+    RETURN QUERY SELECT false, 'id_number_disagrees_with_date_of_birth'::text, p.born, NULL::date; RETURN;
+  END IF;
+  PERFORM set_config('app.born_reason', coalesce(v_why, ''), true);
+  UPDATE player x SET born = p_born WHERE x.id = p_player;
+  PERFORM set_config('app.born_reason', '', true);
+  RETURN QUERY SELECT true, NULL::text, p.born, p_born;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION player_born_correct(uuid, date, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION player_born_correct(uuid, date, text) TO scrbrd_app;
 
 
 -- ── 6 · "Coming of age" ────────────────────────────────────────────
@@ -442,6 +599,12 @@ CREATE OR REPLACE FUNCTION pupil_signin_after_yes(p_player uuid, p_version text)
 DECLARE c pupil_claim%ROWTYPE; v_user uuid; v_req uuid; v_ok boolean; v_why text; v_decider uuid;
 BEGIN
   IF NOT pupil_signin_in_force(p_player) THEN RETURN 'not_in_force'; END IF;
+  -- db/173: a claim held for a safeguarding concern is asked first: neither
+  -- his own link's stamp nor his account moves on a yes.
+  IF EXISTS (SELECT 1 FROM pupil_claim x WHERE x.player_id = p_player AND x.state = 'recognised'
+                AND pupil_claim_held(x.user_id)) THEN
+    RETURN NULL;
+  END IF;
   UPDATE assignment_subject g
      SET consent_state = 'granted', consent_version = coalesce(p_version, pupil_signin_terms_version()), consent_at = now()
    WHERE g.player_id = p_player AND g.relationship = 'self'
@@ -479,6 +642,57 @@ BEGIN
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION pupil_signin_after_yes(uuid, text) FROM PUBLIC;
 
+-- db/169's state read, with a held claim read as none by his family.
+CREATE OR REPLACE FUNCTION pupil_signin_state(p_player uuid)
+RETURNS TABLE (agreed boolean, in_force boolean, adult boolean, born_known boolean, yes_how text, yes_by text, yes_at timestamptz,
+               form_signed_by text, form_signed_on date,
+               yours boolean, can_allow boolean, can_stop boolean, held boolean, office boolean) AS $$
+DECLARE v_me uuid := app_user_id(); p player%ROWTYPE; l record; v_office boolean; y pupil_signin_consent%ROWTYPE; v_enrolled boolean;
+BEGIN
+  IF v_me IS NULL OR app_pad_scoped() THEN RETURN; END IF;
+  SELECT * INTO p FROM player x WHERE x.id = p_player;
+  IF NOT FOUND OR NOT lift_cuts_ok(p.school_id) THEN RETURN; END IF;
+  SELECT * INTO l FROM pupil_signin_my_link(p_player);
+  v_office := pupil_claim_office(p.school_id);
+  IF l.link_id IS NULL AND NOT v_office THEN RETURN; END IF;
+  office := v_office;
+  agreed := v_office OR coalesce(l.agreed, false);
+  IF NOT agreed THEN
+    yours := false; can_allow := false; can_stop := false;
+    RETURN NEXT; RETURN;
+  END IF;
+  -- The yes that keeps him open: hers first, then the most recent.
+  SELECT * INTO y FROM pupil_signin_consent c
+   WHERE c.player_id = p_player AND c.answer = 'yes' AND pupil_signin_yes_stands(c.id)
+   ORDER BY (c.how = 'guardian' AND c.given_by = v_me) DESC, c.seq DESC LIMIT 1;
+  in_force := pupil_signin_in_force(p_player);
+  adult := p.born IS NOT NULL AND majority_on(p.born) <= sa_today();
+  born_known := p.born IS NOT NULL;
+  yes_how := y.how;
+  yours := coalesce(y.how = 'guardian' AND y.given_by = v_me, false);
+  yes_by := CASE WHEN y.id IS NULL THEN NULL
+                 WHEN yours THEN y.given_by_name
+                 WHEN v_office THEN coalesce(y.given_by_name, 'the school office')
+                 WHEN y.how = 'guardian' THEN 'the guardian'
+                 ELSE 'the school office' END;
+  yes_at := y.given_at;
+  form_signed_by := CASE WHEN v_office THEN y.form_signed_by END;
+  form_signed_on := y.form_signed_on;
+  -- db/173: a claim held for a safeguarding concern reads as none to his
+  -- family (Q3, Kameel, 25 Nov 2026); the office reads it as before.
+  held := coalesce(in_force, false) AND EXISTS (SELECT 1 FROM pupil_claim c JOIN app_user u ON u.id = c.user_id
+                                               WHERE c.player_id = p_player AND c.state = 'recognised' AND u.active
+                                                 AND (v_office OR NOT pupil_claim_held(c.user_id)));
+  v_enrolled := pupil_signin_enrolled_yes(p_player) IS NOT NULL;
+  can_allow := l.link_id IS NOT NULL AND born_known AND NOT adult AND (NOT yours OR held)
+               AND NOT pupil_signin_child_account(v_me);
+  can_stop := l.link_id IS NOT NULL AND NOT adult AND (yours OR v_enrolled) AND NOT pupil_signin_child_account(v_me);
+  RETURN NEXT;
+END $$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION pupil_signin_state(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION pupil_signin_state(uuid) TO scrbrd_app;
+
+
 -- ── 10 · The seeded test account's `player` role, ended ────────────
 -- Ended, not deleted: the row, its dates and who made it stay on the record
 -- (db/01 stamps revoked_at; revoked_by stays NULL, the schema's way of
@@ -505,6 +719,13 @@ END $test_account$;
 DO $after$
 DECLARE r record; v text;
 BEGIN
+  -- The CHECKs on the record are the three named ones and no other: an old
+  -- one under a name this file did not guess would refuse a confirmation.
+  v := (SELECT string_agg(conname, ',' ORDER BY conname) FROM pg_constraint
+         WHERE conrelid = 'player_born_change'::regclass AND contype = 'c');
+  IF v IS DISTINCT FROM 'player_born_change_how,player_born_change_moved,player_born_change_reason' THEN
+    RAISE EXCEPTION 'db/173: player_born_change carries the CHECKs %, not the three this file names; drop the stray one and paste again', v;
+  END IF;
   FOR r IN SELECT * FROM _v173_bodies LOOP
     v := pg_temp._v173_fold(r.fn);
     IF v IS DISTINCT FROM r.mine THEN

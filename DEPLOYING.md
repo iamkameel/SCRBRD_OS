@@ -2782,7 +2782,9 @@ db/08's last-link rule. Its proof is db/99 §149; its walk is
 
 To paste:
 
-- **After db/172.** It needs db/168's pupil claim, db/169's
+- **After db/173.** Its guard stops it without db/173's `player_born_confirm()`:
+  the list lets a boy of 18 in on the date on record, and db/173 makes a first
+  date that makes a boy 18 the office's. It needs db/168's pupil claim, db/169's
   `pupil_signin_after_yes()` and db/92's grant door, and re-emits three
   functions, each only over the body it expects or its own:
   `pupil_claim_send()` (db/168's), `role_assignment_end()` and
@@ -2815,7 +2817,7 @@ To paste:
   reset by its last statement); a paste that timed out on its lock is simply
   run again.
 
-Not pasted yet. Hash to check: `sha256 16acc4aea6cba63671536d4db1d270df66131d7a6d763faaea771fbaba139e81`.
+Not pasted yet. Hash to check: `sha256 406f9dd8c77b978f8832f928cf3e01698bfa634beaa8354558afa865ec4642c7`.
 <!-- ── end db/174 ── -->
 <!-- ── db/175: the parent's terms gate ── -->
 #### The parent's terms gate: her link reaches her child once she has agreed (db/175)

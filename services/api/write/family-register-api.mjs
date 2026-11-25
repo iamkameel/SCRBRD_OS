@@ -78,6 +78,10 @@ export const FAMILY_PROBLEM_WORDS = {
   duplicate_in_file:        (d) => `the same child, address and kind is on row ${d}.`,
   already_listed:           (d) => `already listed, open until ${dayWords(d)}.`,
   warning_not_acknowledged: () => "tick the warning to list this row anyway.",
+  // Kameel, 26 Nov 2026 (Q4, Q5): the words name the step.
+  born_unconfirmed:         () => "Confirm his date first. He is 18, or will be within 60 days, so his own row waits for the office to confirm his date of birth on his profile.",
+  shared_address:           (d) => `the same address is listed as a parent's and as the pupil's own for this child${d ? ` (row ${d})` : ""}. Link this family by hand.`,
+  pupil_address:            () => "that address is a pupil's own at your school, so it is not listed as a parent's. Link this family by hand.",
 };
 
 /** The call's own refusals (line 0). @type {Record<string, [number, string]>} */
@@ -113,10 +117,16 @@ const fail = (res, e) => {
   if (e.code === "22P02" || e.code === "22007" || e.code === "22008") return res.status(400).json({ error: "bad_request" });
   // Two uploads of the same row at once: the second meets the open-row index.
   if (e.code === "23505") return res.status(409).json({ error: "already_listed", detail: "Somebody listed the same row a moment ago. Check again." });
-  const status = e.code === "42501" ? 403 : (e.status || 500);
-  res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error"),
-                            ...(e.detail ? { detail: e.detail } : {}) });
+  // Only this module's own errors (err(), which sets `status`) carry words
+  // for the screen. A Postgres error's own `detail` and message can hold the
+  // row it failed on, addresses included: it is answered as a bare code.
+  const own = typeof e.status === "number" && !e.severity;
+  const status = e.code === "42501" ? 403 : (own ? e.status : 500);
+  res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (own ? e.message : "error"),
+                            ...(own && e.detail ? { detail: e.detail } : {}) });
 };
+
+export { fail as familyRegisterFail };
 
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function familyRegisterRoutes({ pool, secret }) {

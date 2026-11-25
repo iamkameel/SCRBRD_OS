@@ -81,7 +81,8 @@
 --       gate and a guardian's yes still decide that). md5-guarded, and
 --       checked to be db/168's text with that block and nothing else.
 --   + family_register_withdraw(row), family_register_rows(school, state),
---     family_register_redact_due(school), family_register_redact(school),
+--     family_register_redact_due(school), family_register_redact(school) (a
+--     used row's address cleared on Q3's rule: family_register_due_on()),
 --     family_register_status(school)   the office's.
 --   + family_register_line(request)   the office's line on a request the
 --       list did not link: details_disagree · uploader_lapsed ·
@@ -102,7 +103,8 @@
 -- No row is inserted, changed or deleted. Nothing is dropped.
 --
 -- Every function: SECURITY DEFINER, search_path pinned, REVOKE ALL FROM
--- PUBLIC; the doors GRANT EXECUTE to scrbrd_app by name; nothing to anon,
+-- PUBLIC in the statement after its own (so a paste run statement by
+-- statement never leaves one PUBLIC's); the doors GRANT EXECUTE to scrbrd_app by name; nothing to anon,
 -- authenticated or service_role (db/157). No BEGIN or COMMIT: the paste
 -- wraps the file in one transaction. Safe to run twice. Its proof is
 -- db/99 §149; its walk is tools/smoke-family-register.mjs.
@@ -119,8 +121,11 @@ BEGIN
      OR to_regprocedure('declined_claim_notice(uuid,text,text,uuid)') IS NULL OR to_regprocedure('request_cooldown_open(uuid)') IS NULL
      OR to_regprocedure('feature_enabled(text,uuid,uuid)') IS NULL OR to_regprocedure('majority_on(date)') IS NULL
      OR to_regprocedure('sa_today()') IS NULL OR to_regprocedure('person_is_pupil(uuid)') IS NULL
-     OR to_regclass('pupil_claim') IS NULL OR to_regclass('auth_identity') IS NULL OR to_regclass('duty_suspension') IS NULL THEN
-    RAISE EXCEPTION 'db/174: role_request_grant_as() (db/92), db/168''s pupil claim, db/169''s pupil_signin_after_yes(), declined_claim_notice() (db/93), feature_enabled() (db/08), majority_on() (db/62) or sa_today() (db/128) is missing; apply them first';
+     OR to_regclass('pupil_claim') IS NULL OR to_regclass('auth_identity') IS NULL OR to_regclass('duty_suspension') IS NULL
+     -- db/173 first: it makes a first date that makes a boy 18 the office's,
+     -- and the list lets a boy of 18 in on that date.
+     OR to_regprocedure('player_born_confirm(uuid)') IS NULL OR to_regprocedure('player_born_confirmed(uuid)') IS NULL THEN
+    RAISE EXCEPTION 'db/174: role_request_grant_as() (db/92), db/168''s pupil claim, db/169''s pupil_signin_after_yes(), declined_claim_notice() (db/93), feature_enabled() (db/08), majority_on() (db/62), sa_today() (db/128) or db/173''s player_born_confirm() is missing; apply them first';
   END IF;
   -- pupil_claim_send(): db/168's, or this file's own (a second paste).
   v := md5((SELECT prosrc FROM pg_proc WHERE oid = 'pupil_claim_send(uuid,text,text,date)'::regprocedure));
@@ -153,6 +158,7 @@ CREATE OR REPLACE FUNCTION family_list_links_on(p_school uuid) RETURNS boolean A
      AND coalesce(feature_enabled('family_list_links', p_school, NULL), false)
      AND EXISTS (SELECT 1 FROM feature_grant g WHERE g.key = 'family_list_links' AND g.school_id = p_school AND g.granted)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_list_links_on(uuid) FROM PUBLIC;
 
 
 -- ── 2 · The table ───────────────────────────────────────────────────
@@ -169,6 +175,9 @@ CREATE TABLE IF NOT EXISTS family_register (
   relationship     text CHECK (relationship IN ('parent', 'guardian', 'grandparent', 'other')),
   -- The row's claim window (P2-D6), not the link's life.
   valid_until      date NOT NULL,
+  -- Who listed and who withdrew stay on the record, as role_assignment_ending
+  -- and guardian_link_ending keep who ended (no ON DELETE): an office
+  -- account is ended and tombstoned, never deleted from under its acts.
   uploaded_by      uuid NOT NULL REFERENCES app_user(id),
   uploaded_at      timestamptz NOT NULL DEFAULT now(),
   upload_id        uuid NOT NULL,
@@ -181,6 +190,9 @@ CREATE TABLE IF NOT EXISTS family_register (
   -- The assignment the list's grant wrote (outcome granted): what "a link the
   -- list made" means to End role (§8b), whatever later happens to the request.
   granted_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL,
+  -- A pupil's row: the `selfaccess` assignment the same grant wrote beside
+  -- his `player` one, so ending one ends both (§8b).
+  granted_self_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL,
   -- granted     the link (or a pupil's `player`) was written
   -- recognised  a pupil under 18's claim was recognised; nothing opened
   -- requested   used up, and the office decides (outcome_reason says why)
@@ -195,11 +207,20 @@ CREATE TABLE IF NOT EXISTS family_register (
   CONSTRAINT family_register_reason_shape CHECK ((outcome = 'requested') = (outcome_reason IS NOT NULL)),
   CONSTRAINT family_register_open_or_done CHECK (NOT (claimed_at IS NOT NULL AND withdrawn_at IS NOT NULL)),
   CONSTRAINT family_register_withdrawn_names_who CHECK ((withdrawn_at IS NULL) = (withdrawn_by IS NULL)),
-  -- A claimed row is the record of what happened, and is kept as it is.
-  CONSTRAINT family_register_redacted_unclaimed CHECK (redacted_at IS NULL OR claimed_at IS NULL)
+  -- A cleared row has no address; it may have been claimed (Q3, §8's clear).
+  CONSTRAINT family_register_redacted_named CHECK (redacted_at IS NULL OR email LIKE 'redacted+%@redacted.invalid')
 );
--- A paste of an earlier cut of this file made the table without it.
+-- A paste of an earlier cut of this file made the table without these, and
+-- with a rule that kept a claimed row's address for ever (Kameel's Q3, 26 Nov).
+ALTER TABLE family_register DROP CONSTRAINT IF EXISTS family_register_redacted_unclaimed;
+DO $named$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'family_register'::regclass AND conname = 'family_register_redacted_named') THEN
+    ALTER TABLE family_register ADD CONSTRAINT family_register_redacted_named CHECK (redacted_at IS NULL OR email LIKE 'redacted+%@redacted.invalid');
+  END IF;
+END $named$;
 ALTER TABLE family_register ADD COLUMN IF NOT EXISTS granted_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL;
+ALTER TABLE family_register ADD COLUMN IF NOT EXISTS granted_self_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS family_register_one_open
   ON family_register (school_id, player_id, email, kind)
   WHERE claimed_at IS NULL AND withdrawn_at IS NULL AND redacted_at IS NULL;
@@ -222,11 +243,13 @@ CREATE OR REPLACE FUNCTION family_register_log(p_resource text, p_school uuid, p
   INSERT INTO access_log (school_id, person_id, resource, record_ids, record_count, device_id)
   VALUES (p_school, app_user_id(), p_resource, coalesce(p_ids, '{}'), coalesce(cardinality(p_ids), 0), app_device_id())
 $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_log(text,uuid,uuid[]) FROM PUBLIC;
 
 -- The role a row of this kind is granted through the door.
 CREATE OR REPLACE FUNCTION family_register_role(p_kind text) RETURNS text AS $$
   SELECT CASE p_kind WHEN 'guardian' THEN 'guardian' WHEN 'pupil' THEN 'player' END
 $$ LANGUAGE sql IMMUTABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_role(text) FROM PUBLIC;
 
 -- Condition 4 (P2-D8): may this person, now, make this kind of link at this
 -- school? An active account; a live assignment AT the school (never a
@@ -249,6 +272,7 @@ CREATE OR REPLACE FUNCTION family_may_link_for(p_person uuid, p_school uuid, p_k
      AND app_may_assign_at_for(p_person, p_school)
      AND coalesce(app_may_grant_at_for(p_person, family_register_role(p_kind), p_school), false)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_may_link_for(uuid,uuid,text) FROM PUBLIC;
 
 -- Condition 6: does this boy have an account already (a roster link, a live
 -- own link, or another account recognised as him)? p_except is the
@@ -261,6 +285,7 @@ CREATE OR REPLACE FUNCTION family_child_has_account(p_player uuid, p_except uuid
       OR EXISTS (SELECT 1 FROM pupil_claim o WHERE o.player_id = p_player AND o.state IN ('recognised', 'open')
                     AND o.user_id IS DISTINCT FROM p_except)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_child_has_account(uuid,uuid) FROM PUBLIC;
 
 -- The accounts an address belongs to: the address the office typed on the
 -- account, or one Google verified for a live sign-in of it (db/92's rule).
@@ -270,6 +295,7 @@ CREATE OR REPLACE FUNCTION family_address_accounts(p_email text) RETURNS SETOF u
       OR EXISTS (SELECT 1 FROM auth_identity x WHERE x.user_id = u.id AND x.revoked_at IS NULL
                                                AND lower(x.email_at_link) = lower(btrim(p_email)))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_address_accounts(text) FROM PUBLIC;
 
 -- A guardian link to this child that has ended (revoked, rejected, or its
 -- role no longer active), of one person; or of anybody when p_person is NULL.
@@ -282,6 +308,23 @@ CREATE OR REPLACE FUNCTION family_link_ended_on(p_player uuid, p_person uuid) RE
      AND (g.verification_state IN ('revoked', 'rejected') OR NOT a.active
           OR (g.valid_until IS NOT NULL AND g.valid_until <= sa_today()))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_link_ended_on(uuid,uuid) FROM PUBLIC;
+
+-- Q5 (Kameel, 26 Nov 2026): is this address a pupil's own at this school?
+-- (an account it belongs to is a pupil's, person_is_pupil(), and his roster
+-- row, his claim or a pupil's role is at this school). Asked of this school
+-- only, so a refusal says nothing of another school's children; a pupil of
+-- another school is refused at the claim instead (family_register_try()).
+CREATE OR REPLACE FUNCTION family_address_pupil_here(p_email text, p_school uuid) RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM family_address_accounts(p_email) a(id)
+     WHERE person_is_pupil(a.id)
+       AND (EXISTS (SELECT 1 FROM app_user u JOIN player p ON p.id = u.player_id WHERE u.id = a.id AND p.school_id = p_school)
+            OR EXISTS (SELECT 1 FROM pupil_claim c WHERE c.user_id = a.id AND c.school_id = p_school)
+            OR EXISTS (SELECT 1 FROM role_assignment r WHERE r.person_id = a.id AND r.role IN ('player', 'selfaccess')
+                                                         AND r.school_id = p_school)))
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_address_pupil_here(text,uuid) FROM PUBLIC;
 
 -- Does this person hold a live guardian link to this child already?
 CREATE OR REPLACE FUNCTION family_link_live(p_player uuid, p_person uuid) RETURNS boolean AS $$
@@ -290,12 +333,14 @@ CREATE OR REPLACE FUNCTION family_link_live(p_player uuid, p_person uuid) RETURN
                     AND g.verification_state IN ('pending', 'verified')
                     AND (g.valid_until IS NULL OR g.valid_until > sa_today()))
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_link_live(uuid,uuid) FROM PUBLIC;
 
 -- How a boy is named to the office in a notice: initial and surname.
 CREATE OR REPLACE FUNCTION family_register_child_words(p_player uuid) RETURNS text AS $$
   SELECT coalesce(nullif(btrim(left(btrim(p.full_name), 1) || ' ' || coalesce(p.surname, '')), ''), 'a pupil')
     FROM player p WHERE p.id = p_player
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_child_words(uuid) FROM PUBLIC;
 
 -- One notice to the school's office (guardian.link.manage), for a link or
 -- a recognition the list made. Never public; never on a lock screen beyond
@@ -305,6 +350,7 @@ CREATE OR REPLACE FUNCTION family_register_notice(p_school uuid, p_title text, p
                             required_capability, is_public, subject_kind)
   VALUES (p_school, NULL, 'school', 'system', 'medium', p_title, p_body, 'guardian.link.manage', false, 'system')
 $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_notice(uuid,text,text) FROM PUBLIC;
 
 
 -- ── 4 · Upload: check, then commit ──────────────────────────────────
@@ -316,7 +362,13 @@ $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, 
 --              player_is_an_adult · player_has_an_account · already_linked ·
 --              link_revoked · valid_until_invalid · valid_until_past ·
 --              valid_until_too_far · valid_until_required ·
---              duplicate_in_file · already_listed · warning_not_acknowledged
+--              duplicate_in_file · already_listed · warning_not_acknowledged ·
+--              born_unconfirmed (Q4: a pupil row for a boy of 18, or 18
+--              within 60 days, waits for "Confirm his date") ·
+--              shared_address (Q5: the same address as a parent's and as the
+--              pupil's own for one child, in the file or open on the list) ·
+--              pupil_address (Q5: a parent's row whose address is a pupil's
+--              own at this school)
 --   a warning  link_ended: this child has a guardian link that ended
 --              (ended_on), and `ack`, the key the commit must carry
 --   the call   not_permitted · no_rows · too_many_rows (line 0)
@@ -403,6 +455,18 @@ BEGIN
     -- Refused: this address's own link to this child was ended.
     ELSIF EXISTS (SELECT 1 FROM family_address_accounts(v_email) a(id) WHERE family_link_ended_on(v_player, a.id) IS NOT NULL) THEN
       v_problem := 'link_revoked';
+    -- Q4: an adult's own row, or one who is 18 within 60 days, only on a date
+    -- the office has confirmed (db/173's player_born_confirmed()).
+    ELSIF v_kind = 'pupil' AND majority_on(v_born) <= sa_today() + 60 AND NOT coalesce(player_born_confirmed(v_player), false) THEN
+      v_problem := 'born_unconfirmed';
+    -- Q5: a parent's row on a pupil's own address at this school.
+    ELSIF v_kind = 'guardian' AND family_address_pupil_here(v_email, p_school) THEN
+      v_problem := 'pupil_address';
+    -- Q5: one child's address as a parent's and as his own, already open here.
+    ELSIF EXISTS (SELECT 1 FROM family_register g
+                   WHERE g.school_id = p_school AND g.player_id = v_player AND g.email = v_email AND g.kind <> v_kind
+                     AND g.claimed_at IS NULL AND g.withdrawn_at IS NULL AND g.redacted_at IS NULL AND g.valid_until >= sa_today()) THEN
+      v_problem := 'shared_address';
     END IF;
 
     IF v_problem IS NULL THEN
@@ -429,6 +493,10 @@ BEGIN
       v_key := v_player::text || '|' || v_email || '|' || v_kind;
       IF v_seen ? v_key THEN
         v_problem := 'duplicate_in_file'; v_detail := v_seen->>v_key;
+      -- Q5, in the file: the same child and address under the other kind.
+      ELSIF v_seen ? (v_player::text || '|' || v_email || '|' || CASE v_kind WHEN 'guardian' THEN 'pupil' ELSE 'guardian' END) THEN
+        v_problem := 'shared_address';
+        v_detail := v_seen->>(v_player::text || '|' || v_email || '|' || CASE v_kind WHEN 'guardian' THEN 'pupil' ELSE 'guardian' END);
       ELSE
         v_seen := v_seen || jsonb_build_object(v_key, v_line);
       END IF;
@@ -485,11 +553,14 @@ BEGIN
       FROM jsonb_array_elements(v_out) WITH ORDINALITY AS t(o, n)
      ORDER BY t.n;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_upload(uuid,jsonb,boolean,uuid[]) FROM PUBLIC;
 
 
 -- ── 5 · The match: one go ───────────────────────────────────────────
 -- Internal. Under the caller's lock on the claimant. The open rows for any
--- of his live verified addresses at the school, locked. No date: nothing
+-- of his live verified addresses at the school, locked. Google's only
+-- (condition 1): auth_identity also takes microsoft.com and emailLink sign-ins
+-- (db/81), and the list's match is the address Google verified. No date: nothing
 -- tried, nothing used (no row). A date that agrees with no row of this kind:
 -- every open row for those addresses at the school used up, and one row
 -- answered with why = 'details_disagree'. A date that agrees: the first
@@ -509,7 +580,7 @@ BEGIN
   FOR g IN
     SELECT r.id, r.player_id, r.kind, r.uploaded_by, r.uploaded_at, p.born,
            (SELECT x.id FROM auth_identity x
-             WHERE x.user_id = p_user AND x.revoked_at IS NULL AND lower(x.email_at_link) = r.email
+             WHERE x.user_id = p_user AND x.provider = 'google.com' AND x.revoked_at IS NULL AND lower(x.email_at_link) = r.email
              ORDER BY x.linked_at, x.id LIMIT 1) AS identity_id
       FROM family_register r
       LEFT JOIN player p ON p.id = r.player_id AND p.school_id = r.school_id
@@ -517,7 +588,7 @@ BEGIN
        AND r.claimed_at IS NULL AND r.withdrawn_at IS NULL AND r.redacted_at IS NULL
        AND r.valid_until >= sa_today()
        AND r.email IN (SELECT lower(x.email_at_link) FROM auth_identity x
-                        WHERE x.user_id = p_user AND x.revoked_at IS NULL AND x.email_at_link IS NOT NULL)
+                        WHERE x.user_id = p_user AND x.provider = 'google.com' AND x.revoked_at IS NULL AND x.email_at_link IS NOT NULL)
      ORDER BY r.uploaded_at, r.id
        FOR UPDATE OF r
   LOOP
@@ -535,14 +606,14 @@ BEGIN
     UPDATE family_register r
        SET claimed_at = now(), claimed_by = p_user,
            claimed_identity = (SELECT x.id FROM auth_identity x
-                                WHERE x.user_id = p_user AND x.revoked_at IS NULL AND lower(x.email_at_link) = r.email
+                                WHERE x.user_id = p_user AND x.provider = 'google.com' AND x.revoked_at IS NULL AND lower(x.email_at_link) = r.email
                                 ORDER BY x.linked_at, x.id LIMIT 1),
            claimed_request = p_request, outcome = 'requested', outcome_reason = 'details_disagree'
      WHERE r.school_id = p_school
        AND r.claimed_at IS NULL AND r.withdrawn_at IS NULL AND r.redacted_at IS NULL
        AND r.valid_until >= sa_today()
        AND r.email IN (SELECT lower(x.email_at_link) FROM auth_identity x
-                        WHERE x.user_id = p_user AND x.revoked_at IS NULL AND x.email_at_link IS NOT NULL);
+                        WHERE x.user_id = p_user AND x.provider = 'google.com' AND x.revoked_at IS NULL AND x.email_at_link IS NOT NULL);
     RETURN QUERY SELECT NULL::uuid, NULL::uuid, NULL::uuid, NULL::timestamptz, NULL::uuid, 'details_disagree'::text;
     RETURN;
   END IF;
@@ -571,6 +642,7 @@ BEGIN
   END IF;
   RETURN QUERY SELECT v_row, v_player, v_by, v_at, v_identity, v_why;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_try(uuid,uuid,text,date,uuid) FROM PUBLIC;
 
 -- Internal: a row used up, with what came of it.
 CREATE OR REPLACE FUNCTION family_register_use(p_row uuid, p_user uuid, p_identity uuid, p_request uuid,
@@ -580,6 +652,7 @@ CREATE OR REPLACE FUNCTION family_register_use(p_row uuid, p_user uuid, p_identi
          outcome = p_outcome, outcome_reason = CASE WHEN p_outcome = 'requested' THEN coalesce(p_reason, 'refused') END
    WHERE id = p_row AND claimed_at IS NULL
 $$ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_use(uuid,uuid,uuid,uuid,text,text) FROM PUBLIC;
 
 
 -- ── 6 · The claim, from a request just filed ────────────────────────
@@ -652,7 +725,14 @@ BEGIN
   END IF;
 
   PERFORM family_register_use(t.row_id, v_me, t.identity_id, p_request, 'granted', NULL);
-  UPDATE family_register SET granted_assignment = v_asg WHERE id = t.row_id;
+  UPDATE family_register
+     SET granted_assignment = v_asg,
+         -- A pupil: the door wrote his own record's role beside his `player` one.
+         granted_self_assignment = CASE WHEN v_kind = 'pupil' THEN
+           (SELECT a.id FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+             WHERE a.person_id = v_me AND a.role = 'selfaccess' AND a.active AND g.player_id = t.player_id
+               AND g.relationship = 'self' ORDER BY a.created_at DESC, a.id LIMIT 1) END
+   WHERE id = t.row_id;
   PERFORM family_register_log('family_register.claim', r.school_id, ARRAY[t.row_id]);
   -- The office is told, with End link beside the row on the family list.
   SELECT u.name INTO v_by FROM app_user u WHERE u.id = t.uploaded_by;
@@ -670,6 +750,7 @@ BEGIN
            to_char(sa_date(t.uploaded_at), 'FMDD FMMonth YYYY')));
   RETURN QUERY SELECT 'in'::text;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_claim(uuid,date) FROM PUBLIC;
 
 
 -- ── 7 · His claim (db/168), with the list tried ─────────────────────
@@ -766,6 +847,7 @@ BEGIN
     format('An account was recognised today as %s''s, from the row %s uploaded on %s. Nothing about him is opened until a parent or guardian says yes. If this is wrong, take it off his record under Pupil claims.',
            family_register_child_words(t.player_id), coalesce(v_by, 'the office'), to_char(sa_date(t.uploaded_at), 'FMDD FMMonth YYYY')));
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_claim_pupil(uuid,uuid,date) FROM PUBLIC;
 
 
 -- ── 8 · Withdraw, read, clear, the switch's state, the Requests line ──
@@ -788,6 +870,7 @@ BEGIN
   PERFORM family_register_log('family_register.withdraw', g.school_id, ARRAY[g.id]);
   RETURN QUERY SELECT true, NULL::text;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_withdraw(uuid) FROM PUBLIC;
 
 -- The family list as the office reads it (design §5.3): each row's child by
 -- his roster name (the office's own read), address, kind, claim-by date,
@@ -809,7 +892,9 @@ RETURNS TABLE (id uuid, player_id uuid, player_name text, team_code text, email 
                                     WHEN r.claimed_at   IS NOT NULL THEN 'claimed'
                                     WHEN r.valid_until < sa_today() THEN 'expired'
                                     ELSE 'open' END AS state) s
-    LEFT JOIN player p ON p.id = r.player_id
+    -- His roster row at this school only: after a move his old school's
+    -- office does not read his name and team at the new one.
+    LEFT JOIN player p ON p.id = r.player_id AND p.school_id = r.school_id
     LEFT JOIN app_user ub ON ub.id = r.uploaded_by
     LEFT JOIN app_user cb ON cb.id = r.claimed_by
     LEFT JOIN app_user wb ON wb.id = r.withdrawn_by
@@ -818,24 +903,67 @@ RETURNS TABLE (id uuid, player_id uuid, player_name text, team_code text, email 
      AND (p_state IS NULL OR s.state = p_state)
    ORDER BY r.uploaded_at DESC, p.full_name, r.id
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_rows(uuid,text) FROM PUBLIC;
 
--- Unclaimed rows ninety days past their date or their withdrawal, not yet
--- cleared (P2-D13). The office's, at that school.
+-- When a row's address is due to be cleared (P2-D13; Kameel's Q3, 26 Nov
+-- 2026), or NULL while it is kept:
+--   unclaimed   90 days after its claim-by date, or after its withdrawal
+--   used up without a link (requested, recognised)
+--               90 days after its request was decided (a request still
+--               waiting keeps it); a row with no request (a pupil's claim)
+--               90 days after it was used
+--   made a link (granted)
+--               while the link lives, and 90 days after it ended
+--   its claimant's account erased
+--               at once: erasure follows the same clear
+CREATE OR REPLACE FUNCTION family_register_due_on(p_row uuid) RETURNS date AS $$
+  SELECT CASE
+           WHEN r.redacted_at IS NOT NULL THEN NULL
+           WHEN r.claimed_at IS NULL THEN
+             CASE WHEN r.withdrawn_at IS NOT NULL THEN sa_date(r.withdrawn_at) + 90 ELSE r.valid_until + 90 END
+           WHEN r.claimed_by IS NULL THEN sa_date(r.claimed_at)
+           WHEN r.outcome = 'granted' THEN
+             CASE WHEN r.granted_assignment IS NOT NULL AND EXISTS (
+                         SELECT 1 FROM role_assignment a
+                          WHERE a.id = r.granted_assignment AND a.active
+                            AND (r.kind = 'pupil' OR EXISTS (
+                                  SELECT 1 FROM assignment_subject g
+                                   WHERE g.assignment_id = a.id AND g.player_id = r.player_id
+                                     AND g.verification_state IN ('pending', 'verified')
+                                     AND (g.valid_until IS NULL OR g.valid_until > sa_today()))))
+                  THEN NULL
+                  ELSE coalesce(
+                    (SELECT max(e.ends_on) FROM guardian_link_ending e
+                      WHERE e.assignment_id = r.granted_assignment AND e.player_id = r.player_id),
+                    (SELECT max(sa_date(e.ended_at)) FROM role_assignment_ending e WHERE e.assignment_id = r.granted_assignment),
+                    (SELECT coalesce(a.valid_until, sa_date(a.revoked_at)) FROM role_assignment a WHERE a.id = r.granted_assignment),
+                    sa_date(r.claimed_at)) + 90 END
+           WHEN r.claimed_request IS NOT NULL THEN
+             (SELECT CASE WHEN q.state = 'pending' THEN NULL ELSE sa_date(coalesce(q.decided_at, r.claimed_at)) + 90 END
+                FROM role_request q WHERE q.id = r.claimed_request)
+           ELSE sa_date(r.claimed_at) + 90
+         END
+    FROM family_register r WHERE r.id = p_row
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_due_on(uuid) FROM PUBLIC;
+
+-- The rows whose address is due to be cleared and is not yet. The office's,
+-- at that school.
 CREATE OR REPLACE FUNCTION family_register_redact_due(p_school uuid)
 RETURNS TABLE (id uuid, player_id uuid, email text, kind text, valid_until date, withdrawn_at timestamptz, due_on date) AS $$
   SELECT r.id, r.player_id, r.email, r.kind, r.valid_until, r.withdrawn_at, d.due_on
     FROM family_register r
-    CROSS JOIN LATERAL (SELECT CASE WHEN r.withdrawn_at IS NOT NULL THEN (sa_date(r.withdrawn_at) + 90)
-                                    ELSE r.valid_until + 90 END AS due_on) d
-   WHERE r.school_id = p_school AND r.claimed_at IS NULL AND r.redacted_at IS NULL
+    CROSS JOIN LATERAL (SELECT family_register_due_on(r.id) AS due_on) d
+   WHERE r.school_id = p_school AND r.redacted_at IS NULL
      AND d.due_on <= sa_today()
      AND app_user_id() IS NOT NULL AND NOT app_pad_scoped() AND pupil_claim_office(p_school)
    ORDER BY d.due_on, r.id
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_redact_due(uuid) FROM PUBLIC;
 
 -- "Clear N expired rows": the address goes; the child, the kind, who listed
--- it and the dates stay, so the record of what the office listed survives
--- without the address. A person presses it; nothing runs unattended.
+-- it, what came of it and the dates stay, so the record of what the office
+-- listed survives without the address. A person presses it; nothing runs unattended.
 CREATE OR REPLACE FUNCTION family_register_redact(p_school uuid) RETURNS integer AS $$
 DECLARE v_ids uuid[];
 BEGIN
@@ -853,6 +981,7 @@ BEGIN
   END IF;
   RETURN cardinality(v_ids);
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_redact(uuid) FROM PUBLIC;
 
 -- Is the switch on here? The office's, for the list's heading (whether a
 -- match links at once or waits in Requests). NULL for anybody else.
@@ -860,6 +989,7 @@ CREATE OR REPLACE FUNCTION family_register_status(p_school uuid) RETURNS TABLE (
   SELECT family_list_links_on(p_school)
    WHERE app_user_id() IS NOT NULL AND NOT app_pad_scoped() AND pupil_claim_office(p_school)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_status(uuid) FROM PUBLIC;
 
 -- The office's line on a request the list did not link, or whose list-made
 -- link the office ended (§8b) (design §5.3): why,
@@ -882,106 +1012,115 @@ CREATE OR REPLACE FUNCTION family_register_line(p_request uuid) RETURNS text AS 
    ORDER BY (r.outcome_reason = 'details_disagree'), r.claimed_at DESC, r.id
    LIMIT 1
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_line(uuid) FROM PUBLIC;
 
 
--- ── 8b · End role on a link the list made (Kameel, 25 Nov 2026) ────────
+-- ── 8b · Ending a link the list made (Kameel, 25 Nov 2026) ──────────
 -- "Yes: a link the list made may always be ended by the office; the family
 -- goes back to the office's queue to be linked by hand." db/08's last-link
--- rule (role_assignment_end(), db/77 as db/128 left it) keeps every other
--- link: only a guardian assignment the family list itself granted may be
--- ended while it is a minor's last verified link. Ending it reopens the
--- request it was granted on, pending and with no child chosen, so it waits
--- in Requests for a person to decide; the office's line says why
--- (family_register_line() 'link_ended'). Nothing of the date she typed is
+-- rule keeps every other link. "List-made" is asked per child: the row's
+-- child and the assignment its grant wrote (granted_assignment). The grant
+-- door writes a new assignment for every request it grants (db/92, as
+-- db/169 left it: one INSERT INTO role_assignment per grant), and §149
+-- (perchild) holds the rule when another child sits on the same assignment
+-- all the same. Ending a list-made guardian link reopens the request it was
+-- granted on, pending and with no child chosen, so it waits in Requests for
+-- a person to decide; the office's line says why (family_register_line()
+-- 'link_ended'). Ending a pupil's list-made `player` role ends his own
+-- record's role (`selfaccess`) with it. Nothing of the date she typed is
 -- anywhere to bring back.
 
--- Was this guardian assignment granted by the family list?
-CREATE OR REPLACE FUNCTION family_register_made(p_assignment uuid) RETURNS boolean AS $$
-  SELECT p_assignment IS NOT NULL AND EXISTS (
+-- Was this child's link on this assignment granted by the family list?
+CREATE OR REPLACE FUNCTION family_register_made(p_assignment uuid, p_player uuid) RETURNS boolean AS $$
+  SELECT p_assignment IS NOT NULL AND p_player IS NOT NULL AND EXISTS (
     SELECT 1 FROM family_register r
-     WHERE r.outcome = 'granted' AND r.kind = 'guardian' AND r.granted_assignment = p_assignment)
+     WHERE r.outcome = 'granted' AND r.kind = 'guardian'
+       AND r.granted_assignment = p_assignment AND r.player_id = p_player)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_made(uuid,uuid) FROM PUBLIC;
 
--- Internal, called by role_assignment_end() after the office ended a link
--- the list made: the request it was granted on goes back to the queue. A
+-- Internal: the requests the list granted on this assignment (for this
+-- child, or for every child when p_player is NULL) go back to the queue. A
 -- request of hers already waiting there is left as it is.
-CREATE OR REPLACE FUNCTION family_register_requeue(p_assignment uuid) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION family_register_requeue(p_assignment uuid, p_player uuid) RETURNS void AS $$
 BEGIN
-  IF NOT family_register_made(p_assignment) THEN RETURN; END IF;
   BEGIN
     UPDATE role_request q
        SET state = 'pending', decided_by = NULL, decided_at = NULL, decided_note = NULL,
            assignment_id = NULL, player_id = NULL
-     WHERE q.id IN (SELECT r.claimed_request FROM family_register r WHERE r.granted_assignment = p_assignment)
+     WHERE q.id IN (SELECT r.claimed_request FROM family_register r
+                     WHERE r.outcome = 'granted' AND r.kind = 'guardian' AND r.granted_assignment = p_assignment
+                       AND (p_player IS NULL OR r.player_id = p_player))
        AND q.assignment_id = p_assignment AND q.role = 'guardian' AND q.state = 'granted';
   EXCEPTION WHEN unique_violation THEN
     NULL;
   END;
 END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_requeue(uuid,uuid) FROM PUBLIC;
 
--- role_assignment_end(), re-emitted from the body in place: its last-link
--- refusal asks family_register_made(), and a guardian ending requeues. Only
--- over db/128's body (its md5) or this file's own; checked in §11 to differ
--- by exactly these two edits.
-DO $end$
-DECLARE
-  v_fn  regprocedure := 'role_assignment_end(uuid,text)'::regprocedure;
-  v_src text := (SELECT prosrc FROM pg_proc WHERE oid = 'role_assignment_end(uuid,text)'::regprocedure);
-  v_def text;
-  v_a   text := '    IF v_player IS NOT NULL THEN' || chr(10) || '      RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
-  v_a2  text := '    -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
-             || '    IF v_player IS NOT NULL AND NOT family_register_made(a.id) THEN' || chr(10)
-             || '      RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
-  v_b   text := '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
-  v_b2  text := '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
-             || '  IF a.role = ''guardian'' THEN PERFORM family_register_requeue(a.id); END IF;' || chr(10)
-             || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
+-- Internal, called by role_assignment_end() once an assignment has ended:
+-- a list-made guardian link's requests requeue; a list-made pupil's own
+-- record's role ends with his `player` role, through the same door, with
+-- the same reason.
+CREATE OR REPLACE FUNCTION family_register_after_end(p_assignment uuid, p_reason text) RETURNS void AS $$
+DECLARE v_self uuid;
 BEGIN
-  IF md5(v_src) = 'd4e6dd793dc2ba3f136f7c543e671f40' THEN RETURN; END IF;   -- a second paste
-  IF md5(v_src) IS DISTINCT FROM '3ea136016eb3607d6c6e07c66c8fefba' THEN
-    RAISE EXCEPTION 'db/174: role_assignment_end() is neither db/128''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v_src);
-  END IF;
-  IF (length(v_src) - length(replace(v_src, v_a, ''))) / length(v_a) <> 1
-     OR (length(v_src) - length(replace(v_src, v_b, ''))) / length(v_b) <> 1 THEN
-    RAISE EXCEPTION 'db/174: role_assignment_end() does not hold its last-link refusal and its last RETURN once each';
-  END IF;
-  v_def := pg_get_functiondef(v_fn);
-  v_def := replace(replace(v_def, v_a, v_a2), v_b, v_b2);
-  EXECUTE v_def;
-END $end$;
+  PERFORM family_register_requeue(p_assignment, NULL);
+  FOR v_self IN
+    SELECT r.granted_self_assignment FROM family_register r JOIN role_assignment a ON a.id = r.granted_self_assignment
+     WHERE r.outcome = 'granted' AND r.kind = 'pupil' AND r.granted_assignment = p_assignment AND a.active
+  LOOP
+    PERFORM 1 FROM role_assignment_end(v_self, p_reason);
+  END LOOP;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION family_register_after_end(uuid,text) FROM PUBLIC;
 
--- guardian_link_revoke() (db/109, as db/128 left it), the office's other way
--- of ending a link (Kameel, 25 Nov: "the office's revoke is one way of
--- ending it"): the same two edits, from the body in place, over its md5 or
--- this file's own; checked in §11.
-DO $revoke$
-DECLARE
-  v_fn  regprocedure := 'guardian_link_revoke(uuid,text,text)'::regprocedure;
-  v_src text := (SELECT prosrc FROM pg_proc WHERE oid = 'guardian_link_revoke(uuid,text,text)'::regprocedure);
-  v_def text;
-  v_a   text := '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN' || chr(10)
-             || '    RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
-  v_a2  text := '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1' || chr(10)
-             || '     -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
-             || '     AND NOT family_register_made(g.assignment_id) THEN' || chr(10)
-             || '    RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
-  v_b   text := '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
-  v_b2  text := '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
-             || '  PERFORM family_register_requeue(g.assignment_id);' || chr(10)
-             || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
+-- The two doors that end a link, re-emitted from their bodies in place,
+-- each md5-guarded over the body before it (as db/128 and the files after
+-- it left them) or this file's own, and checked in §11 to differ by exactly
+-- these edits. role_assignment_end() (db/77): its last-link query leaves out
+-- a child whose link the list made, and every ending is handed to
+-- family_register_after_end(). guardian_link_revoke() (db/109, the office's
+-- other way of ending a link): its last-link test leaves out a list-made
+-- link, and a revoke requeues that child's request.
+DROP TABLE IF EXISTS _db174_edits;
+CREATE TEMP TABLE _db174_edits (fn text, was_md5 text, mine_md5 text, a text, a2 text, b text, b2 text);
+INSERT INTO _db174_edits VALUES
+  ('role_assignment_end(uuid,text)', '3ea136016eb3607d6c6e07c66c8fefba', 'd168ec7fe5d37f81a751673c7fa83075',
+   '       AND s.is_minor AND s.live_links <= 1' || chr(10) || '     LIMIT 1;',
+   '       AND s.is_minor AND s.live_links <= 1' || chr(10)
+     || '       -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
+     || '       AND NOT family_register_made(a.id, g.player_id)' || chr(10) || '     LIMIT 1;',
+   '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END',
+   '  -- db/174: a list-made link''s family back to Requests; a list-made pupil''s own record with him.' || chr(10)
+     || '  PERFORM family_register_after_end(a.id, v_why);' || chr(10)
+     || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END'),
+  ('guardian_link_revoke(uuid,text,text)', 'a5d51d1d63d288560a5ce9532f64bac8', 'aa238fc2a451a4ad36e36a6c17c87c69',
+   '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN',
+   '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1' || chr(10)
+     || '     -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
+     || '     AND NOT family_register_made(g.assignment_id, g.player_id) THEN',
+   '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END',
+   '  -- db/174: a list-made link''s family back to Requests, to be linked by hand.' || chr(10)
+     || '  PERFORM family_register_requeue(g.assignment_id, g.player_id);' || chr(10)
+     || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END');
+DO $edits$
+DECLARE e record; v_src text; v_def text;
 BEGIN
-  IF md5(v_src) = '4d42aebaf78fa8642295a6c66985e8db' THEN RETURN; END IF;   -- a second paste
-  IF md5(v_src) IS DISTINCT FROM 'a5d51d1d63d288560a5ce9532f64bac8' THEN
-    RAISE EXCEPTION 'db/174: guardian_link_revoke() is neither db/128''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v_src);
-  END IF;
-  IF (length(v_src) - length(replace(v_src, v_a, ''))) / length(v_a) <> 1
-     OR (length(v_src) - length(replace(v_src, v_b, ''))) / length(v_b) <> 1 THEN
-    RAISE EXCEPTION 'db/174: guardian_link_revoke() does not hold its last-link refusal and its last RETURN once each';
-  END IF;
-  v_def := pg_get_functiondef(v_fn);
-  v_def := replace(replace(v_def, v_a, v_a2), v_b, v_b2);
-  EXECUTE v_def;
-END $revoke$;
+  FOR e IN SELECT * FROM _db174_edits LOOP
+    v_src := (SELECT prosrc FROM pg_proc WHERE oid = e.fn::regprocedure);
+    CONTINUE WHEN md5(v_src) = e.mine_md5;   -- a second paste
+    IF md5(v_src) IS DISTINCT FROM e.was_md5 THEN
+      RAISE EXCEPTION 'db/174: % is neither the body before this file nor this file''s (md5 %); factor the version now in place and move its hash', e.fn, md5(v_src);
+    END IF;
+    IF (length(v_src) - length(replace(v_src, e.a, ''))) / length(e.a) <> 1
+       OR (length(v_src) - length(replace(v_src, e.b, ''))) / length(e.b) <> 1 THEN
+      RAISE EXCEPTION 'db/174: % does not hold its last-link test and its last RETURN once each', e.fn;
+    END IF;
+    v_def := replace(replace(pg_get_functiondef(e.fn::regprocedure), e.a, e.a2), e.b, e.b2);
+    EXECUTE v_def;
+  END LOOP;
+END $edits$;
 
 
 -- ── 9 · Q11: a declined pupil claim tells the DSO ──────────────────
@@ -999,6 +1138,7 @@ BEGIN
       || '. The office can tell you who asked. If anything about it concerns you, raise a concern.');
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION role_request_player_declined_notice() FROM PUBLIC;
 
 DROP TRIGGER IF EXISTS role_request_player_declined_notice ON role_request;
 CREATE TRIGGER role_request_player_declined_notice
@@ -1024,7 +1164,9 @@ DECLARE
                              'family_register_try(uuid,uuid,text,date,uuid)',
                              'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                              'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
-                             'family_register_made(uuid)', 'family_register_requeue(uuid)'];
+                             'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
+                             'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)',
+                             'family_register_due_on(uuid)'];
 BEGIN
   FOREACH f IN ARRAY v_doors LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure);
@@ -1082,29 +1224,14 @@ BEGIN
   IF position(v_block IN v_new) = 0 OR md5(replace(v_new, v_block, '')) IS DISTINCT FROM '026263290b4c3ebba66bbfe172c2a1d3' THEN
     RAISE EXCEPTION 'db/174: pupil_claim_send() is not db/168''s with the family list''s one block';
   END IF;
-  -- role_assignment_end(): db/128's body with §8b's two edits, and nothing else.
-  v_new := (SELECT prosrc FROM pg_proc WHERE oid = 'role_assignment_end(uuid,text)'::regprocedure);
-  IF md5(replace(replace(v_new,
-        '    -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
-        || '    IF v_player IS NOT NULL AND NOT family_register_made(a.id) THEN',
-        '    IF v_player IS NOT NULL THEN'),
-        '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
-        || '  IF a.role = ''guardian'' THEN PERFORM family_register_requeue(a.id); END IF;' || chr(10), ''))
-     IS DISTINCT FROM '3ea136016eb3607d6c6e07c66c8fefba' THEN
-    RAISE EXCEPTION 'db/174: role_assignment_end() is not db/128''s with §8b''s two edits';
-  END IF;
-  -- guardian_link_revoke(): db/128's body with §8b's two edits, and nothing else.
-  v_new := (SELECT prosrc FROM pg_proc WHERE oid = 'guardian_link_revoke(uuid,text,text)'::regprocedure);
-  IF md5(replace(replace(v_new,
-        '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1' || chr(10)
-        || '     -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
-        || '     AND NOT family_register_made(g.assignment_id) THEN',
-        '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN'),
-        '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
-        || '  PERFORM family_register_requeue(g.assignment_id);' || chr(10), ''))
-     IS DISTINCT FROM 'a5d51d1d63d288560a5ce9532f64bac8' THEN
-    RAISE EXCEPTION 'db/174: guardian_link_revoke() is not db/128''s with §8b''s two edits';
-  END IF;
+  -- role_assignment_end() and guardian_link_revoke(): each the body before
+  -- this file with §8b's two edits, and nothing else.
+  FOR f, v, w IN SELECT e.fn, e.was_md5, md5(replace(replace((SELECT prosrc FROM pg_proc WHERE oid = e.fn::regprocedure), e.a2, e.a), e.b2, e.b))
+                   FROM _db174_edits e LOOP
+    IF w IS DISTINCT FROM v THEN
+      RAISE EXCEPTION 'db/174: % is not the body before this file with §8b''s two edits', f;
+    END IF;
+  END LOOP;
   -- ONE DOOR (db/92 §8, "one door, two callers", as it stands now): the
   -- office's decision, the staff register, the pupil's yes (db/169) and
   -- the family list. Nothing else names it.
@@ -1138,7 +1265,9 @@ BEGIN
                                'family_register_try(uuid,uuid,text,date,uuid)',
                                'family_register_use(uuid,uuid,uuid,uuid,text,text)',
                                'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
-                               'family_register_made(uuid)', 'family_register_requeue(uuid)']) LOOP
+                               'family_register_made(uuid,uuid)', 'family_register_requeue(uuid,uuid)',
+                               'family_register_after_end(uuid,text)', 'family_address_pupil_here(text,uuid)',
+                               'family_register_due_on(uuid)']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/174: % does not pin its search_path', f;
