@@ -1434,8 +1434,9 @@ try {
      await until(pr.page, () => !!document.querySelector('[data-testid="mc-official-confirm"]'), 20000));
   // Kameel, 25 Nov ("reword the line; keep the separation"): finished, sealed and confirmed by nobody, a friendly's
   // line says who it waits on, never "Provisional · awaiting confirmation".
-  ok(`...and the result header says who it waits on ("${await tid(pr.page, "mc-official").innerText().catch(() => "∅")}")`,
-     await until(pr.page, () => /^Official result: waiting for the director of sport$/.test(document.querySelector('[data-testid="mc-official"]')?.innerText.trim() ?? ""), 8000),
+  // ...and to her, who may confirm it (the same answer her Confirm button stands on), it is hers (Kameel, 25 Nov).
+  ok(`...and the result header says it is hers to confirm ("${await tid(pr.page, "mc-official").innerText().catch(() => "∅")}")`,
+     await until(pr.page, () => /^Official result: yours to confirm$/.test(document.querySelector('[data-testid="mc-official"]')?.innerText.trim() ?? ""), 8000),
      await tid(pr.page, "mc-official").innerText().catch(() => "∅"));
   const confirmBox = await tid(pr.page, "mc-official-confirm").boundingBox();
   ok("...a 44px target", (confirmBox?.height ?? 0) >= 44, JSON.stringify(confirmBox));
@@ -1830,6 +1831,15 @@ try {
     // The tap itself is the scorer's below; the log here is a stand-in, not one to resume.
     ok("...with no console errors", c1h.s.errors.length === 0, c1h.s.errors.join(" | "));
     await c1h.s.ctx.close();
+    // Kameel, 25 Nov: a scorer the office's duty roster names for this fixture counts too, by his own id on the duty.
+    const [{ id: coachUser }] = await q(`select id from app_user where email = 'coach@example.invalid'`);
+    const [{ id: dutyId }] = await q(`insert into match_official (match_id, school_id, duty, person_name, person_id) values ($1, $2, 'scorer', 'C Hendricks', $3) returning id`,
+      [awayFx, HIL, coachUser]);
+    const c1d = await sees("coach@example.invalid", awayFx);
+    ok("...named the fixture's scorer on the duty roster, with no log on this phone, he is offered \"Open scorer\" too",
+       c1d.opened && c1d.offered && /^Open scorer$/.test(c1d.label ?? ""), JSON.stringify({ offered: c1d.offered, label: c1d.label }));
+    await c1d.s.ctx.close();
+    await q(`update match_official set withdrawn = true where id = $1`, [dutyId]);
     const c2 = await sees("coach2@example.invalid", awayFx);
     ok("Hilton's 2XI coach holds scoring.edit too, but for the 2XI: on the 1XI's fixture he is not offered it",
        c2.inn && !c2.offered, JSON.stringify({ inn: c2.inn, opened: c2.opened, offered: c2.offered }));

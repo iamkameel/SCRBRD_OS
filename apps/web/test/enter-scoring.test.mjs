@@ -113,6 +113,10 @@ group("slice 10, question 7: on the coach's page, \"Open scorer\" only for whoev
   ok("...offered where this phone holds the fixture's log", scoresItHere(coach, LIVE, { onThisPhone: true, at: NOW }) && scoresItHere(coach, UPCOMING, { onThisPhone: true, at: NOW }));
   ok("...offered where one of his assignments is narrowed to THIS fixture and may score it",
      scoresItHere([...coach, assignment("scorer", HIL, { fixture: LIVE.id })], LIVE, { at: NOW }));
+  ok("...offered where the office's duty roster names him this fixture's scorer (Kameel, 25 Nov)",
+     scoresItHere(coach, LIVE, { appointedByDuty: true, at: NOW }));
+  ok("...but the roster never widens the existing check: a coach at another school, named, is not offered it",
+     !scoresItHere([assignment("coach", WES)], LIVE, { appointedByDuty: true, at: NOW }) && !scoresItHere(null, LIVE, { appointedByDuty: true, at: NOW }));
   ok("...not by an appointment to another fixture", !scoresItHere([...coach, assignment("scorer", HIL, { fixture: "m9" })], LIVE, { at: NOW }));
   ok("...nor by an appointment that has ended", !scoresItHere([...coach, assignment("scorer", HIL, { fixture: LIVE.id, until: "2026-11-01" })], LIVE, { at: NOW }));
   ok("...nor by an appointment narrowed to this fixture whose role cannot score",
@@ -126,6 +130,18 @@ group("slice 10, question 7: on the coach's page, \"Open scorer\" only for whoev
   ok("signed out: never offered", !scoresItHere(null, LIVE, { onThisPhone: true, at: NOW }));
 }
 
+group("the duty roster's answer: his own id on this fixture's scorer duty, not paused");
+{
+  const { dutyScorerIn } = await import("../src/lib/scoringHere.js").catch(() => ({ dutyScorerIn: null }));
+  if (dutyScorerIn) {
+    const row = { duty: "scorer", match_id: "m1", person_id: "u1", suspended: false };
+    ok("named on this fixture: yes", dutyScorerIn([row], "m1", "u1"));
+    ok("another person, another fixture, another duty, or paused: no",
+       !dutyScorerIn([row], "m1", "u2") && !dutyScorerIn([row], "m2", "u1") && !dutyScorerIn([{ ...row, duty: "umpire" }], "m1", "u1")
+       && !dutyScorerIn([{ ...row, suspended: true }], "m1", "u1"));
+  } else ok("scoringHere.js loads under node", false);
+}
+
 group("the page offers nothing else that enters scoring");
 {
   const mv = readFileSync(new URL("../src/views/matchcentre/MatchView.jsx", import.meta.url), "utf8");
@@ -136,7 +152,7 @@ group("the page offers nothing else that enters scoring");
      && /\{opensScorer && \(/.test(mv));
   // Slice 10: on the coach's page, narrower still, never wider.
   ok("...and on the coach's page only where he is the one scoring it",
-     /const opensScorer = scoringLive && \(!staff \|\| scoresItHere\(profile\(\)\?\.assignments, match, \{ onThisPhone: logHere \}\)\);/.test(mv));
+     /const opensScorer = scoringLive && \(!staff \|\| scoresItHere\(profile\(\)\?\.assignments, match, \{ onThisPhone: logHere, appointedByDuty: dutyHere \}\)\);/.test(mv));
   ok("...and MatchView never claims a session or writes the log", !/session\/claim|\/events`, \{ method: "POST"|handover/.test(mv));
   const mc = readFileSync(new URL("../src/views/MatchCentreView.jsx", import.meta.url), "utf8");
   ok("the Match Centre's one gate is the fixture's own when signed in",

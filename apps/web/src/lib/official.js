@@ -64,6 +64,8 @@ export const BLOCK_WORDS = Object.freeze({
 export const WAITING_WORDS = Object.freeze({
   organiser: "Official result: waiting for the organiser",
   director: "Official result: waiting for the director of sport",
+  // Kameel, 25 Nov: to whoever may confirm it himself, by the same answer the Confirm button stands on (may.confirm).
+  yours: "Official result: yours to confirm",
 });
 
 /** Why it was reopened, for staff (D9's reasons, and D14's withdrawal). */
@@ -125,6 +127,8 @@ export function officialWords(o, names = {}, now = Date.now(), fixture = {}) {
   }
   const waits = BLOCK_WORDS[/** @type {keyof typeof BLOCK_WORDS} */ (o.blockedBy)];
   // Finished, nothing in the way, and confirmed by nobody yet: say who it waits on, not "Provisional".
-  if (!waits && fixture.finished) return { kind: "provisional", why: null, words: WAITING_WORDS[fixture.competition ? "organiser" : "director"] };
+  if (!waits && fixture.finished) {
+    return { kind: "provisional", why: null, words: WAITING_WORDS[o.may?.confirm === true ? "yours" : fixture.competition ? "organiser" : "director"] };
+  }
   return { kind: "provisional", why: waits ? waits : "awaiting confirmation" };
 }

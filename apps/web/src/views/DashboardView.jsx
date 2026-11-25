@@ -31,7 +31,7 @@ import { requestCoach, requestDuties, requestResult } from "../lib/cockpitNav.js
 import { fixFor, requestFix } from "../lib/fixNote.js";
 import { couldConfirmResult, profile } from "../lib/session.js";
 import { scoresItHere } from "../lib/enterScoring.js";
-import { useLogOnThisPhone } from "../lib/scoringHere.js";
+import { useDutyScorerHere, useLogOnThisPhone } from "../lib/scoringHere.js";
 import { LastMatch } from "./cockpit/RecentMatches.jsx";
 import { NeedsYou } from "./needsyou.jsx";
 import { DsoCard } from "./family/dso.jsx";
@@ -557,7 +557,8 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const nowAction = liveMatch && liveGate
     ? { label: "Coach tab", testid: "day-now-open", onClick: () => { requestCoach(liveMatch.id, false); onNav("matches"); } } : null;
   const logHere = useLogOnThisPhone(nowAction && onOpenScorer ? liveMatch.id : null);
-  const nowAlso = nowAction && onOpenScorer && scoresItHere(assignments, liveMatch, { onThisPhone: logHere })
+  const dutyHere = useDutyScorerHere(nowAction && onOpenScorer ? liveMatch.id : null, signedIn() ? profile()?.user?.id ?? null : null);
+  const nowAlso = nowAction && onOpenScorer && scoresItHere(assignments, liveMatch, { onThisPhone: logHere, appointedByDuty: dutyHere })
     ? { label: "Open scorer", testid: "day-now-scorer", onClick: () => onOpenScorer(liveMatch) } : null;
 
   const followedBlock = showFollowed

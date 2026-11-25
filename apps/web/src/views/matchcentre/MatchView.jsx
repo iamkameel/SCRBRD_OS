@@ -37,7 +37,7 @@ import { StateLabel } from "../../ui/stateLabel.jsx";
 import { TabStrip, panelLabel } from "./tabStrip.jsx";
 import { NARROW_PX, homeTab, tabOr } from "../../lib/matchTabs.js";
 import { scoresItHere } from "../../lib/enterScoring.js";
-import { useLogOnThisPhone } from "../../lib/scoringHere.js";
+import { useDutyScorerHere, useLogOnThisPhone } from "../../lib/scoringHere.js";
 import { scrollerOf } from "../../lib/toBall.js";
 import { ballsOf, mayListBalls } from "../../lib/ballsOf.js";
 import { PageTools } from "./pageTools.jsx";
@@ -617,7 +617,8 @@ function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDut
   // scoring it, by this phone's saved log or an appointment to this fixture (lib/enterScoring.js scoresItHere).
   const scoringLive = !!canScoreIt && (isLive || match.status === "upcoming") && !provisional && !!onOpenScorer;
   const logHere = useLogOnThisPhone(staff && scoringLive ? match.id : null);
-  const opensScorer = scoringLive && (!staff || scoresItHere(profile()?.assignments, match, { onThisPhone: logHere }));
+  const dutyHere = useDutyScorerHere(staff && scoringLive ? match.id : null, profile()?.user?.id ?? null);
+  const opensScorer = scoringLive && (!staff || scoresItHere(profile()?.assignments, match, { onThisPhone: logHere, appointedByDuty: dutyHere }));
   const bigOffered = !log.demo && played.length > 0 && groundSides?.rows.length > 0;
   // The coach's line (§2.2, line 4): which way round his side is, while an innings is in play.
   const atCrease = played.length ? played[played.length - 1] : null;

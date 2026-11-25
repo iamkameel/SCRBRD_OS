@@ -78,6 +78,13 @@ group("After the coach's confirm: who the official result waits on (Kameel, 25 N
   ok("a reopened result keeps its own words", /needs confirming again/.test(at({ state: "provisional", wasOfficialAt: AT, lapsedAt: AT, lapsedReason: "correction" }, { finished: true })?.why ?? ""));
   ok("official and under review are untouched", at({ state: "official", confirmedAs: "home_school", confirmedAt: AT }, { finished: true })?.kind === "official"
      && at({ state: "under_review", disputedAs: "away_school", disputedAt: AT }, { finished: true })?.kind === "review");
+  ok("whoever may confirm it reads \"Official result: yours to confirm\", friendly or competition",
+     at({ state: "provisional", may: { confirm: true } }, { finished: true, competition: false })?.words === "Official result: yours to confirm"
+     && at({ state: "provisional", may: { confirm: true } }, { finished: true, competition: true })?.words === WAITING_WORDS.yours);
+  ok("...one who may not still reads who it waits on", at({ state: "provisional", may: { confirm: false } }, { finished: true })?.words === WAITING_WORDS.director);
+  ok("...and before the match is finished, or with a blocker, his line is as it was",
+     at({ state: "provisional", may: { confirm: true } }, { finished: false })?.why === "awaiting confirmation"
+     && at({ state: "provisional", blockedBy: "ball_held", may: { confirm: true } }, { finished: true })?.why === BLOCK_WORDS.ball_held);
   ok("a family or the public never reads who it waits on (D11: never who)", officialWords({ staff: false, state: "provisional" }, names, LATER, { finished: true })?.words === undefined);
 }
 
