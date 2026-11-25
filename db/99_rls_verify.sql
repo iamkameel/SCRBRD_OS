@@ -126,6 +126,10 @@ END $$ LANGUAGE plpgsql;
 -- Fired by name: "_v173..." before "player_born_agrees_with_id", and
 -- "player_born_agrees_with_id_v173" straight after it, so every other
 -- trigger, and the record of the change, sees the session as it was.
+-- The order assumed: the session is blanked for every BEFORE trigger on
+-- player whose name sorts between the pair; as of db/173 that is
+-- player_born_agrees_with_id alone (the check it is blanked for), and
+-- player_pupil_claim_gone, the only other BEFORE trigger, sorts after it.
 DROP TRIGGER IF EXISTS _v173_fixture_before ON player;
 CREATE TRIGGER _v173_fixture_before BEFORE INSERT OR UPDATE OF born, id_number ON player
   FOR EACH ROW EXECUTE FUNCTION _v173_fixture_before();
