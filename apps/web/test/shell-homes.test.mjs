@@ -18,7 +18,8 @@ import { lastMatchWords } from "../src/lib/recentMatches.js";
 import { COMPARE_FLOOR } from "../src/lib/compare.js";
 import { MIN_MATCHES, seasonLineWords } from "../src/lib/sideSeason.js";
 import { needsYouRows } from "../src/views/needsyou.jsx";
-import { chipOrder, weekOf } from "../src/views/DashboardView.jsx";
+import { READY_SLOTS, chipOrder, weekOf } from "../src/views/DashboardView.jsx";
+import { ruleS8 } from "../src/lib/signals.js";
 import { formLetter, teamResults } from "../src/views/TeamPage.jsx";
 import { MobileNav, SportSwitcher } from "../src/shell/MobileNav.jsx";
 import { readFileSync } from "node:fs";
@@ -93,6 +94,16 @@ group("Needs you lands on the fix");
 group("The day sheet (§3.10)");
 {
   const slots = [{ key: "a", on: (has) => has("a") }, { key: "b", on: (has) => has("b") }, { key: "c", on: (has) => has("c") }];
+  {
+    // One fact, one answer (slice 11): the Officials chip is S8's rule (the queue's O4), in its words.
+    const off = READY_SLOTS.find((x) => x.key === "officials");
+    const chip = (/** @type {string[]} */ duties) => { const has = (/** @type {string} */ k) => duties.includes(k); return off.on(has) ? "on record" : off.missing(has); };
+    const s8 = (/** @type {string[]} */ duties) => ruleS8(/** @type {any} */ ({ gate: { panels: { day: true } }, duties: duties.map((duty) => ({ duty })),
+      match: { status: "upcoming", startsAt: "2026-11-26T07:00:00Z" }, now: Date.parse("2026-11-25T09:00:00Z") })).map((c) => c.lines[0].replace(/ for .*$/, "")).join(" · ") || "on record";
+    ok("an umpire alone is not 'Officials · on record': 'No scorer on record', as the O4 row says it", chip(["umpire"]) === "No scorer on record" && chip(["umpire"]) === s8(["umpire"]));
+    ok("...a referee or third umpire is no scorer or umpire", chip(["referee", "third_umpire"]) === "No scorer on record · No umpire on record" && chip(["referee", "third_umpire"]) === s8(["referee"]));
+    ok("...a scorer and an umpire: on record, and S8 has no row", chip(["scorer", "umpire"]) === "on record" && s8(["scorer", "umpire"]) === "on record");
+  }
   ok("the chips not done come first, each kind in its place", eq(chipOrder(/** @type {any} */ (slots), (k) => k === "a").map((s) => s.key), ["b", "c", "a"]));
   const day = new Date("2026-11-18T09:00:00+02:00"); // a Wednesday
   const ms = [

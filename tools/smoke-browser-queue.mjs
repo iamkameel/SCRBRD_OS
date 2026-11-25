@@ -527,6 +527,11 @@ try {
       ok("A's card says the duty nobody holds as the office's", (cardA?.office ?? []).some((x) => /^The office's: No scorer on record for /.test(x)), JSON.stringify(cardA?.office));
       ok(`...and B's card the office's ${theOffice.get(B).length}, as To resolve has them`, (cardB?.office ?? []).length === theOffice.get(B).length
          && (cardB?.office ?? []).every((x) => /^The office's: No (scorer|umpire) on record for /.test(x)), JSON.stringify(cardB?.office));
+      // One fact, one answer: the next fixture's Officials chip is the O4 rule, in its words (A has an umpire, no scorer).
+      const offChip = s.page.locator('[data-testid="day-next"] [data-testid="ready-officials"]').first();
+      ok("A's Officials chip is not 'on record' with only an umpire: 'Officials · No scorer on record', as its card says it",
+         (await offChip.innerText().catch(() => "")).replace("›", "").trim() === "Officials · No scorer on record" && await offChip.getAttribute("data-on").catch(() => null) === "false"
+         && (cardA?.office ?? []).some((x) => x.startsWith("The office's: No scorer on record")), await offChip.innerText().catch(() => ""));
       ok("the cards' counts and the office's rows add up to Needs you's one count",
          cards.reduce((n, c) => n + (Number(c.count?.match(/^\d+/)?.[0]) || 0), 0) + elsewhere === want, cards.map((c) => c.count).join());
       const all = (await s.page.locator('[data-testid="needs-you"], [data-testid="day-matchday"]').allInnerTexts()).join("\n");
