@@ -79,7 +79,19 @@
 --             the lifecycle triggers: the office's, the DSO's or the system's.
 --   leave it  my_links (read-api.mjs), school_answer_subject_is_mine(): her
 --             own link's state and dates; his name rides only where his row
---             is readable, so a gated link names nobody there.
+--             is readable, so a gated link names nobody there (my_terms_due()
+--             names him for the card).
+--   leave it  pupil_signin_account() (db/173): reads her link through
+--             pupil_signin_my_link() and asks "agreed", so it answers a
+--             waiting link nothing.
+--   leave it  family_link_live(), family_link_ended_on() (db/174): the
+--             office's and the claim's "is she linked already", a waiting
+--             link included, so the family list never links her twice.
+--             role_assignment_end(), guardian_link_revoke(): the office's, and
+--             her ending her own link; not re-emitted here.
+--   note      family_register_claim() (db/174) makes a link verified with
+--             consent pending: exactly the link this file gates. She agrees
+--             through guardian_consent_record(), which stays open.
 --   must stay open  guardian_consent_record() and its route: she agrees with
 --             no capability (p_guardian = app_user_id()); player_school() is
 --             a definer. Raising a concern and the DSO card (person_live_at()).
