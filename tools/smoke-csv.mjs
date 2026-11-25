@@ -455,6 +455,59 @@ try {
        again.body?.committed === true && again.body?.updated === 1);
   }
 
+  group("A birthday the file changes is a correction: the office's, against his ID number, recorded (db/172)");
+  {
+    // Kameel, 20 Nov 2026: "The office corrects it; every change is audited".
+    // The import's `born = coalesce($9, born)` used to overwrite a recorded
+    // date in silence; now the database's trigger decides each such row.
+    const changesOf = async (name) => (await q(
+      `select c.how, to_char(c.was,'YYYY-MM-DD') was, to_char(c.became,'YYYY-MM-DD') became, c.by_id
+         from player_born_change c join player p on p.id = c.player_id
+        where p.school_id = $1 and p.full_name = $2 order by c.at`, [HIL, name]));
+    const bornOf = async (name) => (await q(
+      `select to_char(born,'YYYY-MM-DD') b from player where school_id = $1 and full_name = $2`, [HIL, name]))[0]?.b;
+
+    // From Id carries 1104075800085 (above): 2011-04-07 and nothing else.
+    const clash = await importCsv("players", office, {
+      csv: "full_name,team_code,born\nFrom Id,1XI,2011-04-08\n", schoolId: HIL, commit: true });
+    ok("a date that disagrees with the ID number on his record is refused on its line",
+       clash.body?.committed === false && Number(clash.body?.errors?.[0]?.line) === 2 && clash.body?.errors?.[0]?.column === "born"
+         && /ID number on his record/.test(clash.body?.errors?.[0]?.message ?? ""), JSON.stringify(clash.body?.errors));
+    ok("...and his date stands, with nothing recorded",
+       (await bornOf("From Id")) === "2011-04-07" && (await changesOf("From Id")).length === 0);
+
+    // K Dlamini has no ID number on file.
+    const was = await bornOf("K Dlamini");
+    const to = `${was.slice(0, 8)}${was.slice(8) === "01" ? "02" : "01"}`;
+    const director = await login("sarah@example.invalid");   // player.profile.manage, not the office
+    const dry = await importCsv("players", director, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL });
+    ok("the director of sport's file that changes his date is refused on its line, on a dry run too",
+       dry.body?.committed === false && dry.body?.errors?.[0]?.column === "born"
+         && /Only the school office/.test(dry.body?.errors?.[0]?.message ?? ""), JSON.stringify(dry.body?.errors));
+    const byDirector = await importCsv("players", director, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL, commit: true });
+    ok("...and committing it changes nothing", byDirector.body?.committed === false && (await bornOf("K Dlamini")) === was);
+    const sameByDirector = await importCsv("players", director, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${was}\n`, schoolId: HIL, commit: true });
+    ok("...while his file carrying the date already on record goes in", sameByDirector.body?.committed === true,
+       JSON.stringify(sameByDirector.body?.errors));
+
+    const byOffice = await importCsv("players", office, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL, commit: true });
+    ok("the office's file corrects it", byOffice.body?.committed === true && byOffice.body?.updated === 1 && (await bornOf("K Dlamini")) === to,
+       JSON.stringify(byOffice.body?.errors));
+    const officeId = (await q(`select id from app_user where email = 'registrar@example.invalid'`))[0].id;
+    const recorded = await changesOf("K Dlamini");
+    ok("...recorded as an import, before and after, by the office person",
+       recorded.length === 1 && recorded[0].how === "import" && recorded[0].was === was && recorded[0].became === to
+         && recorded[0].by_id === officeId, JSON.stringify(recorded));
+    const again = await importCsv("players", office, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL, commit: true });
+    ok("sending it again is no change, and records nothing more",
+       again.body?.committed === true && (await changesOf("K Dlamini")).length === 1);
+  }
+
   group("A round trip");
   {
     // The real test of a pair of tools: what comes out goes back in.

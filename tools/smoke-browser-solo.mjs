@@ -361,6 +361,29 @@ try {
      await page.locator('[data-testid="family-link"][data-state="ended"]', { hasText: "A Walk Parent" }).count() === 1
      && /The parent asked in writing/.test(await inner(page, "family-links")));
 
+  // ══ 1c. Correcting a recorded date of birth (db/172) ══════════════════
+  // Kameel, 20 Nov 2026: "The office corrects it; every change is audited".
+  // T Bekker's ID number is on file (db/98), so only its own date may stand.
+  group("1c. Edit Profile → Correct the date of birth: the office only, against his ID number");
+  ok("the registrar is offered the correction", await wait(page, "edit-dob-correct"));
+  const [bek] = await q(`select to_char(born,'YYYY-MM-DD') b, id_number from player where id = $1`, [BEKKER]);
+  ok("...naming the date on record", new RegExp(bek.b.slice(0, 4)).test(await inner(page, "edit-dob-on-record")), await inner(page, "edit-dob-on-record"));
+  await keepsFloors("The correction", page, "edit-dob-correct");
+  const offBy = `${bek.b.slice(0, 8)}${bek.b.slice(8) === "01" ? "02" : "01"}`;
+  await tid(page, "edit-dob-correct-born").fill(offBy);
+  await tid(page, "edit-dob-correct-save").click();
+  ok("a date his ID number does not carry is refused in words, from the server",
+     await wait(page, "edit-dob-correct-said") && /different date of birth/.test(await inner(page, "edit-dob-correct-said")),
+     await inner(page, "edit-dob-correct-said"));
+  ok("...and nothing changed or was recorded",
+     (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [BEKKER]))[0].b === bek.b
+     && (await q(`select count(*)::int n from player_born_change where player_id = $1`, [BEKKER]))[0].n === 0);
+  await tid(page, "edit-dob-correct-born").fill(bek.b);
+  await tid(page, "edit-dob-correct-save").click();
+  await afterReads(page, 1200);
+  ok("the date already on record is said to be so", /already on record/.test(await inner(page, "edit-dob-correct-said")),
+     await inner(page, "edit-dob-correct-said"));
+
   // Who is offered it.
   const dirc = await open(); all.push(dirc);
   ok("the director of sport signs in", await signIn(dirc.page, "sarah@example.invalid"));
@@ -373,6 +396,7 @@ try {
   await afterReads(dirc.page, 1500);
   ok("the director is on Edit Profile", await tid(dirc.page, "edit-profile").count() === 1);
   ok("...and is not offered Guardian links (she does not hold the capability)", await tid(dirc.page, "guardian-links").count() === 0 && !/Guardian links/.test(await inner(dirc.page, "edit-profile")));
+  ok("...nor the date-of-birth correction (db/172: the office's)", await tid(dirc.page, "edit-dob-correct").count() === 0);
   // READERS_child_data Q2 (db/116): a link's ending, and its reason, are
   // guardian.link.manage's to read. She holds user.role.assign (D12), which
   // reads the list, and not guardian.link.manage, so the reason is absent and
