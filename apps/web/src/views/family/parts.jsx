@@ -217,10 +217,31 @@ const whenSaid = (at) => {
  * parent's screen. `self` is the pupil's own screen; `row.mine` an answer
  * this screen has just sent.
  */
+/**
+ * Is this answer the reader's own: sent from this screen, his own on his screen, or hers (her name on it) on hers.
+ * @param {any} row  @param {boolean} self  @param {string | null} me  the reader's name
+ */
+export function answerIsMine(row, self, me) {
+  if (!row) return false;
+  return !!row.mine || (self ? !!row.selfDeclared : (!row.selfDeclared && me != null && row.declaredByName === me));
+}
+
+/**
+ * The reason and note this screen may offer again, or send again: the reader's own words only (Kameel, 25 Nov).
+ * A note "for the coach" is its writer's and the staff's: the server returns another person's as null, and this
+ * screen never fills a form, or answers again, with words somebody else wrote, so nothing is sent under his name
+ * that he did not write. Pure.
+ * @param {any} row  @param {boolean} self  @param {string | null} me
+ * @returns {{reasonKind: string | null, note: string | null}}
+ */
+export function ownWords(row, self, me) {
+  return answerIsMine(row, self, me) ? { reasonKind: row.reasonKind ?? null, note: row.note ?? null } : { reasonKind: null, note: null };
+}
+
 function saidLine(row, child, self) {
   if (!row?.status || row.needsReconfirming) return null;
   const me = profile()?.user?.name ?? null;
-  const mine = row.mine || (self ? row.selfDeclared : (!row.selfDeclared && me != null && row.declaredByName === me));
+  const mine = answerIsMine(row, self, me);
   const by = row.selfDeclared ? (child.knownAs || child.name) : (row.declaredByName ?? "the school");
   return [mine ? "Sent to the coach" : `Said by ${by}`, whenSaid(row.declaredAt)].filter(Boolean).join(" · ");
 }
@@ -315,6 +336,8 @@ export function AvailabilityBlock({ match, child, role, self = false, onSent = n
   const labelId = `availability-label-${pid}-${match.id}`;
   const line = sending ? "Sending to the coach…" : saidLine(row, child, self);
   const reasoned = !sending && (status === "doubtful" || status === "unavailable");
+  // Only the reader's own reason and note are offered again (ownWords): never another person's words under his name.
+  const own = ownWords(row, self, profile()?.user?.name ?? null);
   return (
     <div data-testid={`availability-${pid}`} style={{ display: "grid", gap: T.space.sm }}>
       <span id={labelId} style={{ ...T.role.label, color: T.content.secondary }}>{self ? "Your answer" : `${name}'s answer`}</span>
@@ -340,15 +363,15 @@ export function AvailabilityBlock({ match, child, role, self = false, onSent = n
       {said && <p role="alert" style={{ ...T.role.body, color: T.semantic.criticalText, margin: 0 }}>{said}</p>}
       {mayDeclare && asking && row.saidStatus && (
         <div>
-          <Action primary testid={`availability-again-${pid}`} onClick={() => send(row.saidStatus, row.reasonKind, row.note)}>
+          <Action primary testid={`availability-again-${pid}`} onClick={() => send(row.saidStatus, own.reasonKind, own.note)}>
             Still {stateWords(row.saidStatus).word.toLowerCase()}
           </Action>
         </div>
       )}
       {mayDeclare && reasoned && !why && (
         <div>
-          <Action testid={`availability-why-${pid}`} onClick={() => { setReason(row?.reasonKind ?? ""); setNote(row?.note ?? ""); setWhy(true); }}>
-            {row?.reasonKind || row?.note ? "Change the reason" : "Add a reason for the coach"}
+          <Action testid={`availability-why-${pid}`} onClick={() => { setReason(own.reasonKind ?? ""); setNote(own.note ?? ""); setWhy(true); }}>
+            {own.reasonKind || own.note ? "Change the reason" : "Add a reason for the coach"}
           </Action>
         </div>
       )}
