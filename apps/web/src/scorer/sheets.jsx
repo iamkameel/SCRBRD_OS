@@ -855,7 +855,7 @@ function CustomBatEntry({onSend}){
       <div style={{display:"flex",gap:"8px"}}>
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="Player name…" aria-label="Player name"
           style={{flex:1,minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-            color:D.textPrimary,fontSize:"14px",fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
+            color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
           onKeyDown={e=>{if(e.key==="Enter"&&name.trim()){
             // The sheet closes on this keydown and focus goes back to the key that opened it
             // (the Wicket key, after a wicket): the rest of this key press would press it.
@@ -1077,7 +1077,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           <input value={fielterFilter} onChange={e=>setFielderFilter(e.target.value)} aria-label="Search fielders"
             placeholder="Search fielder…"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px",marginBottom:"8px"}}/>
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"9px 13px",marginBottom:"8px"}}/>
           <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"180px",overflowY:"auto",overscrollBehavior:"contain"}}>
             {filteredFielders.map(p=>(
               <button key={p.name} onClick={()=>pickFielder(p.name)} className="pressBtn" aria-pressed={fielder===p.name||second===p.name} style={{
@@ -1118,7 +1118,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           <input value={!fieldingSquad.find(p=>p.name===fielder)&&fielder!==twelfth?.name&&fielder?fielder:""} 
             onChange={e=>{setFielder(e.target.value);setSecond("");setAdding(false);}} placeholder="Type any name…" aria-label="Fielder not in the squad"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,marginTop:"6px",
-              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px"}}/>
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"9px 13px"}}/>
         </div>
       )}
       {needsFielder&&(!fieldingSquad||!fieldingSquad.length)&&(
@@ -1126,7 +1126,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           <Lbl sx={{marginBottom:"7px"}}>{mode===DISMISSAL.CAUGHT?"Caught by":"Run out by"}</Lbl>
           <input value={fielder} onChange={e=>setFielder(e.target.value)} placeholder="Fielder name (optional)" aria-label="Fielder name, optional"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"11px 14px"}}/>
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"11px 14px"}}/>
         </div>
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
@@ -1217,7 +1217,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
           <input value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Search bowlers"
             placeholder="Search bowler…"
             style={{width:"100%",minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.textMuted}`,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"14px",fontFamily:D.body,padding:"9px 14px"}}
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"9px 14px"}}
             onFocus={e=>e.target.style.borderColor=D.amber+"66"}
             onBlur={e=>e.target.style.borderColor=D.textMuted}/>
         </div>
@@ -1281,7 +1281,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
         <div style={{display:"flex",gap:"8px"}}>
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="Bowler name…" aria-label="Bowler name"
             style={{flex:1,minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"14px",fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
             onFocus={e=>e.target.style.borderColor=D.amber+"66"} onBlur={e=>e.target.style.borderColor=D.border}
             onKeyDown={e=>{if(e.key==="Enter"&&name.trim()&&canBowl({name:name.trim()}))onConfirm(name.trim());}}/>
           <Btn variant="amber" disabled={!name.trim()||!canBowl({name:name.trim()})} onClick={()=>name.trim()&&canBowl({name:name.trim()})&&onConfirm(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px",minHeight:"44px"}}>Go</Btn>

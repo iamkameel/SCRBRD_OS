@@ -216,8 +216,39 @@ function injuredLine(rows, child, fmt) {
   return rtw ? `Injured · back ${fmt(rtw)}` : "Injured";
 }
 
+/**
+ * The answer SUGGESTED for a fixture before his return (redesign slice 9;
+ * Kameel's question 6 (a), 19 Nov: "a fixture before his return date is
+ * pre-filled 'Injured · back Fri 4 Dec', which a parent can still change").
+ *
+ * The narrowest form: a suggestion on the screen, never a write. Nothing is
+ * recorded until his parent or he taps an answer; what is sent then is the
+ * answer alone, with no reason and no note, so the coach reads exactly what
+ * any other answer gives him ("Unavailable, said by …") and nothing of the
+ * injury beyond what his own reads already give him (the cockpit's status
+ * tier). Whether the server should record it unasked is not decided.
+ *
+ * Suggested only when every open injury of his has a return date and the
+ * fixture's day is before the last of them. An open injury with no return
+ * date says "Injured" on his Home and suggests nothing: when he is back is
+ * not known, so the screen does not guess it for a fixture.
+ *
+ * Read from the same rows as his Home's line, cut to homeInjuryRows() (whose,
+ * open, the return date): the injury's name never reaches the answer.
+ * @param {any[]} rows  @param {{id: string}} child  @param {string | null | undefined} fixtureDay  the fixture's South African day, YYYY-MM-DD
+ * @returns {{status: "unavailable", back: string} | null}
+ */
+function injuredAnswer(rows, child, fixtureDay) {
+  const day = day10(fixtureDay);
+  if (!day) return null;
+  const open = homeInjuryRows(rows).filter((i) => i.player === child.id && isOpenInjury(i) && !hasLeftSchool(i));
+  if (!open.length || open.some((i) => !day10(i.rtw))) return null;
+  const back = open.map((i) => /** @type {string} */ (day10(i.rtw))).sort().at(-1);
+  return back && day < back ? { status: "unavailable", back } : null;
+}
+
 export {
   NEXT_REVIEW_SHORTCUTS, PHASE_WORDS, REASON_ORDER, REFUSAL, SEVERITY_WORDS,
   addDaysIso, day10, daysBetween, hasLeftSchool, injuryCounts, injurySay, isOpenInjury,
-  homeInjuryRows, injuredLine, phaseWord, reasonLine, saToday, seenWord, severityWord,
+  homeInjuryRows, injuredAnswer, injuredLine, phaseWord, reasonLine, saToday, seenWord, severityWord,
 };

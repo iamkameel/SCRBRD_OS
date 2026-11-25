@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ROLES } from "../design/roles.js";
 import { roleGrants } from "@scrbrd/policy/roles";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { holdsCapability } from "../rbac/index.js";
 import { useLive, useRows } from "../lib/live.js";
 import { isOff, useFeatures } from "../lib/features.js";
@@ -255,7 +255,7 @@ function AuditLog() {
   const note = {margin:0,fontFamily:D.body,fontSize:"14px",color:D.textMuted};
   if (!live) return <p data-testid="audit-signin" style={note}>Sign in to see the audit log.</p>;
 
-  const field = {minHeight:"44px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"6px 10px",fontFamily:D.body,fontSize:"14px",color:D.textPrimary};
+  const field = {minHeight:"44px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"6px 10px",fontFamily:D.body,fontSize: T.role.control.fontSize,color:D.textPrimary};
   const label = {display:"flex",flexDirection:"column",gap:"4px",fontFamily:D.body,fontSize:"12px",color:D.textMuted};
   return (
     <div data-testid="audit-log" style={{display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -398,7 +398,7 @@ function RequestsPanel({ role, players }) {
       {x.text}
     </div>
   );
-  const sel = {background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 8px",minHeight:"44px",fontFamily:D.body,fontSize:"12px",color:D.textPrimary};
+  const sel = {background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.sm,padding:"4px 8px",minHeight:"44px",fontFamily:D.body,fontSize: T.role.control.fontSize,color:D.textPrimary};
   return (
     <div data-testid="requests-panel" style={{border:`1px solid ${D.border}`,borderRadius:D.lg,background:D.surf1,padding:"14px"}}>
       <div style={{fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textPrimary,marginBottom:"8px"}}>{rows.length ? `Requests to answer · ${rows.length}` : "Requests answered"}</div>

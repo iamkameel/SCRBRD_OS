@@ -36,7 +36,7 @@
  * field says "a public place, never a home".
  */
 import { useEffect, useId, useMemo, useState } from "react";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { Badge, Card } from "../ui/primitives.jsx";
 import { useLive } from "../lib/live.js";
 import { api, signedIn } from "../lib/api.js";
@@ -148,7 +148,7 @@ function Btn({ children, onClick, variant = "primary", disabled, ...rest }) {
   );
 }
 const fieldStyle = () => ({ width: "100%", minHeight: "44px", padding: "9px 12px", background: D.surf2, boxSizing: "border-box",
-  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "14px" });
+  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize });
 const fieldLabel = () => ({ display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,
   letterSpacing: "0.04em", marginBottom: "5px" });
 function Input({ label: words, value, onChange, type = "text", ...rest }) {
@@ -617,7 +617,7 @@ function LiftPolicyForSchool({ school }) {
       <label htmlFor={`lift-policy-${school.id}`} style={{ ...label(), display: "block", marginBottom: "5px" }}>The school's lift policy</label>
       <textarea id={`lift-policy-${school.id}`} data-testid="lift-policy-body" value={text} onChange={(e) => setText(e.target.value)} rows={12}
         style={{ width: "100%", padding: "10px 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
-                 color: D.textPrimary, fontFamily: D.body, fontSize: "13px", lineHeight: 1.5, boxSizing: "border-box" }}/>
+                 color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, lineHeight: 1.5, boxSizing: "border-box" }}/>
       <div style={{ ...muted(), marginBottom: "8px" }}>{length} characters (200 to 6000).</div>
       <Tick checked={clearance} onChange={setClearance} testid="lift-policy-clearance">
         Drivers must hold a current police clearance, Children's Act register clearance and Sexual Offences Register clearance, recorded by the office.

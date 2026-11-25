@@ -155,7 +155,7 @@ export function FamilyHome({ role, onNav, onOpenScorer }) {
     return (
       <>
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <MatchFor match={open.match} child={child} role={role} matches={matches} onBack={() => setOpen(null)}/>
+        <MatchFor match={open.match} child={child} role={role} matches={matches} backLabel="Home" onBack={() => setOpen(null)}/>
       </>
     );
   }
@@ -163,7 +163,7 @@ export function FamilyHome({ role, onNav, onOpenScorer }) {
     return (
       <Page testid="family-home">
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <FixtureDetail match={open.match} child={child} role={role} onBack={() => setOpen(null)}/>
+        <FixtureDetail match={open.match} child={child} role={role} backLabel="Home" onBack={() => setOpen(null)}/>
       </Page>
     );
   }
@@ -183,12 +183,17 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
   // GA-I20 A0: what is owed for him, read once; the lead asks it whether the next fixture's answer is owed.
   const todo = useTodoList({ child, matches, matchesRead, now, day });
   const next = fixturesOf(matches, child, now).upcoming[0] ?? null;
+  // Slice 9: an answer given in the lead keeps the lead where it is for this visit (the row does not move), while the
+  // list reads again so its count is true.
+  const [answeredHere, setAnsweredHere] = useState(/** @type {string | null} */ (null));
+  const owed = owes(todo.t, next?.id) || (next != null && answeredHere === next.id);
   // §1.9, §2.6: his match live leads his section; then the fixture, or a result today. A parent's Home has no captain.
-  const lead = leadOf({ matches, child, now, owed: owes(todo.t, next?.id) });
+  const lead = leadOf({ matches, child, now, owed });
+  const onAnswered = () => { setAnsweredHere(next?.id ?? null); todo.retry(); };
   const toMatch = (m) => setOpen({ kind: "match", match: m });
   const toFixture = (m) => setOpen({ kind: "fixture", match: m });
   const nextCard = (weight) => (
-    <NextFixtureCard child={child} matches={matches} role={role} now={now} said={matchesSaid} onRetry={retry} weight={weight}
+    <NextFixtureCard child={child} matches={matches} role={role} now={now} said={matchesSaid} onRetry={retry} weight={weight} onAnswered={onAnswered}
       onOpen={toFixture} onMatches={nav.includes("fixtures") ? () => onNav?.("fixtures") : null}/>
   );
   const lastCard = (weight) => <LastMatchCard child={child} matches={matches} now={now} onOpen={toMatch} weight={weight}/>;

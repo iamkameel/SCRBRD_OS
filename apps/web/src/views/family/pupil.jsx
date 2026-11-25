@@ -86,7 +86,7 @@ export function PupilHome({ role, onNav, onOpenScorer }) {
     return (
       <>
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <MatchFor match={open.match} child={me} role={role} self matches={matches} onBack={() => setOpen(null)}/>
+        <MatchFor match={open.match} child={me} role={role} self matches={matches} backLabel="Home" onBack={() => setOpen(null)}/>
       </>
     );
   }
@@ -94,7 +94,7 @@ export function PupilHome({ role, onNav, onOpenScorer }) {
     return (
       <Page testid="pupil-home">
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <FixtureDetail match={open.match} child={me} role={role} self onBack={() => setOpen(null)}/>
+        <FixtureDetail match={open.match} child={me} role={role} self backLabel="Home" onBack={() => setOpen(null)}/>
       </Page>
     );
   }
@@ -115,12 +115,17 @@ function PupilHomeBody({ me, role, onNav, onOpenScorer, matches, matchesRead, re
   // GA-I20 A1 (D12): his own list, read once; the lead asks it whether the next fixture's answer is owed.
   const todo = useTodoList({ child: me, matches, matchesRead, now, self: true });
   const next = fixturesOf(matches, me, now).upcoming[0] ?? null;
-  const lead = leadOf({ matches, child: me, now, captain: !!cap && !!captainFixture(me, matches, now), owed: owes(todo.t, next?.id) });
+  // Slice 9: an answer given in the lead keeps the lead where it is for this visit (the row does not move), while the
+  // list reads again so its count is true.
+  const [answeredHere, setAnsweredHere] = useState(/** @type {string | null} */ (null));
+  const owed = owes(todo.t, next?.id) || (next != null && answeredHere === next.id);
+  const lead = leadOf({ matches, child: me, now, captain: !!cap && !!captainFixture(me, matches, now), owed });
+  const onAnswered = () => { setAnsweredHere(next?.id ?? null); todo.retry(); };
   const toMatch = (m) => setOpen({ kind: "match", match: m });
   const toFixture = (m) => setOpen({ kind: "fixture", match: m });
   const captainCard = (place) => <CaptainCard cap={cap} me={me} role={role} matches={matches} now={now} place={place} onOpen={(m, kind) => setOpen({ kind, match: m })}/>;
   const nextCard = (weight) => (
-    <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={toFixture} weight={weight} cardAbove={lead.kind === "captain"}
+    <NextFixtureCard child={me} matches={matches} role={role} self now={now} onOpen={toFixture} weight={weight} cardAbove={lead.kind === "captain"} onAnswered={onAnswered}
       said={readState(matchesRead, { what: "the fixtures" })} onRetry={retry}/>
   );
   const lastCard = (weight) => <LastMatchCard child={me} matches={matches} self now={now} onOpen={toMatch} weight={weight}/>;

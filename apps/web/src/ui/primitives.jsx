@@ -236,7 +236,7 @@ const Input = ({ label, value, onChange, type="text", placeholder, small, ...res
       {...rest}
       // §3.5: 44px to tap (T.floor.target); a field was 39 on its padding alone.
       style={{width:"100%",minHeight:px(T.floor.target),padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-        color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}/>
+        color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize}}/>
   </div>
   );
 };
@@ -263,7 +263,7 @@ const Select = ({ label, value, onChange, options, ...rest }) => {
     <select id={id} value={value} onChange={e=>onChange(e.target.value)} {...rest}
       // §3.5: 44px to tap (T.floor.target); a field was 39 on its padding alone.
       style={{width:"100%",minHeight:px(T.floor.target),padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-        color:D.textPrimary,fontFamily:D.body,fontSize:"13px"}}>
+        color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize}}>
       {options.map(o=>{ const { value: v, label: l } = optionOf(o); return <option key={v} value={v}>{l}</option>; })}
     </select>
   </div>

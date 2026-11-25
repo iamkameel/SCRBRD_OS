@@ -18,7 +18,7 @@ import { injuredLine } from "../../lib/injury.js";
 import { fixturesOf, lineFor, noticesFor, opponentOf, endOf } from "../../lib/family.js";
 import { MatchCard } from "../../ui/matchCard.jsx";
 import { openWords } from "../../lib/matchCard.js";
-import { Action, AvailabilityBlock, BusLine, Card, Line, OpenRow, TeamSheetLine, WeatherLine, answerVerb } from "./parts.jsx";
+import { Action, AvailabilityBlock, BusLine, Card, Line, OpenRow, TeamSheetLine, WeatherLine } from "./parts.jsx";
 import { careerAverage } from "../../lib/compare.js";
 import { useFold } from "./useFold.js";
 import { SealMark } from "../../ui/sealMark.jsx";
@@ -26,9 +26,13 @@ import { familyMilestoneLine, familyName, honourWords, isFirst, isSealed, isWith
 
 /**
  * The next fixture, where, how he gets there, his answer and the team sheet.
- * `onOpen` opens the fixture (P3/S3), where the answer is given.
+ * The answer is given here, in place (redesign slice 9; the role reviews'
+ * direction §2.6 rung 5 and §3.1 to §3.2 Flow A): one tap, and the key stays
+ * pressed. `onOpen` opens the fixture (P3/S3) for the bus, the map and the
+ * side; `onAnswered` is told when an answer given here has been taken, so the
+ * Home keeps its lead for the visit (the row does not move).
  */
-export function NextFixtureCard({ child, matches, role, self = false, onOpen, onMatches, now, said = null, onRetry, weight = "lead", cardAbove = false }) {
+export function NextFixtureCard({ child, matches, role, self = false, onOpen, onMatches, now, said = null, onRetry, weight = "lead", cardAbove = false, onAnswered = null }) {
   const next = fixturesOf(matches, child, now).upcoming[0] ?? null;
   const name = child.knownAs || child.name;
   if (!next) {
@@ -58,11 +62,11 @@ export function NextFixtureCard({ child, matches, role, self = false, onOpen, on
       <BusLine match={next} role={role}/>
       <WeatherLine match={next} role={role}/>
       <div style={{ border: `1px solid ${T.line.normal}`, borderRadius: T.radius.md, padding: T.space.md, display: "grid", gap: T.space.sm }}>
-        <AvailabilityBlock match={next} child={child} role={role} self={self} compact
-          action={(status) => <div><Action onClick={() => onOpen(next)} testid="next-fixture-open">{answerVerb(status)}</Action></div>}/>
+        <AvailabilityBlock match={next} child={child} role={role} self={self} onSent={onAnswered}/>
       </div>
       {/* Q10 (Kameel, 15 Nov): the eleven on her child's next fixture. His own Home keeps to his line; his fixture draws the side. */}
       <TeamSheetLine match={next} child={child} role={role} self={self} sheet={!self}/>
+      <div><Action onClick={() => onOpen(next)} testid="next-fixture-open">Open the fixture</Action></div>
     </Card>
   );
 }

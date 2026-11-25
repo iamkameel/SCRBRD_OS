@@ -45,7 +45,7 @@ import { launchOptions } from "./chromium.mjs";
 import { offline } from "./offline-browser.mjs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
@@ -59,6 +59,9 @@ const API_PORT = port(8996);
 const API = `http://127.0.0.1:${API_PORT}`;
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".jpg": "image/jpeg", ".map": "application/json" };
 const PHONE = { width: 390, height: 844 }, DESK = { width: 1366, height: 900 };
+// QUEUE_SHOTS=<dir> also saves the coach's Today (two squads; nothing to do) at 390 and 1366, in both themes.
+const SHOTS = process.env.QUEUE_SHOTS || null;
+if (SHOTS) await mkdir(SHOTS, { recursive: true });
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${String(d).slice(0, 300)}`); } };
@@ -312,10 +315,10 @@ try {
   const word = (rule, i = 0) => rA.filter((r) => r.rule === rule)[i];
   ok(`S7 is '${wantNone} have not answered', a count`, word("S7")?.fact === `${wantNone} ${wantNone === 1 ? "has" : "have"} not answered` && word("S7").count === wantNone, word("S7")?.fact);
   ok("...its owner is the side's coach or manager, its clock the 48 hours, its source the side read, its door the side",
-     /^the 1XI coach, assistant coach or team manager$/.test(word("S7").owner.split(" · ")[0]) && /was due|by /.test(word("S7").owner) && word("S7").source === "from the side read" && /Open the side/.test(word("S7").door), JSON.stringify(word("S7")));
+     /^the 1XI coach, assistant coach or team manager$/.test(word("S7").owner.split(" · ")[0]) && /before the toss|by /.test(word("S7").owner) && word("S7").source === "from the side read" && /Open the side/.test(word("S7").door), JSON.stringify(word("S7")));
   ok(`the restricted boy reads '${wantRestricted} restricted ${wantRestricted === 1 ? "boy" : "boys"} on the sheet', never his name`, word("S3", 0)?.fact === `${wantRestricted} restricted ${wantRestricted === 1 ? "boy" : "boys"} on the sheet`, word("S3", 0)?.fact);
   ok("...and '1 marked unavailable on the sheet'", word("S3", 1)?.fact === "1 marked unavailable on the sheet");
-  ok("S6: '10 named · a side needs 11', due the day before", word("S6")?.fact === "10 named · a side needs 11" && /Fri|Sat|Sun|Mon|Tue|Wed|Thu/.test(word("S6").owner) && /by |was due/.test(word("S6").owner), JSON.stringify(word("S6")));
+  ok("S6: '10 named · a side needs 11', due the day before", word("S6")?.fact === "10 named · a side needs 11" && /Fri|Sat|Sun|Mon|Tue|Wed|Thu/.test(word("S6").owner) && /by |before the toss/.test(word("S6").owner), JSON.stringify(word("S6")));
   ok("S1 (the bus): the smaller bus, in the signals' own words, lifts not counted for a reader with no lift capability", /^Bus seats 4 · \d+ named \(lifts not counted\)$/.test(word("S1")?.fact) && /the bus's departure/.test(word("S1").owner), JSON.stringify(word("S1")));
   ok("O4 (duties): 'No scorer on record', the office's, to the first ball", /^No scorer on record for \d+ \w{3}$/.test(word("O4")?.fact) && /^the office · /.test(word("O4").owner) && /first ball/.test(word("O4").owner) && /Open the duties/.test(word("O4").door), JSON.stringify(word("O4")));
   ok("S10: no playing conditions, the competition organiser's", /^No playing conditions are set/.test(word("S10")?.fact) && /^the competition's organiser/.test(word("S10").owner));
@@ -461,6 +464,90 @@ try {
   await o.ctx.close();
 
   // ══ 7 · A coach of two sides ════════════════════════════════════════════
+  group("The coach's Today (redesign slice 11): one count, each row naming its fixture with a verb, 'before the toss', the office's rows on the card");
+  {
+    // What To resolve gives him, less what only the office can clear (question 8): what his Needs you must say.
+    const t = await open({ viewport: DESK });
+    await signIn(t.page, "coach@example.invalid");
+    await queue(t.page);
+    const groupIds = await t.page.$$eval('[data-testid="queue-group"]', (els) => els.map((e) => e.getAttribute("data-match")));
+    const theirs = new Map(), theOffice = new Map();
+    for (const id of groupIds) {
+      const open_ = (await rowsOf(t.page, id)).filter((r) => r.state === "open");
+      theOffice.set(id, open_.filter((r) => r.owner.split(" · ")[0] === "the office"));
+      theirs.set(id, open_.filter((r) => r.owner.split(" · ")[0] !== "the office"));
+    }
+    const elsewhere = await t.page.locator('[data-testid="queue-results"] [data-testid="queue-row"][data-state="open"], [data-testid="queue-potm"] [data-testid="queue-row"][data-state="open"]').count();
+    // One difference, as built before this slice: the coach may count lifts, so To resolve does not tell him A's bus
+    // is short until the lifts are read on the match day (ruleS1); Today reads no lifts on opening (useQueue's no-tap
+    // mode, review S2), so its bus row says "lifts not counted". A has the four-seater (above), so Today has it.
+    ok("(To resolve holds no bus row for him the day before; Today has one, 'lifts not counted')", !(theirs.get(A) ?? []).some((r) => r.rule === "S1"));
+    theirs.get(A)?.push({ rule: "S1", state: "open", owner: "", fact: "", count: 1, source: "", door: "" });
+    const want = [...theirs.values()].reduce((n, rs) => n + rs.length, 0) + elsewhere;
+    ok("(the stage: on To resolve, A has a duty nobody holds and the called-off fixture its leftovers, both the office's; A and B have rows of his)",
+       theOffice.get(A)?.some((r) => r.rule === "O4") && theOffice.get(OFF)?.some((r) => r.rule === "O5") && theirs.get(A)?.length > 0 && theirs.get(B)?.length > 0,
+       JSON.stringify([...theOffice].map(([k, v]) => [k.slice(0, 8), v.map((r) => r.rule)])));
+    await t.ctx.close();
+
+    for (const [vw, scheme] of [[PHONE, "light"], [PHONE, "dark"], [DESK, "light"], [DESK, "dark"]]) {
+      const s = await open({ viewport: vw, scheme });
+      await signIn(s.page, "coach@example.invalid");
+      await s.page.waitForFunction(() => { const h = document.querySelector('[data-testid="needs-you-header"]'); return !!h && !/Reading/.test(h.innerText); }, null, { timeout: 30000 }).catch(() => {});
+      await s.page.waitForFunction(() => document.querySelectorAll('[data-testid="matchday-count"]').length > 0, null, { timeout: 20000 }).catch(() => {});
+      await afterReads(s.page, 1500);
+      const tag = `${vw.width} ${scheme}`;
+      if (SHOTS) await s.page.screenshot({ path: join(SHOTS, `coach-queue-two-squads-${vw.width}-${scheme}.png`), fullPage: true });
+      if (vw !== PHONE || scheme !== "light") {
+        ok(`${tag}: the one count is drawn the same`, (await inner(s.page, "needs-you-header")).trim() === `${want} ${want === 1 ? "needs" : "need"} you`, await inner(s.page, "needs-you-header"));
+        await s.ctx.close();
+        continue;
+      }
+      const header = (await inner(s.page, "needs-you-header")).trim();
+      ok(`one count: '${want} need you', To resolve's rows of his less the office's, and no '0 reads failed'`, header === `${want} ${want === 1 ? "needs" : "need"} you`, header);
+      const shown = await s.page.$$eval('[data-testid="needs-you-row"]', (els) => els.map((e) => ({ rule: e.getAttribute("data-rule"), match: e.getAttribute("data-match"),
+        fact: e.querySelector('[data-testid="needs-you-fact"]')?.textContent ?? "", line: e.querySelector('[data-testid="needs-you-line"]')?.textContent ?? "",
+        door: (e.querySelector('[data-testid="needs-you-door"]')?.textContent ?? "").replace("›", "").trim() })));
+      console.log(`  Needs you: ${shown.map((r) => `${r.rule} "${r.fact}" | ${r.line} | ${r.door}`).join("\n             ")}`);
+      ok("nothing only the office can clear is on his Needs you: no duty nobody holds, no called-off leftovers", shown.every((r) => r.rule !== "O4" && !(r.rule === "O5" && r.match === OFF)), shown.map((r) => r.rule).join());
+      const s7 = shown.find((r) => r.rule === "S7" && r.match === A);
+      ok("each row names its fixture: A's unanswered row says 'QA Kearsney XI'", !!s7 && /QA Kearsney XI/.test(s7.line), JSON.stringify(s7));
+      ok("...and its deadline, already past, as 'before the toss (…)', never 'was due' or 'overdue'", /before the toss \((\w{3} )?\d\d:\d\d\)/.test(s7?.line ?? "") && !/was due|overdue/i.test(await inner(s.page, "needs-you")), s7?.line);
+      ok("...and one verb: 'Chase'", s7?.door === "Chase", s7?.door);
+      const verbs = { S7: "Chase", S6: "Pick the side", S1: "Check the bus", S10: "Set the conditions" };
+      ok("every row carries one verb or its door's own words, and never two", shown.every((r) => !/›/.test(r.door)) && shown.filter((r) => verbs[r.rule]).every((r) => r.door === verbs[r.rule] || /^Open the fixture$/.test(r.door)), shown.map((r) => `${r.rule}:${r.door}`).join());
+      // The cards: each fixture's count is its rows on Needs you; what only the office can clear is said there, as the office's.
+      const cards = await s.page.$$eval('[data-testid="day-matchday"]', (els) => els.map((e) => ({ match: e.getAttribute("data-match"),
+        count: e.querySelector('[data-testid="matchday-count"]')?.textContent?.trim() ?? null,
+        office: [...e.querySelectorAll('[data-testid="matchday-office"]')].map((x) => x.textContent.trim()) })));
+      console.log(`  Cards: ${cards.map((c) => `${c.match.slice(0, 8)} ${c.count} [${c.office.join(" | ")}]`).join("; ")}`);
+      const cardA = cards.find((c) => c.match === A), cardB = cards.find((c) => c.match === B);
+      const words = (n) => (n === 0 ? "Nothing needs you" : `${n} ${n === 1 ? "needs" : "need"} you`);
+      ok(`A's card says A's count: '${words(theirs.get(A).length)}', the same rows as Needs you`, cardA?.count === words(theirs.get(A).length), JSON.stringify(cardA));
+      ok(`...and B's, the second squad's: '${words(theirs.get(B).length)}'`, cardB?.count === words(theirs.get(B).length), JSON.stringify(cardB));
+      ok("A's card says the duty nobody holds as the office's", (cardA?.office ?? []).some((x) => /^The office's: No scorer on record for /.test(x)), JSON.stringify(cardA?.office));
+      ok(`...and B's card the office's ${theOffice.get(B).length}, as To resolve has them`, (cardB?.office ?? []).length === theOffice.get(B).length
+         && (cardB?.office ?? []).every((x) => /^The office's: No (scorer|umpire) on record for /.test(x)), JSON.stringify(cardB?.office));
+      // One fact, one answer: the next fixture's Officials chip is the O4 rule, in its words (A has an umpire, no scorer).
+      const offChip = s.page.locator('[data-testid="day-next"] [data-testid="ready-officials"]').first();
+      ok("A's Officials chip is not 'on record' with only an umpire: 'Officials · No scorer on record', as its card says it",
+         (await offChip.innerText().catch(() => "")).replace("›", "").trim() === "Officials · No scorer on record" && await offChip.getAttribute("data-on").catch(() => null) === "false"
+         && (cardA?.office ?? []).some((x) => x.startsWith("The office's: No scorer on record")), await offChip.innerText().catch(() => ""));
+      ok("the cards' counts and the office's rows add up to Needs you's one count",
+         cards.reduce((n, c) => n + (Number(c.count?.match(/^\d+/)?.[0]) || 0), 0) + elsewhere === want, cards.map((c) => c.count).join());
+      const all = (await s.page.locator('[data-testid="needs-you"], [data-testid="day-matchday"]').allInnerTexts()).join("\n");
+      ok("Needs you and the cards name no child, no reason, no return date", !shouldNeverSee.some((n) => all.includes(n)) && leaks(await inner(s.page, "needs-you")).length === 0,
+         shouldNeverSee.filter((n) => all.includes(n)).join(", ") || leaks(await inner(s.page, "needs-you")).join());
+      const fl = await floors(s.page, '[data-testid="needs-you"], [data-testid="day-matchday"]');
+      ok(`at 390: nothing under 12px (${fl.small.length}), every row and button at least 44px (${fl.tiny.length})`, fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
+      ok("...no horizontal scroll", await s.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+      await s.page.locator(`[data-testid="needs-you-row"][data-rule="S7"][data-match="${A}"] button`).first().click({ timeout: 4000 }).catch(() => {});
+      await s.page.waitForFunction(() => document.querySelector('[data-testid="mc-coach"]'), null, { timeout: 15000 }).catch(() => {});
+      ok("'Chase' opens that fixture's Coach tab", await tid(s.page, "mc-coach").count() === 1 && /QA Kearsney XI/.test(await inner(s.page, "match-view")));
+      ok("no page errors", s.errors.length === 0, s.errors.join(" | "));
+      await s.ctx.close();
+    }
+  }
+
   group("A coach of 1XI and 2XI: his fixtures only, in date order; the second side's row opens THAT fixture");
   const c = await open({ viewport: DESK });
   ok("the coach signs in", await signIn(c.page, "coach@example.invalid"));
@@ -574,6 +661,18 @@ try {
     const cleanLine = (await group_(k.page, CLEAN).locator('[data-testid="queue-group-line"]').innerText()).trim();
     ok("a fixture with nothing waiting and every read answered: 'Nothing to resolve', and the header says '0 open · 0 reads failed · 1 fixture'",
        cleanLine === "Nothing to resolve" && (await headerText(k.page)) === "0 open · 0 reads failed · 1 fixture", `${cleanLine} | ${await headerText(k.page)}`);
+    // Nothing to do (slice 11): his Today has no Needs you, and the card says so in the same words.
+    for (const [vw, scheme] of [[PHONE, "light"], [PHONE, "dark"], [DESK, "light"], [DESK, "dark"]]) {
+      const n = await open({ viewport: vw, scheme });
+      await signIn(n.page, "qa.clean@example.invalid");
+      await n.page.waitForFunction(() => document.querySelector('[data-testid="matchday-count"]'), null, { timeout: 20000 }).catch(() => {});
+      await afterReads(n.page, 1500);
+      if (SHOTS) await n.page.screenshot({ path: join(SHOTS, `coach-queue-nothing-${vw.width}-${scheme}.png`), fullPage: true });
+      ok(`${vw.width} ${scheme}: nothing waiting draws no Needs you, and the card says 'Nothing needs you'`,
+         await tid(n.page, "needs-you").count() === 0 && (await inner(n.page, "matchday-count")).trim() === "Nothing needs you" && await tid(n.page, "matchday-office").count() === 0,
+         `${await tid(n.page, "needs-you").count()} | ${await inner(n.page, "matchday-count")}`);
+      await n.ctx.close();
+    }
     await k.page.route(new RegExp(`/api/read/match_duties\\?.*matchId=${CLEAN}`), (r) => r.abort());
     await k.page.setViewportSize(DESK);
     await queue(k.page);

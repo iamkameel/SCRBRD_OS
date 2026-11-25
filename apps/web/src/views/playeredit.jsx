@@ -36,7 +36,7 @@
  * Floors: nothing read under 12px, nothing pressed under 44px.
  */
 import { useEffect, useId, useMemo, useState } from "react";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useRows } from "../lib/live.js";
 import { holdsCapability } from "../rbac/index.js";
@@ -72,7 +72,7 @@ const words = (e) => e?.detail || SAY[e?.code] || BIRTH_DATE_MESSAGE[e?.code] ||
 
 const heading = () => ({ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 6px" });
 const field = () => ({ width: "100%", minHeight: "44px", padding: "9px 12px", background: D.surf2, boxSizing: "border-box",
-  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "14px" });
+  border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize });
 const note = (bad) => ({ fontFamily: D.body, fontSize: "12px", margin: "6px 0 0", color: bad ? textOn(D.rose) : D.textSecondary });
 
 function Go({ children, disabled, onClick, testid }) {

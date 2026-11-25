@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { NOT_HIM, OFFICE_INTRO, OFFICE_STATE_WORDS, clearWords, dayWords, officeWords, rosterMatches } from "../lib/pupilClaim.js";
@@ -67,10 +67,10 @@ export function PupilClaimRow({ c, players, school, busy, onRecognise, onDecline
         <div style={{ display: "grid", gap: "8px", marginTop: "10px" }}>
           <label htmlFor={searchId} style={{ ...sub(), fontWeight: 700, color: D.textPrimary }}>Find him on your list</label>
           <input id={searchId} value={q} onChange={(e) => { setQ(e.target.value); setPick(""); }} autoComplete="off" data-testid="pupil-claim-search"
-            style={{ minHeight: "44px", padding: "10px 12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf1, color: D.textPrimary, fontFamily: D.body, fontSize: "16px", boxSizing: "border-box" }}/>
+            style={{ minHeight: "44px", padding: "10px 12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf1, color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, boxSizing: "border-box" }}/>
           <label htmlFor={pickId} style={{ ...sub(), fontWeight: 700, color: D.textPrimary }}>His place on the list</label>
           <select id={pickId} value={pick} onChange={(e) => setPick(e.target.value)} data-testid="pupil-claim-pick"
-            style={{ minHeight: "44px", padding: "10px 12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf1, color: D.textPrimary, fontFamily: D.body, fontSize: "16px", boxSizing: "border-box" }}>
+            style={{ minHeight: "44px", padding: "10px 12px", borderRadius: D.md, border: `1px solid ${D.border}`, background: D.surf1, color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, boxSizing: "border-box" }}>
             <option value="">Choose…</option>
             {matches.map((p) => <option key={p.id} value={p.id}>{p.name}{p.team ? ` (${p.team})` : ""}</option>)}
           </select>

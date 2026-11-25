@@ -212,10 +212,23 @@ export function deadlineAt(clock, match, trips = null, school = null) {
 /** Has the clock run out: true AT the threshold and false one millisecond short. @param {number | null} at @param {number} now */
 export const isDue = (at, now) => at != null && now >= at;
 
-/** @param {{clock: string, at: number} | null} d @param {number} now @returns {Deadline | null} */
-function deadlineOf(d, now) {
+/**
+ * "before the toss (09:00)": a fixture's deadline once its clock has run out (DESIGN_DIRECTION question 8, decided
+ * 19 Nov: "a deadline already past shows 'before the toss'", never "overdue" and never in red). The time is the
+ * fixture's start, with its day when that is not today. @param {number} start @param {number} now
+ */
+export const tossWords = (start, now) => `before the toss (${saDay(start) === saDay(now) ? clockTime(start) : whenWords(start)})`;
+
+/**
+ * A row's deadline in words: "by Thu 09:00" while the queue's clock runs, and once it has run out, while the
+ * fixture is still to come, "before the toss (…)". `due` still says the clock ran out.
+ * @param {{clock: string, at: number} | null} d @param {number} now @param {number | null} [start] the fixture's start, ms
+ * @returns {Deadline | null}
+ */
+function deadlineOf(d, now, start = null) {
   if (!d) return null;
   const due = isDue(d.at, now);
+  if (due && start != null) return { clock: d.clock, at: d.at, due, words: tossWords(start, now) };
   const what = d.clock === "firstBall" ? `first ball (${whenWords(d.at)})` : d.clock === "bus" ? `the bus's departure (${whenWords(d.at)})` : whenWords(d.at);
   return { clock: d.clock, at: d.at, due, words: `${due ? "was due" : "by"} ${what}` };
 }
@@ -426,12 +439,12 @@ function unreadRow(id, key, label, error = null, school) {
  * cockpit's own and `null` is a read that failed (I08).
  *
  * @param {{match: any, gate: Gate, reads: Record<string, any> | null | undefined, now: number, errors?: Record<string, string | null>}} o
- * @returns {{id: string, label: string, start: number | null, team: string | null, calledOff: boolean, loading: boolean,
+ * @returns {{id: string, label: string, start: number | null, team: string | null, school: string | null, calledOff: boolean, loading: boolean,
  *   dutyKeys: string[] | null, rows: Row[], unread: Row[], open: number, failed: number, clear: boolean, line: string}}
  */
 export function fixtureRows({ match, gate, reads, now, errors = {} }) {
   const id = String(match.id);
-  const base = { id, label: fixtureLabel(match, gate), start: startMs(match), team: gate.teamCode ?? null, calledOff: match.calledOff === true,
+  const base = { id, label: fixtureLabel(match, gate), start: startMs(match), team: gate.teamCode ?? null, school: gate.school ?? null, calledOff: match.calledOff === true,
     // Which duties have somebody on record (the duties read, as the fixture's own roster counts them), or null if it was not read or did not answer.
     dutyKeys: /** @type {string[] | null} */ (reads?.duties ? [...new Set(reads.duties.map((/** @type {any} */ r) => String(r.duty)))] : null) };
   if (!reads) return { ...base, loading: true, rows: [], unread: [], open: 0, failed: 0, clear: false, line: "Reading…" };
@@ -453,21 +466,21 @@ export function fixtureRows({ match, gate, reads, now, errors = {} }) {
     if (duties || bus) {
       rows.push(mk({ id: `${id}:O5`, rule: "O5", count: duties + bus,
         fact: `Called off: ${[duties ? `${duties} ${plural(duties, "duty", "duties")}` : null, bus ? `${bus} ${plural(bus, "bus", "buses")}` : null].filter(Boolean).join(" and ")} still on record`,
-        source: SOURCE.duties, owner: OFFICE, deadline: deadlineOf(deadlineAt("firstBall", match), now), action: go("fixture", "Open the fixture") }));
+        source: SOURCE.duties, owner: OFFICE, deadline: deadlineOf(deadlineAt("firstBall", match), now, base.start), action: go("fixture", "Open the fixture") }));
     }
   } else {
     // S7 · answers: the count of those who have not answered, never a name.
     if (p.side && mine && isSoon(match, now)) {
       const none = mine.filter((/** @type {any} */ r) => r.declaredStatus == null).length;
       if (none) rows.push(mk({ id: `${id}:S7`, rule: "S7", count: none, fact: `${none} ${none === 1 ? "has" : "have"} not answered`,
-        source: SOURCE.readiness, owner: sideOwner("S7", team), deadline: deadlineOf(deadlineAt("answers", match), now), action: go("side", "Open the side") }));
+        source: SOURCE.readiness, owner: sideOwner("S7", team), deadline: deadlineOf(deadlineAt("answers", match), now, base.start), action: go("side", "Open the side") }));
     }
     // S3 · on the sheet but may not play: counted by state (the physio's tier only for a reader who holds it).
     if (p.select && p.side && readiness) {
       const states = readiness.filter((/** @type {any} */ r) => r.selected && (r.side == null || r.side === gate.end)).map((/** @type {any} */ r) => stateOf(r, { status: p.status }));
       const restricted = states.filter((s) => s === "restricted").length;
       const out = states.filter((s) => s === "unavailable").length;
-      const when = deadlineOf(deadlineAt("answers", match), now);
+      const when = deadlineOf(deadlineAt("answers", match), now, base.start);
       if (restricted) rows.push(mk({ id: `${id}:S3:restricted`, rule: "S3", count: restricted, fact: `${restricted} restricted ${plural(restricted, "boy")} on the sheet`,
         source: SOURCE.readiness, owner: sideOwner("S3", team), deadline: when, action: go("side", "Open the side") }));
       if (out) rows.push(mk({ id: `${id}:S3:unavailable`, rule: "S3", count: out, fact: `${out} marked unavailable on the sheet`,
@@ -477,7 +490,7 @@ export function fixtureRows({ match, gate, reads, now, errors = {} }) {
     if (p.select && reads.squad && isSoon(match, now)) {
       const n = reads.squad.filter((/** @type {any} */ r) => r.side === gate.end && !r.twelfth).length;
       if (n < SIDE) rows.push(mk({ id: `${id}:S6`, rule: "S6", count: n, fact: n === 0 ? "The sheet is empty" : `${n} named · a side needs ${SIDE}`,
-        source: SOURCE.squad, owner: sideOwner("S6", team), deadline: deadlineOf(deadlineAt("sheet", match), now), action: go("side", "Open the side") }));
+        source: SOURCE.squad, owner: sideOwner("S6", team), deadline: deadlineOf(deadlineAt("sheet", match), now, base.start), action: go("side", "Open the side") }));
     }
     // The signals' own rules run over the same reads for S1, S8, S9 and S10: their words, their gates.
     const weather = reads.weatherRows ? reads.weatherRows.find((/** @type {any} */ w) => w.matchId === match.id) ?? null : null;
@@ -485,17 +498,17 @@ export function fixtureRows({ match, gate, reads, now, errors = {} }) {
       lifts: reads.lifts != null ? liftCounts(reads.lifts, now) : null, liftExceptions: null, weather, duties: reads.duties ?? null,
       conditions: reads.conditions ?? { state: "failed", cap: null, freeHit: null }, notices: null, matchups: null, fielding: [], capFor: null });
     for (const c of ruleS1(ctx)) rows.push(mk({ id: `${id}:S1`, rule: "S1", count: c.count, fact: c.lines[0], source: SOURCE.trips, owner: sideOwner("S1", team),
-      deadline: deadlineOf(deadlineAt("bus", match, reads.trips, gate.school), now), action: go("bus", "Open the bus") }));
+      deadline: deadlineOf(deadlineAt("bus", match, reads.trips, gate.school), now, base.start), action: go("bus", "Open the bus") }));
     for (const c of ruleS8(ctx)) rows.push(mk({ id: `${id}:${c.base}`, rule: "O4", count: 1, fact: c.lines[0], source: SOURCE.duties, owner: OFFICE,
-      deadline: deadlineOf(deadlineAt("firstBall", match), now), action: go("duties", "Open the duties") }));
+      deadline: deadlineOf(deadlineAt("firstBall", match), now, base.start), action: go("duties", "Open the duties") }));
     for (const c of ruleS10(ctx)) rows.push(mk({ id: `${id}:S10`, rule: "S10", count: 1, fact: c.lines[0], source: SOURCE.conditions, owner: ORGANISER,
-      deadline: deadlineOf(deadlineAt("firstBall", match), now), action: go("conditions", "Open the conditions") }));
+      deadline: deadlineOf(deadlineAt("firstBall", match), now, base.start), action: go("conditions", "Open the conditions") }));
     for (const c of ruleS9(ctx)) rows.push(mk({ id: `${id}:S9`, rule: "S9", state: "info", count: 0, fact: c.lines.join(" · "), source: SOURCE.weather }));
     // O5 · the fixture moved: the only on-record trace is the answers asked again (the amend route writes no `amended_at`, phase B).
     if (p.side && mine) {
       const again = mine.filter((/** @type {any} */ r) => r.declaredStatus === "needs_reconfirming").length;
       if (again) rows.push(mk({ id: `${id}:O5`, rule: "O5", count: again, fact: `Moved: ${again} ${plural(again, "answer")} to ask again`,
-        source: SOURCE.readiness, owner: `${OFFICE}; ${sideOwner("S7", team)} for the answers`, deadline: deadlineOf(deadlineAt("firstBall", match), now), action: go("fixture", "Open the fixture") }));
+        source: SOURCE.readiness, owner: `${OFFICE}; ${sideOwner("S7", team)} for the answers`, deadline: deadlineOf(deadlineAt("firstBall", match), now, base.start), action: go("fixture", "Open the fixture") }));
     }
   }
 
@@ -666,3 +679,73 @@ export function headerOf(groups, offices = []) {
 
 /** "5 open · 1 read failed · 7 fixtures". @param {ReturnType<typeof headerOf>} h */
 export const headerWords = (h) => `${h.open} open · ${readsFailed(h.failed)} · ${h.fixtures} ${plural(h.fixtures, "fixture")}`;
+
+// ════════════════════════════════════════════════════════════════════════
+//  THE COACH'S QUEUE (redesign slice 11; DESIGN_DIRECTION §2.6, §3.3, question 8)
+// ════════════════════════════════════════════════════════════════════════
+//
+// How "Needs you" reads, over the same rows as To resolve: one count, each row
+// naming its fixture and carrying one verb, and a deadline already past said as
+// "before the toss" (tossWords above). Rows only the office can clear stay off
+// a reader's "Needs you" unless he is the office there (question 8, decided
+// 19 Nov: "rows only the office can clear stay off his 'Needs you'"); they are
+// shown on the fixture as the office's. Layout, not authority: nothing here
+// reads, and the rows are To resolve's own.
+
+/** The capabilities, beside the office's own (OFFICE_CAPS), with which one assignment clears an office row. */
+const CLEARS_OFFICE_ROWS = Object.freeze([...OFFICE_CAPS, "officiating.assign", "fixture.update"]);
+
+/** A row whose only owner is the office: nobody on record for a duty (O4), a called-off fixture's leftovers (O5). @param {Row} row */
+export const officeOnly = (row) => row.owner === OFFICE;
+
+/**
+ * Is this reader the office at this school: ONE assignment there that names a school and no team, person or single
+ * fixture, in a role that holds an office capability or appoints officials. One assignment, never a union.
+ * @param {Parameters<typeof cockpitGate>[0]} assignments  @param {string | null | undefined} school
+ */
+export function officeAt(assignments, school) {
+  if (!school) return false;
+  return (assignments ?? []).some((/** @type {any} */ a) => !!a?.role && a.school === school && a.team == null && !a.fixture
+    && (a.subjects?.length ?? 0) === 0 && !SUBJECT_SCOPED_ROLES.includes(a.role) && CLEARS_OFFICE_ROWS.some((c) => roleGrants(a.role, c)));
+}
+
+/**
+ * One fixture's open rows split for this reader: `mine`, on his "Needs you", and `office`, the rows only the office
+ * can clear, which he is shown on the fixture as the office's (none for a reader who is the office there).
+ * @param {Pick<FixtureGroup, "rows" | "school">} group  @param {Parameters<typeof cockpitGate>[0]} assignments
+ * @returns {{mine: Row[], office: Row[]}}
+ */
+export function splitForReader(group, assignments) {
+  const open = (group.rows ?? []).filter((r) => r.state === "open");
+  if (officeAt(assignments, group.school)) return { mine: open, office: [] };
+  return { mine: open.filter((r) => !officeOnly(r)), office: open.filter(officeOnly) };
+}
+
+/**
+ * The one verb a fixture row carries on "Needs you" (DESIGN_DIRECTION §3.3: "5 … haven't answered · Chase"), said
+ * only where its door lands on the place the verb is done; elsewhere the door's own words stand. Null: no verb.
+ * @param {Row} row
+ */
+export function verbOf(row) {
+  switch (row.rule) {
+    case "S7": return "Chase";
+    case "S3": return row.count === 1 ? "Swap him" : "Swap them";
+    case "S6": return "Pick the side";
+    case "S1": return "Check the bus";
+    case "O4": return "Appoint";
+    case "S10": return "Set the conditions";
+    default: return null;
+  }
+}
+
+/**
+ * The one count, said the same on "Needs you" and on each match-day card: "3 need you", "1 needs you", and
+ * "Nothing needs you" only when nothing is open AND every read answered. A failed read is added to the count's
+ * line only where it is not said on its own line (`sayFailed`), and only when there is one (DESIGN_DIRECTION §2.4).
+ * @param {{open: number, failed?: number, sayFailed?: boolean}} o
+ */
+export function needsYouWords({ open, failed = 0, sayFailed = true }) {
+  if (open === 0 && failed === 0) return "Nothing needs you";
+  const base = `${open} ${open === 1 ? "needs" : "need"} you`;
+  return failed > 0 && sayFailed ? `${base} · ${readsFailed(failed)}` : base;
+}
