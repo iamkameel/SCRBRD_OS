@@ -18,7 +18,8 @@ import { lastMatchWords } from "../src/lib/recentMatches.js";
 import { COMPARE_FLOOR } from "../src/lib/compare.js";
 import { MIN_MATCHES, seasonLineWords } from "../src/lib/sideSeason.js";
 import { needsYouRows } from "../src/views/needsyou.jsx";
-import { chipOrder, weekOf } from "../src/views/DashboardView.jsx";
+import { READY_SLOTS, chipOrder, weekOf } from "../src/views/DashboardView.jsx";
+import { ruleS8 } from "../src/lib/signals.js";
 import { formLetter, teamResults } from "../src/views/TeamPage.jsx";
 import { MobileNav, SportSwitcher } from "../src/shell/MobileNav.jsx";
 import { readFileSync } from "node:fs";
@@ -80,11 +81,29 @@ group("Needs you lands on the fix");
   const row = (id, state = "open") => ({ id, state });
   const q = { offices: [{ rows: [row("o1"), row("o2", "info")] }], results: { rows: [row("r1")] }, potm: null, groups: [{ rows: [row("g1"), row("g2", "info")] }, { rows: [row("g3")] }] };
   ok("Today's rows: the office's, then results, then the fixtures by date; open rows only", eq(needsYouRows(/** @type {any} */ (q)).map((r) => r.id), ["o1", "r1", "g1", "g3"]));
+  // Slice 11 (question 8): what only the office can clear stays off a coach's Needs you; each fixture row names its fixture.
+  const qs = { offices: [], results: null, potm: null, groups: [
+    { school: "hil", label: "U15A v Kearsney", rows: [{ id: "s7", state: "open", rule: "S7", owner: "the U15A coach" }, { id: "o4", state: "open", rule: "O4", owner: "the office" }] },
+    { school: "hil", label: "U14B v Michaelhouse", rows: [{ id: "s6", state: "open", rule: "S6", owner: "the U14B coach" }] }] };
+  const coachRows = needsYouRows(/** @type {any} */ (qs), [{ role: "coach", school: "hil", team: "U15A" }, { role: "coach", school: "hil", team: "U14B" }]);
+  ok("a coach across two squads: his rows from both, the office's left off, each naming its fixture",
+     eq(coachRows.map((r) => [r.id, r.where]), [["s7", "U15A v Kearsney"], ["s6", "U14B v Michaelhouse"]]));
+  ok("...the director, the office there: the office's row stays on his", eq(needsYouRows(/** @type {any} */ (qs), [{ role: "directorofsport", school: "hil" }]).map((r) => r.id), ["s7", "o4", "s6"]));
 }
 
 group("The day sheet (§3.10)");
 {
   const slots = [{ key: "a", on: (has) => has("a") }, { key: "b", on: (has) => has("b") }, { key: "c", on: (has) => has("c") }];
+  {
+    // One fact, one answer (slice 11): the Officials chip is S8's rule (the queue's O4), in its words.
+    const off = READY_SLOTS.find((x) => x.key === "officials");
+    const chip = (/** @type {string[]} */ duties) => { const has = (/** @type {string} */ k) => duties.includes(k); return off.on(has) ? "on record" : off.missing(has); };
+    const s8 = (/** @type {string[]} */ duties) => ruleS8(/** @type {any} */ ({ gate: { panels: { day: true } }, duties: duties.map((duty) => ({ duty })),
+      match: { status: "upcoming", startsAt: "2026-11-26T07:00:00Z" }, now: Date.parse("2026-11-25T09:00:00Z") })).map((c) => c.lines[0].replace(/ for .*$/, "")).join(" · ") || "on record";
+    ok("an umpire alone is not 'Officials · on record': 'No scorer on record', as the O4 row says it", chip(["umpire"]) === "No scorer on record" && chip(["umpire"]) === s8(["umpire"]));
+    ok("...a referee or third umpire is no scorer or umpire", chip(["referee", "third_umpire"]) === "No scorer on record · No umpire on record" && chip(["referee", "third_umpire"]) === s8(["referee"]));
+    ok("...a scorer and an umpire: on record, and S8 has no row", chip(["scorer", "umpire"]) === "on record" && s8(["scorer", "umpire"]) === "on record");
+  }
   ok("the chips not done come first, each kind in its place", eq(chipOrder(/** @type {any} */ (slots), (k) => k === "a").map((s) => s.key), ["b", "c", "a"]));
   const day = new Date("2026-11-18T09:00:00+02:00"); // a Wednesday
   const ms = [

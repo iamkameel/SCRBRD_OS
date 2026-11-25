@@ -412,13 +412,23 @@ export function ruleS7(c) {
 
 // ── S8 · Nobody on record ──────────────────────────────
 
-/** Scorer and umpire only: no read says how many a fixture ought to have. @param {Ctx} c @returns {Card[]} */
+/** The duties a fixture needs somebody on record for: scorer and umpire only, since no read says how many it ought to have. */
+export const NEEDED_DUTIES = Object.freeze(["scorer", "umpire"]);
+/**
+ * The needed duties with nobody on record, in order: S8's rule (the queue's O4), and Today's Officials chip, so the
+ * chip and the row never disagree (redesign slice 11). Pure. @param {(duty: string) => boolean} has
+ */
+export const missingDuties = (has) => NEEDED_DUTIES.filter((duty) => !has(duty));
+/** "No scorer on record": the words for a needed duty nobody holds. @param {string} duty */
+export const nobodyOnRecord = (duty) => `No ${duty} on record`;
+
+/** @param {Ctx} c @returns {Card[]} */
 export function ruleS8(c) {
   if (!c.gate.panels.day || !c.duties || !isSoon(c.match, c.now)) return [];
   const has = new Set(c.duties.map((r) => r.duty));
   const day = shortDate(c.match.startsAt ?? c.match.date) ?? "the day";
-  return ["scorer", "umpire"].filter((duty) => !has.has(duty))
-    .map((duty) => card("S8", `S8:${duty}`, `S8:${duty}`, [`No ${duty} on record for ${day}`], 1, {
+  return missingDuties((d) => has.has(d))
+    .map((duty) => card("S8", `S8:${duty}`, `S8:${duty}`, [`${nobodyOnRecord(duty)} for ${day}`], 1, {
       figures: [fig("slot", duty), fig("on record", "nobody"), fig("the day", day)] }));
 }
 

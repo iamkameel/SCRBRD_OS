@@ -27,6 +27,7 @@ import { MatchCard } from "../ui/matchCard.jsx";
 import { sideOfTeam } from "../lib/matchCentre.js";
 import { decidedOn, openWords, resultSaidOf } from "../lib/matchCard.js";
 import { cockpitGate } from "../lib/cockpit.js";
+import { missingDuties, nobodyOnRecord } from "../lib/signals.js";
 import { requestCoach, requestDuties, requestResult } from "../lib/cockpitNav.js";
 import { fixFor, requestFix } from "../lib/fixNote.js";
 import { couldConfirmResult, profile } from "../lib/session.js";
@@ -85,10 +86,11 @@ function demoInnings(match, players) {
  * word and a state — never a percentage — from the same match_duties read
  * DutyRoster and ReadinessOverview already run.
  */
-const READY_SLOTS = [
+export const READY_SLOTS = [
   { key: "squad",     label: "Team sheet",    on: (has) => has("squad") },
   { key: "transport", label: "Transport",     on: (has) => has("transport") },
-  { key: "officials", label: "Officials",     on: (has) => has("umpire") || has("third_umpire") || has("referee") },
+  // Every needed duty held, by S8's own rule (the queue's O4); otherwise the chip names what is missing in its words.
+  { key: "officials", label: "Officials",     on: (has) => missingDuties(has).length === 0, missing: (has) => missingDuties(has).map(nobodyOnRecord).join(" · ") },
   { key: "ground",    label: "Ground report", on: (has) => has("ground") },
 ];
 
@@ -309,7 +311,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                       border: `1px solid ${on ? D.emerald + "38" : T.line.normal}`,
                       color: on ? D.emerald : T.content.primary,
                     };
-                    const words = `${s.label} · ${on ? "on record" : "nothing on record"}`;
+                    const words = `${s.label} · ${on ? "on record" : s.missing ? s.missing(hasDuty) : "nothing on record"}`;
                     // Each chip opens the screen that deals with it, for this fixture (§1.4): the sheet, the trip,
                     // the duties, the ground. A chip whose screen this reader has none of stays a word and a state.
                     const go = chipDoor ? chipDoor(s.key, next) : null;

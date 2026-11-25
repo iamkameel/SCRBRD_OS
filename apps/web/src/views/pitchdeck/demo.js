@@ -171,7 +171,7 @@ export function buildDaySheet(d) {
     busTime: "10:45",
     weather: { icon: "cloud-sun", tempC: 24, condition: "Partly cloudy", rainChancePct: 20 },
     // Three of the four ready chips on record; the ground report is not, and the sheet says so.
-    dutyRows: [{ duty: "squad" }, { duty: "transport" }, { duty: "umpire" }],
+    dutyRows: [{ duty: "squad" }, { duty: "transport" }, { duty: "scorer" }, { duty: "umpire" }],
     weekMatches: [next, { id: "deck-wk-2", homeTeam: HOME, awayTeam: HILLVIEW, status: "upcoming", date: day(5), time: "09:00", venue: "Main Oval" }],
     weekTraining: [
       { id: "deck-tr-1", title: "Nets: batting", date: day(2), time: "15:30" },
