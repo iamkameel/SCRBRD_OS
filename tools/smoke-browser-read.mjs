@@ -2910,10 +2910,17 @@ try {
       ok("...the guardian's answer stands", /^available$/i.test((await state(c.page, PILLAY)).trim()));
       const asking = await c.page.locator('[data-testid="availability-asking"]').first().innerText({ timeout: 3000 }).catch(() => "");
       ok("...and the panel counts one to answer again", /^1 to answer again$/i.test(asking.trim()));
+      const rowsOf = () => c.page.$$eval('[data-testid="availability-panel"] [data-testid^="availability-row-"]', (els) => els.map((e) => e.getAttribute("data-testid")));
+      const before = await rowsOf();
       await c.page.locator(`[data-testid="availability-set-${WHITFIELD}-available"]`).first().click({ timeout: 4000 }).catch(() => {});
       await afterReads(c.page, 1500);
       ok("the coach records a new answer from there", /^available$/i.test((await state(c.page, WHITFIELD)).trim())
          && await c.page.locator('[data-testid="availability-asking"]').count() === 0);
+      const after = await rowsOf();
+      // Slice 9 (§2.3): the server sorts a boy asked again above the rest; answered, his row stays where it was, and says Saved.
+      ok("...his row stays where it was, and says 'Saved' there", before.length > 1 && before.join() === after.join()
+         && (await c.page.locator(`[data-testid="availability-saved-${WHITFIELD}"]`).first().innerText({ timeout: 3000 }).catch(() => "")).trim() === "Saved",
+         [before.join(), after.join()]);
       ok("no scoping refusals or console errors for the coach", c.refusals.length === 0 && c.errors.length === 0);
       await c.ctx.close();
     } finally { await owner.end().catch(() => {}); }

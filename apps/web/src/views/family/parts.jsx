@@ -227,10 +227,12 @@ function saidLine(row, child, self) {
 
 /**
  * One key of the three (§3.1 Flow A, principle 5: the answer stays under the
- * thumb). The answer given is pressed and ticked; a suggested one (an injured
- * boy's fixture before his return) has a dashed edge and no tick, because
- * nothing has been sent. Never disabled while an answer is on its way: a
- * disabled key fades, and the one just tapped must stay pressed.
+ * thumb). The answer given is pressed: filled, a solid double edge, a tick. A
+ * suggested one (an injured boy's fixture before his return) is pre-filled
+ * but not pressed: the same fill, a dashed edge, no tick and aria-pressed
+ * false, because nothing has been sent; the line under the keys says why.
+ * Never disabled while an answer is on its way: a disabled key fades, and the
+ * one just tapped must stay pressed.
  */
 function AnswerKey({ value, label, on, suggested, onTap, pid, describedBy }) {
   return (
@@ -238,10 +240,10 @@ function AnswerKey({ value, label, on, suggested, onTap, pid, describedBy }) {
       data-suggested={suggested ? "true" : undefined} aria-describedby={suggested ? describedBy : undefined} onClick={onTap}
       style={{ minHeight: "56px", padding: T.space.xs, borderRadius: T.radius.md, cursor: "pointer", minWidth: 0,
         display: "inline-flex", alignItems: "center", justifyContent: "center", gap: T.space.xs, textAlign: "center",
-        background: on ? T.surface.interactive : "transparent", color: T.content.primary,
-        border: `1px ${suggested && !on ? "dashed" : "solid"} ${on ? T.content.primary : suggested ? T.line.strong : T.line.normal}`,
+        background: on || suggested ? T.surface.interactive : "transparent", color: T.content.primary,
+        border: `1px ${suggested && !on ? "dashed" : "solid"} ${on || suggested ? T.content.primary : T.line.normal}`,
         boxShadow: on ? `inset 0 0 0 1px ${T.content.primary}` : "none",
-        ...T.role.control, fontSize: "15px", lineHeight: 1.2, fontWeight: on ? 700 : 500 }}>
+        ...T.role.control, fontSize: "15px", lineHeight: 1.2, fontWeight: on ? 700 : suggested ? 600 : 500 }}>
       {/* The tick beside the word, never above it: the label breaks between its words ("Not / available"), the tick stays put. */}
       {on && <Icon name="check" style={{ flexShrink: 0 }}/>}<span style={{ minWidth: 0 }}>{label}</span>
     </button>
