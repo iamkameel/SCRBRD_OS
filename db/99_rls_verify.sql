@@ -82,6 +82,57 @@ CREATE OR REPLACE FUNCTION _assert(cond boolean, msg text) RETURNS void AS $$
 -- `IF NOT NULL` does not raise. That let an assertion pass vacuously.
 BEGIN IF cond IS NOT TRUE THEN RAISE EXCEPTION 'RLS ASSERT FAILED: % (condition was %)', msg, coalesce(cond::text, 'NULL'); END IF; END $$ LANGUAGE plpgsql;
 
+-- db/173: a write made for a signed-in person meets the date-of-birth rules
+-- under any login, so a definer door called under a session meets them as
+-- the owner. This file's own fixtures (its definer helpers, named with a
+-- leading underscore) are the owner's writes, made "as the owner" while a
+-- case's session may still be set: for the rules' check alone, such a write
+-- reads as no one signed in, as it did before db/173. Not for the helpers
+-- §147 and §148 call as doors under a session, and never for a write through
+-- the application role or through a production function.
+CREATE OR REPLACE FUNCTION _v173_fixture_caller() RETURNS text AS $$
+DECLARE ctx text; l text; m text[];
+BEGIN
+  GET DIAGNOSTICS ctx = PG_CONTEXT;
+  -- The first function named after the shim's own frames.
+  FOR l IN SELECT x FROM regexp_split_to_table(ctx, '\n') x LOOP
+    CONTINUE WHEN position('_v173_fixture' IN l) > 0;
+    m := regexp_match(l, '^(?:PL/pgSQL function ([a-z_0-9]+)\(|SQL function "([a-z_0-9]+)")');
+    IF m IS NOT NULL THEN RETURN coalesce(m[1], m[2]); END IF;
+  END LOOP;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION _v173_fixture_before() RETURNS trigger AS $$
+DECLARE who text;
+BEGIN
+  IF current_user <> 'scrbrd_app' AND session_user <> 'scrbrd_app'
+     AND nullif(current_setting('app.user_id', true), '') IS NOT NULL THEN
+    who := _v173_fixture_caller();
+    IF who LIKE '\_%' AND who NOT IN ('_v172_boy', '_v172_door', '_v173_door_add') THEN
+      PERFORM set_config('v173.fixture_user', current_setting('app.user_id', true), true);
+      PERFORM set_config('app.user_id', '', true);
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION _v173_fixture_after() RETURNS trigger AS $$
+BEGIN
+  IF coalesce(current_setting('v173.fixture_user', true), '') <> '' THEN
+    PERFORM set_config('app.user_id', current_setting('v173.fixture_user', true), true);
+    PERFORM set_config('v173.fixture_user', '', true);
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+-- Fired by name: "_v173..." before "player_born_agrees_with_id", and
+-- "player_born_agrees_with_id_v173" straight after it, so every other
+-- trigger, and the record of the change, sees the session as it was.
+DROP TRIGGER IF EXISTS _v173_fixture_before ON player;
+CREATE TRIGGER _v173_fixture_before BEFORE INSERT OR UPDATE OF born, id_number ON player
+  FOR EACH ROW EXECUTE FUNCTION _v173_fixture_before();
+DROP TRIGGER IF EXISTS player_born_agrees_with_id_v173 ON player;
+CREATE TRIGGER player_born_agrees_with_id_v173 BEFORE INSERT OR UPDATE OF born, id_number ON player
+  FOR EACH ROW EXECUTE FUNCTION _v173_fixture_after();
+
 -- Revoke an assignment as the table owner. Created here, before privilege is
 -- dropped, because the unprivileged role cannot SET ROLE back up — which is
 -- itself the correct behaviour and worth not weakening just to write a test.
@@ -17833,22 +17884,65 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 -- The application adds a boy, as the caller (the Add Player form's and the
 -- import's INSERT): his id, or the refusal "sqlstate:message". p_how sets
 -- app.born_how for the statement ('' none).
+-- 'import+tick' is an import line under the office's tick (app.born_ticked).
 CREATE OR REPLACE FUNCTION _v173_add(p_tag text, p_born date, p_id text, p_how text DEFAULT '') RETURNS text AS $$
 DECLARE b uuid; st text; msg text;
 BEGIN
-  PERFORM set_config('app.born_how', p_how, true);
+  PERFORM set_config('app.born_how', split_part(p_how, '+', 1), true);
+  PERFORM set_config('app.born_ticked', CASE WHEN p_how LIKE '%+tick' THEN 'on' ELSE '' END, true);
   BEGIN
     INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born, id_number)
     VALUES ('11111111-1111-1111-1111-111111111111', 'U16A', 'Verify Oneseventhree ' || initcap(p_tag), 'Oneseventhree', 173, 'batter', p_born, p_id)
     RETURNING id INTO b;
   EXCEPTION WHEN check_violation OR insufficient_privilege THEN
     GET STACKED DIAGNOSTICS st = RETURNED_SQLSTATE, msg = MESSAGE_TEXT;
-    PERFORM set_config('app.born_how', '', true);
+    PERFORM set_config('app.born_how', '', true); PERFORM set_config('app.born_ticked', '', true);
     RETURN st || ':' || msg;
   END;
-  PERFORM set_config('app.born_how', '', true);
+  PERFORM set_config('app.born_how', '', true); PERFORM set_config('app.born_ticked', '', true);
   RETURN b::text;
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- His ID number's record, past row security, oldest first: "how:by:office;…".
+CREATE OR REPLACE FUNCTION _v173_id_rows(p_player uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(c.how || ':' || coalesce(c.by_id::text, '-') || ':' || CASE WHEN c.by_office THEN 't' ELSE 'f' END,
+                             ';' ORDER BY c.at, c.id), '')
+    FROM player_id_number_change c WHERE c.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An office person at Hilton of this section's own (schooladmin), as the owner: the id.
+CREATE OR REPLACE FUNCTION _v173_office(p_tag text) RETURNS uuid AS $$
+DECLARE u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'v173.' || p_tag || '@example.invalid', 'V173 ' || initcap(p_tag), 'schooladmin')
+  RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (u, 'schooladmin', '11111111-1111-1111-1111-111111111111');
+  RETURN u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A person made a boy's guardian, a verified parent link, as the owner.
+CREATE OR REPLACE FUNCTION _v173_make_guardian(p_person uuid, p_boy uuid) RETURNS void AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_boy, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- His own account given a self link, pending, as the office enrols one (owner).
+CREATE OR REPLACE FUNCTION _v173_self_pending(p_account uuid, p_boy uuid) RETURNS void AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_account, 'selfaccess', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, created_by, valid_from)
+  VALUES (a, p_boy, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'pending',
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v173_self_stamp(p_boy uuid) RETURNS text AS $$
+  SELECT string_agg(consent_state, ',') FROM assignment_subject WHERE player_id = p_boy AND relationship = 'self'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A door that adds a boy for whoever calls it, asking nothing: a definer,
 -- as the owner, under the caller's login and session. Throwaway, here only: his id, or
 -- "sqlstate:message".
@@ -17943,6 +18037,12 @@ BEGIN
     PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s adult date: %s', v));
     v := _v173_add('first today', TODAY18, NULL);
     PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s date of 18 today: %s', v));
+    -- A door (a definer, as the owner) under his session, with this file's own
+    -- login, which is not the application's: refused all the same (M1: the
+    -- rules hold however the application logs in).
+    PERFORM _as(DOS);
+    v := _v173_door_add('first owners login', ADULT);
+    PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): a door under his session, another login: %s', v));
     -- Logged in as the application, through a door (a definer, as the owner):
     -- the same, under his session and under none. Needs a superuser login to
     -- log in as the application for a moment, as §147 (definer) does.
@@ -17962,7 +18062,7 @@ BEGIN
     END IF;
     PERFORM _as(DOS);
     PERFORM _assert(_v173_named('first adult') = 0 AND _v173_named('first today') = 0 AND _v173_named('first door') = 0
-                    AND _v173_named('first door nobody') = 0, '§148 (first): a refused boy landed');
+                    AND _v173_named('first door nobody') = 0 AND _v173_named('first owners login') = 0, '§148 (first): a refused boy landed');
     BOY := _v173_add('first tomorrow', TOMORROW18, NULL)::uuid;
     PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:f', TOMORROW18, DOS), format('§148 (first): 18 tomorrow, recorded %s', _v173_rows(BOY)));
     BOY := _v173_add('first minor', B, NULL)::uuid;
@@ -17970,8 +18070,11 @@ BEGIN
     PERFORM _as(REG);
     BOY := _v173_add('first office', ADULT, NULL)::uuid;
     PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:t', ADULT, REG), format('§148 (first): the office''s adult, recorded %s', _v173_rows(BOY)));
+    -- Kameel, 26 Nov 2026 (Q1): an import line is the office's only under its tick.
     BOY := _v173_add('first import', B, NULL, 'import')::uuid;
-    PERFORM _assert(_v173_rows(BOY) = format('->%s:import:%s:t', B, REG), format('§148 (first): the office''s import, recorded %s', _v173_rows(BOY)));
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:import:%s:f', B, REG), format('§148 (first): the office''s import, no tick, recorded %s', _v173_rows(BOY)));
+    BOY := _v173_add('first ticked', B, NULL, 'import+tick')::uuid;
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:import:%s:t', B, REG), format('§148 (first): the office''s ticked import, recorded %s', _v173_rows(BOY)));
     BOY := _v173_owner_boy('first owner', ADULT, NULL);
     PERFORM _assert(_v173_rows(BOY) = format('->%s:owner:-:f', ADULT), format('§148 (first): the owner''s adult, recorded %s', _v173_rows(BOY)));
     -- None becoming a date: the same rule, and the same answer whether or not
@@ -18018,6 +18121,21 @@ BEGIN
     PERFORM _as(REG);
     v := _v172_write(BOY, 'id_number', IDN);
     PERFORM _assert(v = '1 rows' AND _v172_now(BOY) = B || '|' || IDN, format('§148 (idnum): the office''s first number: %s / %s', v, _v172_now(BOY)));
+    -- S5: every number written is recorded, who and whether the office; a
+    -- refusal records nothing; the number itself never.
+    PERFORM _assert(_v173_id_rows(BOY) = format('first:%s:t', REG), format('§148 (idnum): his number''s record reads %s', _v173_id_rows(BOY)));
+    v := _v172_write(BOY, 'id_number', to_char(B, 'YYMMDD') || '5999081');
+    PERFORM _assert(v = '1 rows' AND _v173_id_rows(BOY) = format('first:%s:t;changed:%s:t', REG, REG),
+                    format('§148 (idnum): the office''s change: %s / %s', v, _v173_id_rows(BOY)));
+    PERFORM _assert(_v173_id_rows(BOY2) = '', format('§148 (idnum): a refused number was recorded: %s', _v173_id_rows(BOY2)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                 WHERE table_name = 'player_id_number_change' AND column_name NOT IN ('id', 'player_id', 'school_id', 'how', 'by_id', 'by_name', 'by_office', 'at')),
+                    '§148 (idnum): the record of a number holds more than who, when and how');
+    BEGIN
+      PERFORM 1 FROM player_id_number_change LIMIT 1;
+      PERFORM _assert(false, '§148 (idnum): the application read player_id_number_change');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
     v := _v173_add('id office', B, IDN);
     PERFORM _assert(v ~ '^[0-9a-f-]{36}$', format('§148 (idnum): the office''s insert with a number: %s', v));
 
@@ -18047,6 +18165,14 @@ BEGIN
     K := _v173_add('coming office', NEAR, NULL)::uuid;
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = K),
                     '§148 (coming): a date the office wrote is listed');
+    -- Q1 (Kameel, 26 Nov 2026): 17 years 11 months from the office's import,
+    -- not under its tick: not confirmed, and listed; under the tick: neither.
+    K := _v173_add('coming untick', NEAR, NULL, 'import')::uuid;
+    PERFORM _assert(EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = K AND u.how = 'import'),
+                    '§148 (coming): the office''s import with no tick is not listed');
+    K := _v173_add('coming ticked', NEAR, NULL, 'import+tick')::uuid;
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = K),
+                    '§148 (coming): the office''s ticked import is listed');
     FOREACH SUP IN ARRAY ARRAY[DOS, PRIN, WESOFF] LOOP
       PERFORM _as(SUP);
       SELECT count(*) INTO n FROM born_unconfirmed(HIL);
@@ -18181,9 +18307,44 @@ BEGIN
     PERFORM _as(SUP);
     SELECT count(*) INTO n FROM pupil_signin_account(BOY);
     PERFORM _assert(n = 0, format('§148 (account): a held claim reads %s rows', n));
+    -- S3: enrolled already, his own link stamped pending: her yes moves neither.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v173_self_pending(K, BOY);
+    PERFORM _as(SUP);
     PERFORM pupil_signin_consent_set(BOY, true);
-    PERFORM _assert(_v168_claim(K) LIKE 'recognised|%' AND _v173_pupil_roles(K) = 0,
-                    format('§148 (account): her yes opened a held claim''s account: %s, %s roles', _v168_claim(K), _v173_pupil_roles(K)));
+    -- (The gate itself reads the boy's yes, not the account: db/169's rule.)
+    PERFORM _assert(_v168_claim(K) LIKE 'recognised|%' AND _v173_pupil_roles(K) = 1 AND _v173_self_stamp(BOY) = 'pending',
+                    format('§148 (account): her yes moved a held claim''s account: %s, stamp %s', _v168_claim(K), _v173_self_stamp(BOY)));
+    -- S4: she reads nothing waiting; the office reads it as before.
+    SELECT * INTO r FROM pupil_signin_state(BOY);
+    PERFORM _assert(r.in_force AND NOT r.held, format('§148 (account): his family reads a held claim waiting: %s', row_to_json(r)));
+    PERFORM _as(REG);
+    SELECT * INTO r FROM pupil_signin_state(BOY);
+    PERFORM _assert(r.held, format('§148 (account): the office no longer reads the account waiting: %s', row_to_json(r)));
+
+  ELSIF p_case = 'ownchild' THEN
+    -- (ownchild) Kameel, 26 Nov 2026 (the re-dating design's Q8): an office
+    -- person who is the boy's own guardian is refused a first date that makes
+    -- him 18, a correction and "Confirm his date"; another office person is not.
+    K := _v173_office('v173mother'); K1 := _v173_office('v173other');
+    PERFORM _born_constraint(false);
+    BOY := _v173_owner_boy('own fill', NULL, NULL);
+    PERFORM _born_constraint(true);
+    BOY2 := _v173_owner_boy('own near', NEAR, NULL);
+    PERFORM _v173_make_guardian(K, BOY); PERFORM _v173_make_guardian(K, BOY2);
+    PERFORM _as(K);
+    v := _v172_write(BOY, 'capture', ADULT::text);
+    PERFORM _assert(v = '42501:born_own_child', format('§148 (ownchild): her first date of 18 for her son: %s', v));
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY2, NEAR - 1, 'Verify 173: birth certificate seen') x;
+    PERFORM _assert(NOT ok_ AND why = 'own_child', format('§148 (ownchild): her correction: %s %s', ok_, why));
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_confirm(BOY2) x;
+    PERFORM _assert(NOT ok_ AND why = 'own_child', format('§148 (ownchild): her confirm: %s %s', ok_, why));
+    PERFORM _assert(_v172_now(BOY) = '-|-' AND _v173_rows(BOY2) = format('->%s:owner:-:f', NEAR),
+                    format('§148 (ownchild): a refusal wrote %s / %s', _v172_now(BOY), _v173_rows(BOY2)));
+    PERFORM _as(K1);
+    v := _v172_write(BOY, 'capture', ADULT::text);
+    SELECT x.ok INTO ok_ FROM player_born_confirm(BOY2) x;
+    PERFORM _assert(v = '1 rows' AND ok_, format('§148 (ownchild): another office person: %s / %s', v, ok_));
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The office's two doors are the application's; the two
@@ -18194,10 +18355,16 @@ BEGIN
       ('player_born_confirmed(uuid)', '', true), ('pupil_signin_first_paste()', '', false),
       ('pupil_signin_carry_over()', '', false), ('pupil_signin_open(uuid)', '', true),
       ('player_born_checked()', '', false), ('player_born_record()', '', true),
-      ('pupil_signin_account(uuid)', 'scrbrd_app:EXECUTE', true), ('pupil_signin_after_yes(uuid,text)', '', true)) AS t(fn, acl, definer) LOOP
+      ('pupil_signin_account(uuid)', 'scrbrd_app:EXECUTE', true), ('pupil_signin_after_yes(uuid,text)', '', true),
+      ('player_born_own_child(uuid)', 'scrbrd_app:EXECUTE', true), ('player_id_number_record()', '', true),
+      ('pupil_signin_state(uuid)', 'scrbrd_app:EXECUTE', true), ('player_born_correct(uuid,date,text)', 'scrbrd_app:EXECUTE', true)) AS t(fn, acl, definer) LOOP
       PERFORM _assert(_v168_acl(r.fn) IS NOT DISTINCT FROM r.acl, format('§148 (grants): %s is granted %s', r.fn, coalesce(_v168_acl(r.fn), 'NULL (missing)')));
       PERFORM _assert(_v172_definer(r.fn) IS NOT DISTINCT FROM r.definer, format('§148 (grants): %s definer is %s', r.fn, _v172_definer(r.fn)));
     END LOOP;
+    -- N1: the record's CHECKs are the three db/172 and db/173 name.
+    PERFORM _assert((SELECT string_agg(conname, ',' ORDER BY conname) FROM pg_constraint
+                      WHERE conrelid = 'player_born_change'::regclass AND contype = 'c')
+                    = 'player_born_change_how,player_born_change_moved,player_born_change_reason', '§148 (grants): a stray CHECK on player_born_change');
   ELSE
     RAISE EXCEPTION '§148: no case %', p_case;
   END IF;
@@ -51738,6 +51905,7 @@ $m130$;
   PERFORM _v173_case('carry');
   PERFORM _v173_case('gate');
   PERFORM _v173_case('account');
+  PERFORM _v173_case('ownchild');
   PERFORM _v173_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/173 (section 148) ─────────────────────────────────────────
