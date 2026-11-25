@@ -487,7 +487,9 @@ try {
   ok("the label names the side", /^COACH/i.test(await inner(c.page, "mc-coach-label")), await inner(c.page, "mc-coach-label"));
   const day = await inner(c.page, "coach-day");
   ok("THE DAY: the overs and the pitch, in words", /20 overs/.test(day) && /firm, good grass cover, even bounce, quick pace/.test(day), day);
-  ok("...the weather, in words", /18° showers, rain likely/.test(day), day);
+  // Slice 10 (Flow A): the weather is the header's to say, once (its match line); the day does not repeat it.
+  const headLine = await inner(c.page, "mc-match-line");
+  ok(`...the weather, in words, said once: in the header's line ("${headLine}")`, /18° showers/i.test(headLine) && !/18°/.test(day), `${headLine} | ${day}`);
   ok("...no umpire and no scorer on record, said", /Umpires: none on record/.test(day) && /no scorer on record/.test(day), day);
   const bus = await inner(c.page, "coach-day-bus");
   ok(`...the bus leaves at ${BUS_AT} on the SA clock, whatever the browser's zone`, bus.includes(`Bus ${BUS_AT} `), bus);
