@@ -284,8 +284,9 @@ try {
     const [{ today } = { today: false }] = await q(`select (starts_at at time zone 'Africa/Johannesburg')::date = sa_today() as today from match where id = $1`, [next?.id]);
     await tid(s.page, "needs-you").first().waitFor({ timeout: 12000 }).catch(() => {});
     const order = await s.page.evaluate(() => { const n = document.querySelector('[data-testid="needs-you"]'), x = document.querySelector('[data-testid="day-next"]');
-      return !n || !x ? "one is missing" : (x.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING ? "match first" : "needs-you first"); });
-    ok(`...${today ? "his match day: the match leads and Needs you is under it" : "not his match day: Needs you leads"}`, order === (today ? "match first" : "needs-you first"), order);
+      return !x ? "no next fixture" : !n ? "nothing waiting" : (x.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING ? "match first" : "needs-you first"); });
+    ok(`...${today ? "his match day: the match leads and Needs you is under it" : "not his match day: Needs you, where anything waits, leads"}`,
+       today ? order === "match first" : ["needs-you first", "nothing waiting"].includes(order), order);
     const chips = await s.page.$$eval('[data-testid="day-next"] [data-testid^="ready-"]', (els) => els.map((e) => e.getAttribute("data-on")));
     const firstOn = chips.indexOf("true");
     ok("...its chips not done come first", chips.length === 4 && (firstOn === -1 || chips.slice(firstOn).every((v) => v === "true")), chips.join());
