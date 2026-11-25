@@ -21,7 +21,7 @@ import { TermsGate } from "../src/views/family/terms.jsx";
 import { asLink } from "../src/lib/live.js";
 import { todoOf, countWords } from "../src/lib/todo.js";
 import { tenantWords } from "../src/lib/words.js";
-import { AvailabilityBlock, ChildSwitcher, isHisRow, stateWords } from "../src/views/family/parts.jsx";
+import { AvailabilityBlock, ChildSwitcher, answerIsMine, isHisRow, ownWords, stateWords } from "../src/views/family/parts.jsx";
 import { basisWords } from "../src/lib/compare.js";
 import { ScorecardTab } from "../src/views/matchcentre/scorecard.jsx";
 import { AnalyticsTab } from "../src/views/matchcentre/tabs.jsx";
@@ -536,6 +536,24 @@ group("Slice 9: the answer stays pressed, confirms in place, and a suggestion is
   ok("the suggestion reads only whose, open and the return date: no injury's name, severity, notes or physio",
      /injuredAnswer\(injuries\.rows, child, match\.date\)/.test(block) && !/\.(type|severity|notes|physio)\b/.test(block));
   ok("a key is never disabled while an answer is on its way (a faded key is not a pressed one)", !/disabled=\{(busy|sending)/.test(block));
+}
+
+group("Kameel, 25 Nov: a note for the coach is its writer's and the staff's");
+{
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const hers = { status: "unavailable", reasonKind: "family", note: "A family matter", selfDeclared: false, declaredByName: "D Pillay" };
+  const his = { status: "doubtful", reasonKind: "illness", note: "Flu", selfDeclared: true, declaredByName: "R Pillay" };
+  const none = { reasonKind: null, note: null };
+  ok("her own answer: her reason and note are offered again on her screen", answerIsMine(hers, false, "D Pillay") && eq(ownWords(hers, false, "D Pillay"), { reasonKind: "family", note: "A family matter" }));
+  ok("...never on the boy's screen: his form is not filled with her words, and 'Still not available' sends none of them", !answerIsMine(hers, true, "R Pillay") && eq(ownWords(hers, true, "R Pillay"), none));
+  ok("...nor on the other guardian's", !answerIsMine(hers, false, "K Pillay") && eq(ownWords(hers, false, "K Pillay"), none));
+  ok("his own answer is his on his screen, and not his parent's to send again", eq(ownWords(his, true, "R Pillay"), { reasonKind: "illness", note: "Flu" }) && eq(ownWords(his, false, "D Pillay"), none));
+  ok("...an answer the coach recorded is nobody's on the family's screens", eq(ownWords({ ...hers, declaredByName: "S Coach" }, false, "D Pillay"), none) && eq(ownWords({ ...hers, declaredByName: "S Coach" }, true, "R Pillay"), none));
+  ok("...one just sent from this screen is the sender's", eq(ownWords({ ...hers, mine: true, declaredByName: null }, true, "R Pillay"), { reasonKind: "family", note: "A family matter" }));
+  ok("...and no row, no words", eq(ownWords(null, false, "D Pillay"), none));
+  const src = readFileSync(new URL("../src/views/family/parts.jsx", import.meta.url), "utf8");
+  const block = src.slice(src.indexOf("export function AvailabilityBlock"), src.indexOf("// ── The team sheet line"));
+  ok("the block fills its form and answers again only from ownWords, never from the row's reason or note", !/row\??\.(reasonKind|note)\b/.test(block) && /send\(row\.saidStatus, own\.reasonKind, own\.note\)/.test(block), block.match(/row\??\.(reasonKind|note)\b/g));
 }
 
 group("Q10 (Kameel, 15 Nov): the eleven, her child's row marked");
