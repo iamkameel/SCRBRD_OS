@@ -332,12 +332,12 @@ try {
   const avail = tid(parent.page, `availability-${WHITFIELD}`);
   ok("the fixture opens with his son's availability", await avail.count() > 0, (await text(parent.page)).slice(0, 400));
   if (await has(parent.page, `availability-set-${WHITFIELD}-available`)) {
+    // One tap sends (redesign slice 9): the key stays pressed and the line says it went to the coach.
     await tap(parent.page, `availability-set-${WHITFIELD}-available`);
-    await beat(parent.page, 500);
-    await tap(parent.page, `availability-send-${WHITFIELD}`);
     await afterReads(parent.page, 800);
     ok("he says his son is available, and the screen says it was him",
-      /Available/i.test(await inner(parent.page, `availability-state-${WHITFIELD}`)) && /you/.test(await inner(parent.page, `availability-by-${WHITFIELD}`)),
+      await tid(parent.page, `availability-state-${WHITFIELD}`).first().getAttribute("data-status").catch(() => "") === "available"
+      && /Sent to the coach/.test(await inner(parent.page, `availability-by-${WHITFIELD}`)),
       await inner(parent.page, `availability-${WHITFIELD}`));
   } else {
     ok("the availability keys are offered to him", false, await inner(parent.page, `availability-${WHITFIELD}`));
