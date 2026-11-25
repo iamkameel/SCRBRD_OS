@@ -113,10 +113,16 @@ const fail = (res, e) => {
   if (e.code === "22P02" || e.code === "22007" || e.code === "22008") return res.status(400).json({ error: "bad_request" });
   // Two uploads of the same row at once: the second meets the open-row index.
   if (e.code === "23505") return res.status(409).json({ error: "already_listed", detail: "Somebody listed the same row a moment ago. Check again." });
-  const status = e.code === "42501" ? 403 : (e.status || 500);
-  res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error"),
-                            ...(e.detail ? { detail: e.detail } : {}) });
+  // Only this module's own errors (err(), which sets `status`) carry words
+  // for the screen. A Postgres error's own `detail` and message can hold the
+  // row it failed on, addresses included: it is answered as a bare code.
+  const own = typeof e.status === "number" && !e.severity;
+  const status = e.code === "42501" ? 403 : (own ? e.status : 500);
+  res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (own ? e.message : "error"),
+                            ...(own && e.detail ? { detail: e.detail } : {}) });
 };
+
+export { fail as familyRegisterFail };
 
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function familyRegisterRoutes({ pool, secret }) {
