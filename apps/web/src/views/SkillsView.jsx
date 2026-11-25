@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { heldRoles, holdsAsHeld, holdsForPlayer, ownRecordsOf } from "../lib/held.js";
 import { PLAYING_ROLES, showsRankings } from "../lib/seasonAwards.js";
-import { D } from "../design/tokens.js";
+import { D, T } from "../design/tokens.js";
 import { Avatar, Badge, Btn, Card, EmptyState, Modal, RadarChart, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { useLive, useNotes, useRatings, useSkills, useBoyRead } from "../lib/live.js";
 import { recordAssessment, writeNote, writeWords, NOTE_ADJUSTMENT_LIMIT } from "../lib/development.js";
@@ -517,7 +517,7 @@ function SkillsView({ role }) {
                 aria-label="Note"
                 placeholder="What you saw, and what you plan to do about it."
                 style={{width:"100%",padding:"10px",borderRadius:D.md,background:D.surf2,
-                        border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:"12px",resize:"vertical"}}/>
+                        border:`1px solid ${D.border}`,color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize,resize:"vertical"}}/>
               {/* The signal, stated. Nothing reads the prose, so a note that is
                   meant to move a rating has to say which discipline and by how
                   much — and the form says that out loud rather than letting a
@@ -528,14 +528,14 @@ function SkillsView({ role }) {
               <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
                 <select value={noteDisc} onChange={(e)=>setNoteDisc(e.target.value)} aria-label="Discipline"
                   style={{padding:"7px 10px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,
-                          color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
+                          color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize}}>
                   <option value="">No effect on a rating</option>
                   {Object.keys(DISCIPLINES).map(d=><option key={d} value={d}>{d}</option>)}
                 </select>
                 <select value={noteAdj} onChange={(e)=>setNoteAdj(e.target.value)} aria-label="Adjustment"
                   disabled={!noteDisc}
                   style={{padding:"7px 10px",borderRadius:D.md,background:D.surf2,border:`1px solid ${D.border}`,
-                          color:D.textPrimary,fontFamily:D.body,fontSize:"12px"}}>
+                          color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize}}>
                   <option value="">—</option>
                   {Array.from({length:NOTE_ADJUSTMENT_LIMIT*2+1},(_,i)=>i-NOTE_ADJUSTMENT_LIMIT)
                     .filter(v=>v!==0).map(v=><option key={v} value={v}>{v>0?`+${v}`:v}</option>)}

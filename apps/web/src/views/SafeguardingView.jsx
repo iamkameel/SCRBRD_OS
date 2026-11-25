@@ -129,7 +129,7 @@ function useStyles() {
     row: { display: "flex", gap: T.space.sm, flexWrap: "wrap", alignItems: "center" },
     field: { width: "100%", minHeight: "44px", padding: "10px 12px", borderRadius: T.radius.md, boxSizing: "border-box",
              background: T.surface.base, border: `1px solid ${T.line.strong}`, color: T.content.primary,
-             fontFamily: T.type.body, fontSize: "16px" },
+             fontFamily: T.type.body, fontSize: T.role.control.fontSize },
     fieldLabel: { fontFamily: T.type.body, fontSize: "13px", fontWeight: 600, color: T.content.primary, display: "block",
                   marginBottom: T.space.xs },
     choice: (on) => ({ minHeight: "44px", display: "flex", alignItems: "center", gap: T.space.sm, padding: "8px 12px",

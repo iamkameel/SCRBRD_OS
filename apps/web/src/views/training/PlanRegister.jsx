@@ -80,7 +80,7 @@ export function PlanEditor({ session, plan, drills, onClose, onDone }) {
               Minutes
               <input aria-label={`Minutes for ${l.name}`} type="number" inputMode="numeric" min={5} max={180} value={l.minutes} placeholder={String(l.own ?? "")}
                 onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, minutes: e.target.value } : x)))}
-                style={{ width: "72px", minHeight: "44px", padding: "0 8px", borderRadius: D.md, background: D.surf2, border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.mono, fontSize: "14px" }}/>
+                style={{ width: "72px", minHeight: "44px", padding: "0 8px", borderRadius: D.md, background: D.surf2, border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.mono, fontSize:T.role.control.fontSize }}/>
             </label>
             <button type="button" aria-label={`Move ${l.name} up`} disabled={i === 0} onClick={() => setLines((ls) => moved(ls, i, -1))} style={tap({ opacity: i === 0 ? 0.4 : 1 })}>Up</button>
             <button type="button" aria-label={`Move ${l.name} down`} disabled={i === lines.length - 1} onClick={() => setLines((ls) => moved(ls, i, 1))} style={tap({ opacity: i === lines.length - 1 ? 0.4 : 1 })}>Down</button>
@@ -95,7 +95,7 @@ export function PlanEditor({ session, plan, drills, onClose, onDone }) {
           <label style={{ marginLeft: "auto", fontFamily: D.body, fontSize: "12px", color: D.textMuted, display: "flex", alignItems: "center", gap: "6px" }}>
             Show
             <select data-testid="plan-filter" value={filter} onChange={(e) => setFilter(e.target.value)}
-              style={{ minHeight: "44px", padding: "0 10px", borderRadius: D.md, background: D.surf2, border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.body, fontSize: "14px" }}>
+              style={{ minHeight: "44px", padding: "0 10px", borderRadius: D.md, background: D.surf2, border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize }}>
               <option value="suits">Drills that suit a {session.type} session</option>
               <option value="all">Every drill</option>
             </select>

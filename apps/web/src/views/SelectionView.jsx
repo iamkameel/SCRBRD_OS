@@ -34,7 +34,7 @@ const CONFIDENCE_TONE = themed(() => ({ derived: D.emerald, verified: D.emerald,
 // 44px to tap and 16px in a field (a phone does not zoom the page to type).
 const field = () => ({
   minHeight: "44px", padding: "8px 12px", background: D.surf2, border: `1px solid ${D.border}`,
-  borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "16px", width: "100%",
+  borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize, width: "100%",
 });
 const labelStyle = () => ({
   display: "block", fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textMuted,

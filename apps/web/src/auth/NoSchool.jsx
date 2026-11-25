@@ -97,7 +97,7 @@ function Field({ label, hint, children }) {
   );
 }
 const input = () => ({ width: "100%", minHeight: px(T.floor.target), boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
-  background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: "16px" });
+  background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: T.role.control.fontSize });
 
 /** The Guardian's anonymous link, as the safeguarding screens carry it (GET /api/safeguarding/contacts). */
 function HelpLine() {

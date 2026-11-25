@@ -71,7 +71,7 @@ export function KeeperChoices({ keeper, choices, onPick }) {
           onKeyDown={(e) => { if (e.key === "Enter" && name) onPick(name); }}
           style={{ flex: 1, minWidth: 0, minHeight: px(T.floor.target), boxSizing: "border-box", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
             border: `1px solid ${T.line.normal}`, background: T.surface.interactive, color: T.content.primary,
-            fontFamily: T.type.body, fontSize: "15px" }}/>
+            fontFamily: T.type.body, fontSize:T.role.control.fontSize }}/>
         <button type="button" data-testid="keeper-typed-set" disabled={!name} onClick={() => name && onPick(name)}
           className="pressBtn os-state" style={{ ...small(), opacity: name ? 1 : 0.6, cursor: name ? "pointer" : "not-allowed" }}>
           Keeps

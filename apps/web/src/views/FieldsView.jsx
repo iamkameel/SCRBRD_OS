@@ -499,7 +499,7 @@ function PitchReportModal({ ground, fixtures, role, onClose, said = null, onRetr
           <label style={{display:"block",fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.textMuted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"5px"}}>Notes</label>
           <textarea data-testid="pitch-report-notes" value={form.notes ?? ""} onChange={(e)=>set("notes")(e.target.value)} rows={3}
             style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-              color:D.textPrimary,fontFamily:D.body,fontSize:"13px",boxSizing:"border-box",resize:"vertical",marginBottom:"14px"}}/>
+              color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize,boxSizing:"border-box",resize:"vertical",marginBottom:"14px"}}/>
           {result && result !== "ok" && (
             <div data-testid="pitch-report-error" style={{color:D.roseText,fontFamily:D.body,fontSize:"12px",marginBottom:"10px"}}>
               {result === "empty_report" ? "Record at least one thing before saving." : `Could not save (${result}).`}

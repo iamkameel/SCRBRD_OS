@@ -36,7 +36,7 @@ const tap = (extra = {}) => ({
 /* Functions, not constants: a token is read when it is drawn, so a theme change reaches it. */
 const fieldStyle = () => ({
   width: "100%", minHeight: "44px", padding: "8px 10px", borderRadius: D.md, background: D.surf2,
-  border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.body, fontSize: "14px",
+  border: `1px solid ${D.border}`, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize,
 });
 const labelStyle = () => ({ display: "block", fontFamily: D.body, fontSize: "12px", color: D.textMuted, margin: "12px 0 4px", lineHeight: 1.4 });
 

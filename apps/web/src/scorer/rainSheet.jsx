@@ -163,7 +163,7 @@ export function StopSheet({ onConfirm, onClose }) {
         <label style={{ display: "grid", gap: T.space.xs }}>
           <span style={label()}>Note (optional, for the school's record only)</span>
           <input data-testid="stop-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={140}
-            style={{ ...field(), fontFamily: T.type.body, fontSize: "15px" }}/>
+            style={{ ...field(), fontFamily: T.type.body, fontSize:T.role.control.fontSize }}/>
         </label>
         <button type="button" data-testid="stop-confirm" className="pressBtn os-state" style={primary(true)}
           onClick={() => onConfirm({ reason, note: note.trim() || null })}>
