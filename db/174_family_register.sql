@@ -94,6 +94,8 @@
 --       be ended while it is a minor's last verified link (Kameel, 25 Nov), and
 --       ending it reopens its request in Requests (§8b). Every other link keeps
 --       db/08's rule.
+--   ~ guardian_link_revoke()   db/109's, as db/128 left it: the same two edits
+--       (Kameel, 25 Nov: the office's revoke is one way of ending it).
 --   + trigger role_request_player_declined_notice   Q11 (§9).
 --   ~ the one grant door's caller check (db/92 §8, "one door, two callers"):
 --       asserted here as it now stands, four callers by name.
@@ -948,6 +950,39 @@ BEGIN
   EXECUTE v_def;
 END $end$;
 
+-- guardian_link_revoke() (db/109, as db/128 left it), the office's other way
+-- of ending a link (Kameel, 25 Nov: "the office's revoke is one way of
+-- ending it"): the same two edits, from the body in place, over its md5 or
+-- this file's own; checked in §11.
+DO $revoke$
+DECLARE
+  v_fn  regprocedure := 'guardian_link_revoke(uuid,text,text)'::regprocedure;
+  v_src text := (SELECT prosrc FROM pg_proc WHERE oid = 'guardian_link_revoke(uuid,text,text)'::regprocedure);
+  v_def text;
+  v_a   text := '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN' || chr(10)
+             || '    RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
+  v_a2  text := '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1' || chr(10)
+             || '     -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
+             || '     AND NOT family_register_made(g.assignment_id) THEN' || chr(10)
+             || '    RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
+  v_b   text := '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
+  v_b2  text := '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
+             || '  PERFORM family_register_requeue(g.assignment_id);' || chr(10)
+             || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
+BEGIN
+  IF md5(v_src) = '4d42aebaf78fa8642295a6c66985e8db' THEN RETURN; END IF;   -- a second paste
+  IF md5(v_src) IS DISTINCT FROM 'a5d51d1d63d288560a5ce9532f64bac8' THEN
+    RAISE EXCEPTION 'db/174: guardian_link_revoke() is neither db/128''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v_src);
+  END IF;
+  IF (length(v_src) - length(replace(v_src, v_a, ''))) / length(v_a) <> 1
+     OR (length(v_src) - length(replace(v_src, v_b, ''))) / length(v_b) <> 1 THEN
+    RAISE EXCEPTION 'db/174: guardian_link_revoke() does not hold its last-link refusal and its last RETURN once each';
+  END IF;
+  v_def := pg_get_functiondef(v_fn);
+  v_def := replace(replace(v_def, v_a, v_a2), v_b, v_b2);
+  EXECUTE v_def;
+END $revoke$;
+
 
 -- ── 9 · Q11: a declined pupil claim tells the DSO ──────────────────
 -- db/168's pupil_claim_decline() tells the school's DSOs when the office
@@ -1057,6 +1092,18 @@ BEGIN
         || '  IF a.role = ''guardian'' THEN PERFORM family_register_requeue(a.id); END IF;' || chr(10), ''))
      IS DISTINCT FROM '3ea136016eb3607d6c6e07c66c8fefba' THEN
     RAISE EXCEPTION 'db/174: role_assignment_end() is not db/128''s with §8b''s two edits';
+  END IF;
+  -- guardian_link_revoke(): db/128's body with §8b's two edits, and nothing else.
+  v_new := (SELECT prosrc FROM pg_proc WHERE oid = 'guardian_link_revoke(uuid,text,text)'::regprocedure);
+  IF md5(replace(replace(v_new,
+        '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1' || chr(10)
+        || '     -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
+        || '     AND NOT family_register_made(g.assignment_id) THEN',
+        '     AND coalesce(v_minor, true) AND coalesce(v_live, 0) <= 1 THEN'),
+        '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
+        || '  PERFORM family_register_requeue(g.assignment_id);' || chr(10), ''))
+     IS DISTINCT FROM 'a5d51d1d63d288560a5ce9532f64bac8' THEN
+    RAISE EXCEPTION 'db/174: guardian_link_revoke() is not db/128''s with §8b''s two edits';
   END IF;
   -- ONE DOOR (db/92 §8, "one door, two callers", as it stands now): the
   -- office's decision, the staff register, the pupil's yes (db/169) and

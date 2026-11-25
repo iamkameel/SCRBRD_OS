@@ -2720,7 +2720,8 @@ agree." A boy under 18 whose own address is listed is recognised by his claim,
 and nothing opens. A declined `player` request now tells the DSO, as a declined
 pupil claim does. A link the list made may always be ended by the office, even
 as the boy's only verified link (Kameel, 25 Nov 2026): `role_assignment_end()`
-is re-emitted from its body in place for that one case, and ending it puts her
+and the office's revoke, `guardian_link_revoke()`, are re-emitted from their
+bodies in place for that one case, and ending it puts her
 request back in Requests, marked, to be linked by hand. Every other link keeps
 db/08's last-link rule. Its proof is db/99 §149; its walk is
 `smoke-family-register`.
@@ -2728,10 +2729,10 @@ db/08's last-link rule. Its proof is db/99 §149; its walk is
 To paste:
 
 - **After db/172.** It needs db/168's pupil claim, db/169's
-  `pupil_signin_after_yes()` and db/92's grant door, and re-emits two
-  functions, each only over the body it expects or its own: `pupil_claim_send()`
-  (db/168's) and `role_assignment_end()` (as db/128 and the files after it
-  left it). Anything else fails the paste loudly, changing nothing. It asserts the grant door's callers as
+  `pupil_signin_after_yes()` and db/92's grant door, and re-emits three
+  functions, each only over the body it expects or its own:
+  `pupil_claim_send()` (db/168's), `role_assignment_end()` and
+  `guardian_link_revoke()` (each as the files before it left it). Anything else fails the paste loudly, changing nothing. It asserts the grant door's callers as
   they now stand (four, by name), so a function added beside them since fails
   it too.
 - **As one transaction:** the SQL Editor's single run, or `psql -1 -v
@@ -2760,7 +2761,7 @@ To paste:
   reset by its last statement); a paste that timed out on its lock is simply
   run again.
 
-Not pasted yet. Hash to check: `sha256 c7aaca4cbf5dfbfd4f335cc376beb571155bfcd08ee09a606eb94a4424134ab3`.
+Not pasted yet. Hash to check: `sha256 95af9282ef37c16399337752b61a92ce55d3eb94fd003c0942e2b643cebf6b87`.
 <!-- ── end db/174 ── -->
 
 ### 5 · Cloud Run, the first time

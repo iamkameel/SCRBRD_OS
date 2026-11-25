@@ -17881,6 +17881,12 @@ CREATE OR REPLACE FUNCTION _v174_shape(p_person uuid, p_player uuid) RETURNS tex
     FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
    WHERE a.person_id = p_person AND a.active AND g.player_id = p_player
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A person's live guardian link to a boy, its id (assignment_subject).
+CREATE OR REPLACE FUNCTION _v174_link_id(p_person uuid, p_player uuid) RETURNS uuid AS $$
+  SELECT g.id FROM role_assignment a JOIN assignment_subject g ON g.assignment_id = a.id
+   WHERE a.person_id = p_person AND a.role = 'guardian' AND a.active AND g.player_id = p_player
+     AND g.verification_state IN ('pending', 'verified') ORDER BY g.created_at DESC LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A person's ended guardian link to a boy, made here (revoked by the office).
 CREATE OR REPLACE FUNCTION _v174_revoked_link(p_person uuid, p_player uuid, p_by uuid) RETURNS void AS $$
 DECLARE a uuid;
@@ -18467,6 +18473,30 @@ BEGIN
     SELECT e.reason INTO v FROM role_assignment_end((_v92_assignment(U2, 'guardian', HIL)).id, 'Verify 174: ended by hand.') e;
     PERFORM _assert(v = 'last_verified_link', format('§149 (end): another hand-made only link was ended: %s', coalesce(v, 'ok')));
     PERFORM _assert(_v174_req(Q) = 'granted:' || REG, format('§149 (end): a refused ending moved the request: %s', _v174_req(Q)));
+    PERFORM set_config('app.user_id', '', true);
+
+  ELSIF p_case = 'revoke' THEN
+    -- (revoke) The office's other way of ending a link (guardian_link_revoke(),
+    -- db/109), on the same rule (Kameel, 25 Nov 2026): a list-made only link
+    -- is revoked and her request requeued; a hand-made only link is refused.
+    BOY := _v174_boy(T, 14); U := _v174_google(T || '.mum');
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.mum@example.invalid');
+    SELECT * INTO r FROM _v174_ask(U, 'guardian', _v174_born(BOY));
+    Q := r.req;
+    PERFORM _assert(r.answer = 'linked', format('§149 (revoke): the list did not link her: %s', r.answer));
+    PERFORM _as(REG);
+    SELECT coalesce(x.reason, 'ok') INTO v FROM guardian_link_revoke(_v174_link_id(U, BOY), 'office', 'Verify 174: listed in error.') x;
+    PERFORM _assert(v = 'ok', format('§149 (revoke): the office could not revoke the only link the list made: %s', v));
+    PERFORM _assert(family_register_line(Q) = 'link_ended', format('§149 (revoke): the office''s line is %s', family_register_line(Q)));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v174_link(U, BOY) = '' AND _v174_req(Q) = 'pending:-',
+      format('§149 (revoke): after the revoke the link reads %s and the request %s', _v174_link(U, BOY), _v174_req(Q)));
+    -- A hand-made only link keeps db/08's rule.
+    PERFORM _as(REG);
+    PERFORM _assert((SELECT d.ok FROM decide_role_request(Q, true, NULL, BOY, NULL) d), '§149 (revoke): the office could not link her by hand');
+    SELECT x.reason INTO v FROM guardian_link_revoke(_v174_link_id(U, BOY), 'office', 'Verify 174: revoked by hand.') x;
+    PERFORM _assert(v = 'last_verified_link', format('§149 (revoke): a hand-made only link was revoked: %s', coalesce(v, 'ok')));
+    PERFORM _assert(_v174_req(Q) = 'granted:' || REG, format('§149 (revoke): a refused revoke moved the request: %s', _v174_req(Q)));
     PERFORM set_config('app.user_id', '', true);
 
   ELSIF p_case = 'grants' THEN
@@ -51060,6 +51090,7 @@ $m130$;
   --   (end)      Kameel, 25 Nov: a list-made only link ended by the office,
   --              the request back in Requests with its line; a hand-made
   --              only link still refused
+  --   (revoke)   the same through guardian_link_revoke()
   --   (grants)   ACLs of every function
   -- Broken by hand (25 Nov 2026), each went red for its own reason:
   --   the uploader's authority not asked        → (departed) red: linked
@@ -51088,6 +51119,7 @@ $m130$;
   PERFORM _v174_case('door');
   PERFORM _v174_case('q11');
   PERFORM _v174_case('end');
+  PERFORM _v174_case('revoke');
   PERFORM _v174_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/174 (section 149) ─────────────────────────────────────────
