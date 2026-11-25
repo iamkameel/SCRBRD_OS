@@ -18802,6 +18802,14 @@ BEGIN
       PERFORM _assert(false, '§149 (read): the application wrote family_register');
     EXCEPTION WHEN insufficient_privilege THEN NULL;
     END;
+    -- A boy who moves school: his old school's office no longer reads his name or team on its row.
+    BOY2 := _v174_boy(T || 'moves', 13);
+    SELECT * INTO r FROM _v174_list(REG, BOY2, 'v174.' || T || '.moves@example.invalid'); ROW2 := r.row_id;
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v172_move(BOY2, '22222222-2222-2222-2222-222222222222');
+    PERFORM _as(REG);
+    SELECT x.player_name, x.team_code INTO v, v2 FROM family_register_rows(HIL) x WHERE x.id = ROW2;
+    PERFORM _assert(v IS NULL AND v2 IS NULL, format('§149 (read): his old school reads him as %s (%s)', v, v2));
     -- Clear: an unclaimed row ninety days past its date loses its address, nothing else.
     PERFORM set_config('app.user_id', '', true);
     PERFORM _v174_age(ROW_, sa_today() - 91);
