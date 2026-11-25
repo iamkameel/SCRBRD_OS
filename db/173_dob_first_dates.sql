@@ -25,9 +25,11 @@
 -- ── WHAT MOVES ─────────────────────────────────────────────────────
 --   ~ player_born_checked() (db/172's BEFORE trigger on player), replaced
 --       whole, only over db/172's body or this file's (folded md5, §0).
---       Two new rules, asked first, for every write the application makes
---       (logged in as scrbrd_app, directly or through any door: the same
---       test db/172's office rule makes):
+--       Two new rules, asked first, for every write made by or for a
+--       signed-in person: logged in as scrbrd_app, directly or through any
+--       door, or with a person signed in under any login (a pooler's, a SET
+--       ROLE). db/172's own rules in the same function read the login the
+--       same way from this file on:
 --         born_needs_the_office       a first date (an INSERT with a date,
 --             or none becoming a date) that makes him 18 today, from anyone
 --             but the office of his school;
@@ -36,13 +38,24 @@
 --       Both insufficient_privilege. The owner's own write (the SQL Editor, a
 --       seed) is let through, as before, and recorded as 'owner'.
 --       db/172's four rules stand as they were, after these.
+--       And (Kameel, 26 Nov 2026, the re-dating design's Q8) an office person
+--       who is his own guardian (player_born_own_child()) writes no first date
+--       that makes him 18 (born_own_child), corrects no date and confirms none
+--       (own_child): another office person does, or SCRBRD.
+--   ~ player_born_correct() (db/172), replaced whole, guarded: refuses
+--       own_child.
+--   + player_id_number_change  one row each time an ID number is written
+--       where there was none, changed or taken off: who, when, whether his
+--       school's office. Never the number. RLS on, no policy, no privilege.
 --   ~ player_born_record() (db/172's AFTER trigger), replaced whole, likewise
 --       guarded, and the trigger fires AFTER INSERT too: a new boy written with
 --       a date is one row, `was` empty, `how` capture, import or owner.
 --   ~ player_born_change: `how` may be 'confirmed' (was = became: the office
 --       has checked the date on record), and `by_office` says whether the
 --       person who wrote the row was his school's office at that moment
---       (player_born_office()). Rows written before this file read false.
+--       (player_born_office()), not his own guardian, and, for an import, on
+--       a line the office ticked (Kameel, 26 Nov 2026, Q1). Rows written
+--       before this file read false.
 --   + player_born_confirmed(player)  is the date on record one his school's
 --       office wrote or confirmed, with no write to it since? Owner-only.
 --   + player_born_confirm(player)  the office's "Confirm his date": (ok,
@@ -72,9 +85,13 @@
 --       a pad, a support hour, a platform-wide key, a child's own account, or
 --       a claim held for a safeguarding concern (pupil_claim_held(), db/168),
 --       which reads as none so nothing tips anyone off.
---   ~ pupil_signin_after_yes() (db/169), replaced whole, guarded: a yes does
---       not open the account of a claim held for a safeguarding concern; it
---       answers as if nothing waits (the yes itself stands on record).
+--   ~ pupil_signin_after_yes() (db/169), replaced whole, guarded: for a claim
+--       held for a safeguarding concern a yes moves neither his own link's
+--       stamp nor his account; it answers as if nothing waits (the yes itself
+--       stands on record).
+--   ~ pupil_signin_state() (db/169), replaced whole, guarded: `held` (his
+--       account waits) is never true to his family for such a claim; the
+--       office reads it as before.
 --   ~ The seeded test account's live `player` assignment (app_user
 --       88888888-0000-0000-0000-000000000001, spectator@example.invalid) is
 --       ended: active = false, as db/77 and tools/sql/fix-player-without-team
@@ -85,8 +102,9 @@
 --     listed on "Coming of age" 60 days ahead (Kameel's Q2, for the pilot).
 --   * What follows a correction (his links and stamps re-dated, the office's
 --     follow-up list) is a later migration.
---   * No new table. The screens that show "Coming of age" are a later slice;
---     the roster import's report and tick are services/api/io/import-api.mjs.
+--   * The roster import's report and tick are services/api/io/import-api.mjs;
+--     "Coming of age" is read and confirmed through services/api/write/
+--     dob-capture-api.mjs.
 --
 -- Needs db/172 (player_born_change and its triggers), db/169 (the gate and
 -- the carry-over), and audit_log() as db/172 left it. Takes a short lock on
