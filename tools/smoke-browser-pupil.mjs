@@ -431,7 +431,10 @@ try {
     const mine = (await readRows(await devToken("pillay@example.invalid"), `availability?matchId=${NEXT}`)).find((r) => r.player_id === PILLAY) ?? null;
     ok("his mother's answer, read as him: 'unavailable, said by D Pillay', with no reason and no note", mine?.status === "unavailable" && mine?.declared_by_name === "D Pillay"
        && mine?.reason_kind === null && mine?.note === null, JSON.stringify(mine));
+    // Away and back, so his Home and the fixture read again.
+    await go(s.page, "mymatches");
     await go(s.page, "myhome");
+    await afterReads(s.page, 1200);
     await tid(s.page, "next-fixture-open").click({ timeout: 4000 }).catch(() => {});
     await afterReads(s.page, 1500);
     ok("...his fixture says she answered: 'Said by D Pillay'", /Said by D Pillay/.test(await inner(s.page, `availability-by-${PILLAY}`)), await inner(s.page, `availability-by-${PILLAY}`));
