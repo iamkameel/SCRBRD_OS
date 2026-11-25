@@ -34,7 +34,7 @@ import { googleConfig, signInConfig, googleFailure, GOOGLE_FAILURE_WORDS, addSig
 import { SIGNIN_NOTICE, SIGNIN_NOTICE_TITLE } from "../src/lib/signinNotice.js";
 import { FORM_ON_FILE, OFFICE_WITHDRAW, OWN_SIGNIN_REFUSALS, formReady, heldWords, officeSigninWords, ownSigninWords } from "../src/lib/ownSignin.js";
 import {
-  KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, NOTE_MAX, buildRequest, joinWords, parentNote, sentWords, spectatorAsk,
+  KINDS, STAFF_ROLES, RELATIONSHIPS, JOIN_WORDS, NOTE_MAX, BORN_FIELD, buildRequest, bornField, familyWords, joinWords, parentNote, sentWords, spectatorAsk,
 } from "../src/lib/joinSchool.js";
 import {
   CLAIM_FORM, CLAIM_WORDS, OFFICE_INTRO, OFFICE_STATE_WORDS, OFFICE_WORDS, REMOVE_WORDS, buildClaim, claimWords, clearWords,
@@ -188,6 +188,18 @@ group("Joining a school: every kind ends in a request, never a role");
   ok("a parent must type a name and a relationship", buildRequest("parent", S, { child: "T", relationship: "Mother" }).ok === false && buildRequest("parent", S, { child: "Test Child", relationship: "Friend" }).ok === false);
   ok("the note stays under the column's 300", parentNote({ child: "x".repeat(500), relationship: "Mother", year: "y".repeat(500) }).length <= NOTE_MAX);
   ok("every relationship on offer is accepted", RELATIONSHIPS.every((x) => buildRequest("parent", S, { child: "Test Child", relationship: x }).ok));
+  // db/174 (Q2): his date of birth, optional, beside the request and never in its note.
+  r = buildRequest("parent", S, { child: "Test Child", relationship: "Mother", born: "2012-03-04" });
+  ok("a date of birth she typed travels as born, beside the request", r.ok && r.body.born === "2012-03-04", r.body);
+  ok("...and never in the note the office reads", !/2012|03-04|born|birth/i.test(r.body.note), r.body.note);
+  ok("a date that is not a real day is not sent", !("born" in buildRequest("parent", S, { child: "Test Child", relationship: "Mother", born: "2012-02-30" }).body)
+     && !("born" in buildRequest("parent", S, { child: "Test Child", relationship: "Mother", born: "04/03/2012" }).body));
+  ok("bornField takes YYYY-MM-DD and a real day only", bornField("2012-03-04") === "2012-03-04" && bornField("2012-13-01") === null && bornField("") === null && bornField(null) === null);
+  ok("the field's words are Kameel's (Q2)", BORN_FIELD.parent === "His date of birth (lets the school's list confirm you at once)" && /not kept/.test(BORN_FIELD.hint));
+  ok("a pupil of 18 may send his own date too", buildRequest("pupil", S, { adult: "yes", born: "2007-01-02" }).body.born === "2007-01-02");
+  ok("the list's answer is said only for a link: linked and in; anything else is the ordinary sentence",
+     /Read and agree to the school's terms/.test(familyWords("linked")?.text ?? "") && familyWords("in")?.title === "You're in"
+       && familyWords("sent") === null && familyWords(undefined) === null);
 
   ok("a pupil under 18 asks for no role, and is told what he may do instead", buildRequest("pupil", S, { adult: "no" }).ok === false && /office/.test(buildRequest("pupil", S, { adult: "no" }).problem) && /who you are/.test(buildRequest("pupil", S, { adult: "no" }).problem) && buildRequest("pupil", S, {}).ok === false);
   r = buildRequest("pupil", S, { adult: "yes", extra: "1st XI" });
@@ -210,7 +222,7 @@ group("Joining a school never says found or not found, and never looks a child u
   ok("none of the words is an oracle", all.every((w) => !FOUND.test(w)), all.filter((w) => FOUND.test(w)));
   ok("a parent hears the same sentence whoever the child is", sentWords("parent", "Test School") === sentWords("parent", "Test School")
      && !/Test Child|Child:/.test(sentWords("parent", "Test School")));
-  ok("...which says nothing is linked automatically", /nothing is linked automatically/.test(sentWords("parent", "Test School")));
+  ok("...which says nothing about a child is shown until the school has checked", /Nothing about any child is shown to you until the school has checked/.test(sentWords("parent", "Test School")));
   ok("a request the server refused is told in words", joinWords(apiError(422, "already_pending")) === JOIN_WORDS.already_pending);
   ok("a request that never arrived says nothing was sent", /Nothing was sent/.test(joinWords(new TypeError("x"))));
   // db/86: the server refuses a platform role when it is filed, with the
@@ -236,7 +248,9 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
   const S = "11111111-1111-1111-1111-111111111111";
   let c = buildClaim(S, { name: "  Test   Pupil ", year: " Grade 9 " });
   ok("his claim is his school, the name he typed and his year, tidied", c.ok && JSON.stringify(c.body) === JSON.stringify({ schoolId: S, name: "Test Pupil", year: "Grade 9" }), JSON.stringify(c));
-  ok("...and no date of birth: nothing compares it until the family list exists", c.ok && !("born" in c.body));
+  ok("...and no date of birth unless he typed one", c.ok && !("born" in c.body));
+  ok("a date of birth he typed travels as born (db/174), a real day only",
+     buildClaim(S, { name: "Test Pupil", born: "2011-05-06" }).body.born === "2011-05-06" && !("born" in buildClaim(S, { name: "Test Pupil", born: "2011-02-31" }).body));
   ok("the year is optional", buildClaim(S, { name: "Test Pupil" }).ok && buildClaim(S, { name: "Test Pupil" }).body.year === null);
   ok("no school, no name, or a year past 20, sends nothing", !buildClaim(null, { name: "Test Pupil" }).ok && !buildClaim(S, { name: "T" }).ok && !buildClaim(S, { name: "12" }).ok && !buildClaim(S, { name: "Test Pupil", year: "y".repeat(21) }).ok);
   ok("the form says what sending does: a pupil's, under 18, kept 30 days, removed with his follows",

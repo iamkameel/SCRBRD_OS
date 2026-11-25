@@ -162,5 +162,6 @@
   "169_pupil_signin_gate.sql",
   "170_fixture_pro_mode.sql",
   "171_slice4_followups.sql",
-  "172_dob_audited_correction.sql"
+  "172_dob_audited_correction.sql",
+  "174_family_register.sql"
 ]

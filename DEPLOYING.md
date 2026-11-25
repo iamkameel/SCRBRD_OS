@@ -2703,6 +2703,59 @@ To paste:
 
 Not pasted yet. Hash to check: `sha256 273369f0c7f68464f33493b461f24a5ec4562d406dc09a0c36111102a136f68a`.
 <!-- ── end db/172 ── -->
+<!-- ── db/174: the family list ── -->
+#### The family list: a parent the school listed is linked on her verified address and his date of birth (db/174)
+
+`db/174_family_register.sql` (branch claude/wip-db174-family-list; SCRBRD-140's
+honesty model, Migration C, Kameel 18 Nov 2026: Q1 (b) switched on per school,
+Q2 (a), Q11 (a)). The office lists, in advance, a child from its roster, an
+address and a kind (a parent's or guardian's, or the pupil's own). A parent who
+signs in with Google at that address, asks to be linked and types his date of
+birth is linked at once through the one grant door, her consent pending (she
+agrees to the terms before she reads anything of his), where all six conditions
+hold and the school is switched on; the office is told, with End role beside
+the row. A wrong date uses up every row for her address and reads as no row
+does; the office's Requests line says "On the family list. The details did not
+agree." A boy under 18 whose own address is listed is recognised by his claim,
+and nothing opens. A declined `player` request now tells the DSO, as a declined
+pupil claim does. Its proof is db/99 §149; its walk is `smoke-family-register`.
+
+To paste:
+
+- **After db/172.** It needs db/168's pupil claim, db/169's
+  `pupil_signin_after_yes()` and db/92's grant door, and re-emits one function,
+  `pupil_claim_send()`, only over db/168's body or its own: anything else fails
+  the paste loudly, changing nothing. It asserts the grant door's callers as
+  they now stand (four, by name), so a function added beside them since fails
+  it too.
+- **As one transaction:** the SQL Editor's single run, or `psql -1 -v
+  ON_ERROR_STOP=1 -f`.
+- **Off everywhere until a school says yes.** `family_list_links` is a
+  feature, off, and the database ignores its platform default: it is on for a
+  school only through a `feature_grant` row for that school, written once the
+  school has said yes in writing. Until then the list only marks Requests.
+- **The date of birth is a bind parameter.** It is never stored or logged by
+  SCRBRD, but a host that logs the application's statements logs their
+  parameters with them. On the managed host, keep `log_statement` at `none` or
+  `ddl` and `log_min_duration_statement` at `-1` for the application's role, so
+  no statement of it, and no parameter, is logged.
+- **Then, on the managed host, check the API roles reach nothing new:**
+  ```sql
+  SELECT * FROM api_role_reach('anon');
+  SELECT * FROM api_role_reach('authenticated');
+  SELECT * FROM api_role_reach('service_role');
+  ```
+  Each answers no rows (db/157).
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  174, and the API refuses to start on a database without it.
+- It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, `ON CONFLICT DO
+  NOTHING` and a `DROP TRIGGER IF EXISTS` before its one trigger. It takes a
+  short lock on `role_request` for that trigger (ten-second `lock_timeout`,
+  reset by its last statement); a paste that timed out on its lock is simply
+  run again.
+
+Not pasted yet. Hash to check: `sha256 SHA_174`.
+<!-- ── end db/174 ── -->
 
 ### 5 · Cloud Run, the first time
 
