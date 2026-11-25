@@ -310,6 +310,16 @@ try {
   ok("no team-mate's answer, reason or name is on his Home",
      !/Whitfield|Bekker|Naidoo|funeral|family/i.test(home) && await tid(s.page, `availability-state-${WHITFIELD}`).count() === 0, home.slice(0, 300));
   ok("what the coach and the school posted is on his Home (§1.2 job 6)", await tid(s.page, "news-card").count() === 1);
+  // Redesign slice 8, Kameel's question 6 (a): his open injury is one line, "Injured · back …", no diagnosis on Home.
+  {
+    const own = await q(`select injury_type, rtw_date from injury where player_id = $1 and phase <> 'cleared'`, [PILLAY]);
+    const line = (await tid(s.page, "home-injury").innerText({ timeout: 4000 }).catch(() => "")).replace(/\s+/g, " ").trim();
+    const homeNow = await inner(s.page, "pupil-home");
+    ok("his open injury: one line under his name, 'Injured', with the return date where there is one",
+       own.length > 0 ? /^Injured( · back \w{3} \d{1,2} \w{3})?\b/.test(line) : await tid(s.page, "home-injury").count() === 0, [own.length, line]);
+    ok("...and no diagnosis on Home: not the injury's name, anywhere on it",
+       own.every((r) => !r.injury_type || !new RegExp(String(r.injury_type).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(homeNow)) && !/hamstring|strain|Grade 2/i.test(homeNow), homeNow.match(/hamstring|strain|Grade 2/i)?.[0]);
+  }
   const fh = await floors(s.page);
   ok(`Home at phone width: nothing read under 12px (${fh.small.length})`, fh.small.length === 0, fh.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fh.tiny.length})`, fh.tiny.length === 0, fh.tiny.slice(0, 4).join(" · "));

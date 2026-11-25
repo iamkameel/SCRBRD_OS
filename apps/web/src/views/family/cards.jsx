@@ -14,7 +14,7 @@ import { useNotifications } from "../../lib/notifications.js";
 import { ReadState } from "../../ui/primitives.jsx";
 import { resultText, withOpponents } from "../../lib/matchCentre.js";
 import { humanDate } from "../../lib/format.js";
-import { recoveringLine } from "../../lib/injury.js";
+import { injuredLine } from "../../lib/injury.js";
 import { fixturesOf, lineFor, noticesFor, opponentOf, endOf } from "../../lib/family.js";
 import { MatchCard } from "../../ui/matchCard.jsx";
 import { openWords } from "../../lib/matchCard.js";
@@ -255,16 +255,17 @@ export function TrainingCard({ child, role, now }) {
 /**
  * His open injury, in one quiet line under his name (redesign slice 8;
  * the role reviews' direction §3.2 Flow A step 3, Kameel's question 6 (a)):
- * "Recovering: hamstring · back Fri 4 Dec", opening his Health history (his
- * parent's: his card on Family; his own: Me). The same `injuries` read that
- * history makes, narrowed to him (lib/injury.js recoveringLine): nothing a
- * team-mate's, nothing the history does not already show. Not drawn with
- * nothing open, with the module off, or while the read has not answered.
+ * "Injured · back Fri 4 Dec", no diagnosis, opening his Health history (his
+ * parent's: his card on Family; his own: Me), where the injury's name stays.
+ * The same `injuries` read that history makes, cut to whose, open and the
+ * return date and narrowed to him (lib/injury.js injuredLine): nothing a
+ * team-mate's. Not drawn with nothing open, with the module off, or while
+ * the read has not answered.
  */
 export function InjuryLine({ child, role, onOpen }) {
   const { rows, loading, error, disabled } = useLive("injuries", role);
   if (disabled || loading || error) return null;
-  const line = recoveringLine(rows, child, humanDate);
+  const line = injuredLine(rows, child, humanDate);
   if (!line) return null;
   return onOpen
     ? <OpenRow testid="home-injury" onClick={onOpen} aside="Health"><span style={{ ...T.role.body, color: T.content.secondary }}>{line}</span></OpenRow>

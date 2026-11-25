@@ -4,7 +4,7 @@
  *
  *   - leadOf(): one lead per child, by the match day, the ladder in order
  *   - underLead(): the lead's own ask is not drawn twice, and the count is the list's own
- *   - recoveringLine(): his open injury in one line, from his own rows only
+ *   - injuredLine(): his open injury in one line, no diagnosis, from his own rows only
  *   - the captain's block in its three places, and only C1's facts in any of them
  *   - the three card weights, from the existing tokens
  *
@@ -19,7 +19,7 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { leadOf, onTheDay } from "../src/lib/homeLead.js";
 import { SHOWN_ROWS, owes, todoOf, underLead } from "../src/lib/todo.js";
-import { recoveringLine } from "../src/lib/injury.js";
+import { homeInjuryRows, injuredLine } from "../src/lib/injury.js";
 import { humanDate } from "../src/lib/format.js";
 import { NEVER_ON_THE_TAB } from "../src/lib/captain.js";
 import { CaptainCardView } from "../src/views/family/captain.jsx";
@@ -86,19 +86,29 @@ group("underLead: the answer in the lead is not asked again under it; one count"
   ok("up to three rows open (§2.6 'Also for you')", SHOWN_ROWS === 3);
 }
 
-group("recoveringLine: his open injury in one line, and nobody else's (question 6 (a))");
+group("injuredLine: his open injury in one line, no diagnosis, and nobody else's (question 6 (a))");
 {
   const inj = (o) => ({ id: o.id ?? "i1", player: ME.id, type: "Hamstring", phase: "rehab", restricted: true, rtw: "2026-12-04", severity: "moderate",
-    notes: "Physio notes", physio: "Ms Physio", ...o });
-  ok("rehab, with a return date: 'Recovering: Hamstring · back Fri 4 Dec'", recoveringLine([inj({})], ME, humanDate) === "Recovering: Hamstring · back Fri 4 Dec", recoveringLine([inj({})], ME, humanDate));
-  ok("...never the severity, the notes or the physio", !/moderate|notes|Physio/i.test(recoveringLine([inj({})], ME, humanDate)));
-  ok("the name of the injury only where the read carried it", recoveringLine([inj({ type: null })], ME, humanDate) === "Recovering · back Fri 4 Dec");
-  ok("no return date: the words alone", recoveringLine([inj({ rtw: null })], ME, humanDate) === "Recovering: Hamstring");
-  ok("cleared, or a status-only row not restricted: nothing", recoveringLine([inj({ phase: "cleared" })], ME, humanDate) === null && recoveringLine([inj({ phase: null, restricted: false })], ME, humanDate) === null);
-  ok("a status-only row still restricted: open", recoveringLine([inj({ phase: null, type: null })], ME, humanDate) === "Recovering · back Fri 4 Dec");
-  ok("a team-mate's row (a coach-parent's read of the side): never his line", recoveringLine([inj({ player: "p-mate" })], ME, humanDate) === null);
-  ok("left the injury's school: nothing", recoveringLine([inj({ leftSchool: true })], ME, humanDate) === null);
-  ok("two open: the one he is back from last", recoveringLine([inj({ id: "a", rtw: "2026-11-30", type: "Ankle" }), inj({ id: "b", rtw: "2026-12-11", type: "Wrist" })], ME, humanDate) === "Recovering: Wrist · back Fri 11 Dec");
+    notes: "Physio notes", physio: "Ms Physio", dateInj: "2026-11-20", ...o });
+  const L = (rows) => injuredLine(rows, ME, humanDate);
+  ok("open, with a return date: 'Injured · back Fri 4 Dec'", L([inj({})]) === "Injured · back Fri 4 Dec", L([inj({})]));
+  ok("no return date read: 'Injured'", L([inj({ rtw: null })]) === "Injured");
+  const types = ["Hamstring", "Grade 2 hamstring strain", "Concussion", "Ankle sprain", "Back Fri", "Injured"];
+  ok("the line never carries the injury field, whatever the injury is called", types.every((t) => {
+    const line = L([inj({ type: t, rtw: null })]) ?? "", dated = L([inj({ type: t })]) ?? "";
+    return line === "Injured" && dated === "Injured · back Fri 4 Dec";
+  }), types.map((t) => L([inj({ type: t })])));
+  ok("...nor the severity, the notes, the physio or the day he was hurt", !/moderate|notes|Physio|20 Nov/i.test(L([inj({})])));
+  ok("what a Home keeps of a row: whose, open, the return date; never the injury's name or anything clinical",
+     homeInjuryRows([inj({})]).every((r) => Object.keys(r).sort().join() === "leftSchool,phase,player,restricted,rtw" && !("type" in r) && !("notes" in r) && !("severity" in r)));
+  ok("cleared, or a status-only row not restricted: nothing", L([inj({ phase: "cleared" })]) === null && L([inj({ phase: null, restricted: false })]) === null);
+  ok("a status-only row still restricted: open", L([inj({ phase: null, type: null })]) === "Injured · back Fri 4 Dec");
+  ok("a team-mate's row (a coach-parent's read of the side): never his line", L([inj({ player: "p-mate" })]) === null);
+  ok("left the injury's school: nothing", L([inj({ leftSchool: true })]) === null);
+  ok("two open: the one he is back from last", L([inj({ id: "a", rtw: "2026-11-30" }), inj({ id: "b", rtw: "2026-12-11" })]) === "Injured · back Fri 11 Dec");
+  const cards = readFileSync(new URL("../src/views/family/cards.jsx", import.meta.url), "utf8");
+  const fn = cards.slice(cards.indexOf("export function InjuryLine"));
+  ok("the Home's card draws the line alone: it reads no injury field itself", /injuredLine\(rows, child, humanDate\)/.test(fn) && !/\.(type|severity|notes|physio)\b/.test(fn));
 }
 
 group("The captain's block: C1's facts in each of its three places, and nothing more (SCRBRD-138 §3.2, §4)");

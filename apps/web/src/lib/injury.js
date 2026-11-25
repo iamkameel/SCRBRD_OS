@@ -179,32 +179,45 @@ const hasLeftSchool = (injury) => injury?.leftSchool === true;
 
 
 /**
+ * What a Home may hold of an injury row (redesign slice 8; Kameel's question 6
+ * (a), 19 Nov: "Injured · back Fri", no diagnosis on Home). The row the
+ * `injuries` read maps (lib/live.js asInjury) carries the injury's name, its
+ * severity, the notes and the physio, for his health history; the Home keeps
+ * only whose it is, whether it is open, and the return date. Nothing else of
+ * the row reaches the Home's line.
+ * @param {any[]} rows
+ * @returns {{player: any, phase: any, restricted: any, rtw: any, leftSchool: any}[]}
+ */
+function homeInjuryRows(rows) {
+  return (rows ?? []).filter(Boolean).map((i) => ({ player: i.player, phase: i.phase ?? null, restricted: i.restricted ?? null,
+    rtw: i.rtw ?? null, leftSchool: i.leftSchool ?? null }));
+}
+
+/**
  * His open injury as one quiet line on his own Home or his parent's
  * (redesign slice 8; the role reviews' direction §3.2 Flow A, Kameel's
- * question 6 (a), 19 Nov): "Recovering: hamstring · back Fri 4 Dec". Read
- * from the same `injuries` rows his Health history draws (his parent's
- * Family card, his own Me), narrowed to the one boy, so it shows nobody
- * anything that screen does not. The injury's name is drawn only where the
- * read carried it; the phase, severity, notes and physio never are. Null when
- * nothing is open, or he has left the injury's school.
+ * question 6 (a)): "Injured · back Fri 4 Dec", or "Injured" with no return
+ * date read. No diagnosis: the injury's name stays in his health history (his
+ * parent's Family card, his own Me), which the line opens. Read from the same
+ * `injuries` rows, cut to homeInjuryRows() and narrowed to the one boy. Null
+ * when nothing is open, or he has left the injury's school.
  *
  * What the availability buttons do while he is injured (question 6's pre-filled
  * answer) is not this line's: it says, and asks nothing.
  * @param {any[]} rows  @param {{id: string}} child  @param {(iso: string) => string} fmt  the date as a person reads it
  */
-function recoveringLine(rows, child, fmt) {
-  const open = (rows ?? []).filter((i) => i && i.player === child.id && isOpenInjury(i) && !hasLeftSchool(i))
+function injuredLine(rows, child, fmt) {
+  const open = homeInjuryRows(rows).filter((i) => i.player === child.id && isOpenInjury(i) && !hasLeftSchool(i))
     // The one he will be back from last: the line says when he is back.
     .sort((a, b) => String(b.rtw ?? "9999").localeCompare(String(a.rtw ?? "9999")));
   const i = open[0];
   if (!i) return null;
-  const what = typeof i.type === "string" && i.type.trim() ? `Recovering: ${i.type.trim()}` : "Recovering";
   const rtw = day10(i.rtw);
-  return rtw ? `${what} · back ${fmt(rtw)}` : what;
+  return rtw ? `Injured · back ${fmt(rtw)}` : "Injured";
 }
 
 export {
   NEXT_REVIEW_SHORTCUTS, PHASE_WORDS, REASON_ORDER, REFUSAL, SEVERITY_WORDS,
   addDaysIso, day10, daysBetween, hasLeftSchool, injuryCounts, injurySay, isOpenInjury,
-  phaseWord, reasonLine, recoveringLine, saToday, seenWord, severityWord,
+  homeInjuryRows, injuredLine, phaseWord, reasonLine, saToday, seenWord, severityWord,
 };
