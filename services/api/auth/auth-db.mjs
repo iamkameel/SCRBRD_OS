@@ -179,11 +179,14 @@ export async function sessionProfile(pool, secret, bearer) {
               -- family reads (lib/held.js familyOf) read this; every other
               -- reader of subjects is unchanged, so a pending or ended link
               -- still names its boy where a screen says "awaiting the office"
-              -- or "ended".
+              -- or "ended". A guardian's link waiting for her agreement to the
+              -- terms reaches nothing of him (db/175), so it is not live here.
               coalesce(array_agg(g.player_id) filter (where g.player_id is not null
                          and g.verification_state = 'verified'
                          and g.valid_from <= sa_today()
-                         and (g.valid_until is null or g.valid_until > sa_today())), '{}') as live_subjects
+                         and (g.valid_until is null or g.valid_until > sa_today())
+                         and (a.role <> 'guardian' or g.consent_state <> 'pending'
+                              or g.relationship in ('self', 'enquiry'))), '{}') as live_subjects
          from role_assignment a
          left join school s on s.id = a.school_id
          left join assignment_subject g on g.assignment_id = a.id

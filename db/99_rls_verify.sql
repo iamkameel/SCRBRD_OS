@@ -2328,9 +2328,12 @@ BEGIN
   INSERT INTO role_assignment (person_id, role, school_id, team_code)
   SELECT (ids->>k)::uuid, 'player', HIL, 'U15A' FROM unnest(ARRAY['u_dan', 'u_ed']) k;
 
-  -- Pat's mother's link is verified and her consent to processing is not yet
-  -- recorded: lifts wait on it (Kameel, 2026-10-01).
-  UPDATE assignment_subject SET consent_state = 'pending', consent_version = NULL, consent_at = NULL
+  -- Pat's mother's link is verified and her consent to processing is not
+  -- granted: lifts wait on it (Kameel, 2026-10-01). She agreed the terms and
+  -- withdrew them, so she keeps sight of him and lifts stop (the approved
+  -- terms, sentence 38; db/175 Q1). A link never agreed reaches nothing of
+  -- him at all since db/175, lifts included.
+  UPDATE assignment_subject SET consent_state = 'withdrawn'
    WHERE assignment_id = (ids->>'a_pmum')::uuid;
 
   -- Who to ring. The driver's own number is on her son's card; it is the one
@@ -8156,9 +8159,12 @@ BEGIN
   PERFORM _v100_link((ids->>'sg')::uuid, HIL, c_s);
   PERFORM _v100_link((ids->>'gd')::uuid, HIL, c_d);
   PERFORM _v100_link((ids->>'drv')::uuid, HIL, c_d2);
-  -- gp's link to C is verified and his processing consent is not on record.
+  -- gp's link to C is verified and his processing consent is not in force:
+  -- he agreed the terms and withdrew them, so he is still C's family (db/175
+  -- Q1) and consents nothing for him. (A link never agreed is no family's at
+  -- all since db/175.)
   PERFORM _v100_link((ids->>'gp')::uuid, HIL, c_c);
-  UPDATE assignment_subject g SET consent_state = 'pending', consent_version = NULL, consent_at = NULL
+  UPDATE assignment_subject g SET consent_state = 'withdrawn'
     FROM role_assignment a WHERE a.id = g.assignment_id AND a.person_id = (ids->>'gp')::uuid AND g.player_id = c_c;
   -- Y is eighteen, so db/62 would close his guardian's link today; it is
   -- staged open for thirty days, and the section ends it.

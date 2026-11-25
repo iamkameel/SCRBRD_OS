@@ -2817,6 +2817,73 @@ To paste:
 
 Not pasted yet. Hash to check: `sha256 16acc4aea6cba63671536d4db1d270df66131d7a6d763faaea771fbaba139e81`.
 <!-- ── end db/174 ── -->
+<!-- ── db/175: the parent's terms gate ── -->
+#### The parent's terms gate: her link reaches her child once she has agreed (db/175)
+
+`db/175_terms_gate.sql` (branch claude/wip-slice5b-terms-gate, on db/174;
+redesign slice 5b; Kameel, the board of 18 Nov 2026: "Server withholds his
+data until she agrees", and his answers of 20 Nov, all six as recommended).
+A guardian's link whose terms are not agreed (`consent_state = 'pending'`)
+reaches nothing of that child: no read, no write, no notice. The condition sits
+in the link test itself (`app_can()`, its two copies and `is_family_of()`), so
+every read, write and policy that asks those closes with it, and in the few
+readers of her link that do not (her alert choices, her health-consent list,
+"Allow his own sign-in", her own public-name and health answers). A withdrawn
+link keeps reading (Q1); a link agreed under an older version keeps reading
+(Q2); a link the office stamped agreed from a signed form counts (Q3). What
+stays open: the terms, `my_terms_due()` (her waiting links, the child's name and
+school, nothing else), agreeing through `guardian_consent_record()`, raising a
+concern, the DSO card and the DSO's notice to her. Notices about him are held
+from her, so never pushed, and read once she agrees (Q4). Every agreement and
+withdrawal is now kept in `guardian_terms_record`, append-only. Its proof is
+db/99 §150; its walks are `smoke-guardian` and `smoke-browser-read` (N6).
+
+What it does to the links already there: **no link changes state.** From the
+statement after the paste, every parent with a live, verified guardian link at
+`consent_state = 'pending'` sees the "Read the terms" card for that child and
+nothing else of his until she agrees in the app. That includes every parent
+linked through a role request granted by the office (the grant door leaves the
+link pending) and every parent the family list links (db/174). Links at
+`granted` or `withdrawn` are untouched. The paste records each guardian link
+that already says anything of the terms in `guardian_terms_record` once, as
+found.
+
+To paste (Q5: slice 5 live first, the school writes to families, the office
+chases, then Kameel's word):
+
+- **Count first, on that database, as the owner:**
+  `psql "$DATABASE_URL" -X -f tools/terms-gate-count.sql`. Counts only, no
+  names: `would_close` by school is who the paste closes. Read every column,
+  and `pupil_yes_on_unagreed` (should be 0). Run it again after the paste.
+- **After db/174** (and db/173, db/171, db/169). It re-emits nine bodies, each
+  only over the body it expects (as db/169, db/171 and db/174 left them) or
+  its own: `app_can()`, `app_can_but_player()`, `app_can_but_scorer()`,
+  `is_family_of()`, `my_alert_choices()`, `my_health_consents()`,
+  `pupil_signin_my_link()`, `public_name_consent_set()` (seven arguments) and
+  `health_monitoring_consent_set()`. Anything else, or a mix of the two, fails
+  the paste loudly, changing nothing. Run it as the schema owner; it refuses
+  any other role.
+- **As one transaction, outside a match:** the SQL Editor's single run, or
+  `psql -1 -v ON_ERROR_STOP=1 -f`. Re-emitting `app_can()` waits on every
+  statement reading through it, and the trigger and the policies lock
+  `assignment_subject` and `notification` (ten-second `lock_timeout`, reset by
+  its last statement); a paste that timed out on its lock is simply run again.
+- **Then, on the managed host, check the API roles reach nothing new:**
+  ```sql
+  SELECT * FROM api_role_reach('anon');
+  SELECT * FROM api_role_reach('authenticated');
+  SELECT * FROM api_role_reach('service_role');
+  ```
+  Each answers no rows (db/157).
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  175, and the API refuses to start on a database without it. The API's
+  `my_children` read now asks `my_terms_due()`, which only db/175 makes.
+- It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, policies made
+  only where missing, and the carry-over into the record only for links not
+  yet on it.
+
+Not pasted yet. Hash to check: `sha256 HASH175`.
+<!-- ── end db/175 ── -->
 
 ### 5 · Cloud Run, the first time
 
