@@ -251,5 +251,16 @@ if (args.has("--verify")) {
   // pass jit_above_cost on a few rows and each one compiled before it ran: the
   // whole file took 35 min here with JIT and 19.5 min without (21 Oct 2026).
   // A SET, not a startup option, so a session pooler passes it through.
-  psql(["-c", "SET jit = off", "-f", join(DB_DIR, "99_rls_verify.sql")], "99_rls_verify.sql");
+  //
+  // Streamed, not collected (Kameel, 25 Nov 2026): db/99 prints a NOTICE as
+  // each section starts and its slowest fifteen at the end, and psql's output
+  // goes straight to ours as it arrives. Collected, as psql() does, a run of
+  // hours printed nothing until it ended, and on CI nothing at all if the job
+  // was cancelled first. A failure still prints psql's own error, then ✗.
+  const t0 = Date.now();
+  const v = spawnSync("psql", [URL, "-v", "ON_ERROR_STOP=1", "-q", "-X", "-c", "SET jit = off", "-f", join(DB_DIR, "99_rls_verify.sql")],
+    { stdio: ["ignore", "inherit", "inherit"] });
+  const took = `${Math.round((Date.now() - t0) / 1000)} s`;
+  if (v.status !== 0) { console.error(`✗ 99_rls_verify.sql (after ${took})`); process.exit(1); }
+  console.log(`✓ 99_rls_verify.sql (${took})`);
 }
