@@ -771,6 +771,10 @@ const MATCH_ROUTES = [
   // a module (modules.mjs).
   [/^\/api\/notifications\/([^/]+)\/read$/,       "POST", receipts.open],
   [/^\/api\/fixtures\/([^/]+)$/,                  "POST", fixtures.amend],
+  // Pro mode (db/170): the fixture's coach or the office asks, before the
+  // toss, for the shot and the field on every ball. match_capture_request()
+  // decides who and when.
+  [/^\/api\/fixtures\/([^/]+)\/capture-profile$/,  "POST", fixtures.captureProfile],
   // A side of the fixture on the public pages (SCRBRD-083). fixture_publish()
   // (db/47) decides who: broadcast.publish at THAT side's school and team.
   // Not module-gated, like the fixture itself: publishing is off by default
