@@ -20,6 +20,8 @@ export const FAMILY_LINE_WORDS = Object.freeze({
   details_agree: "On the family list. The details agree. Linking at once is not switched on for your school.",
   has_account: "On the family list. This pupil already has an account, so nothing was merged.",
   refused: "On the family list. It could not be linked from the list; decide it here.",
+  // db/174 §8b (Kameel, 25 Nov 2026): the office ended a link the list made; the family is back here.
+  link_ended: "On the family list. The office ended the link the list made; link it by hand if it is right.",
 });
 
 /** @param {unknown} code @returns {string | null} */
@@ -44,7 +46,8 @@ export function rowStateWords(r) {
   if (r?.state === "withdrawn") return "Withdrawn";
   if (r?.state === "expired") return "Past its claim-by date";
   if (r?.state === "open") return "Open";
-  if (r?.outcome === "granted") return r?.kind === "pupil" ? "Claimed: his account opened" : "Claimed: linked";
+  if (r?.outcome === "granted" && r?.kind === "pupil") return "Claimed: his account opened";
+  if (r?.outcome === "granted") return r?.live_assignment ? "Claimed: linked" : "Claimed: the link has ended";
   if (r?.outcome === "recognised") return "Claimed: recognised, waiting for a parent's yes";
   return familyLineWords(r?.outcome_reason === "uploader_authority_lapsed" ? "uploader_lapsed"
     : r?.outcome_reason === "not_switched_on" ? "details_agree" : r?.outcome_reason) ?? "Claimed";

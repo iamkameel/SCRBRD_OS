@@ -18,7 +18,9 @@
  *      never for her; the right date after it links nothing
  *   4. with the switch off, a full match links nothing and is marked
  *   5. a departed uploader's row links nobody
- *   6. the date she typed is in no table; End role on the linked row ends it
+ *   6. the date she typed is in no table; End role on the list-made link ends it
+ *      even as his only link, and her request is back in Requests (Kameel,
+ *      25 Nov 2026); a hand-made only link keeps db/08's rule
  *
  *   node tools/migrate.mjs --reset --seed
  *   node tools/smoke-family-register.mjs
@@ -232,16 +234,21 @@ try {
             + (select count(*) from access_log l where l::text like '%' || $1 || '%')
             + (select count(*) from notification n where n::text like '%' || $1 || '%') as n`, [wrongDay]))[0].n;
     ok("the date he typed is in no row", Number(hits) === 0, hits);
-    // db/08's rule stands: a minor's last verified link is not ended (link the other guardian first).
-    const last = await api(`/api/assignments/${mumAssignment}/end`, { method: "POST", token: office, body: { reason: "Listed in error by the office; checked with the family." } });
-    ok("his only verified link is not ended, said in words (db/08's last-link rule)", last.status === 409 && last.body?.error === "last_verified_link" && inWords(last.body?.detail), last.body);
-    const [dad] = await q(`insert into app_user (school_id, email, name, role) values ($1, $2, 'Walk Other Parent', 'guardian') returning id`, [HIL, addr_("other")]);
-    const [ra] = await q(`insert into role_assignment (person_id, role, school_id, valid_from) values ($1, 'guardian', $2, sa_today() - 10) returning id`, [dad.id, HIL]);
-    const [reg] = await q(`select id from app_user where email = 'registrar@example.invalid'`);
-    await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at, consent_state, created_by, valid_from)
-             values ($1, $2, 'parent', 'verified', $3, now(), 'pending', $3, sa_today() - 10)`, [ra.id, A.id, reg.id]);
+    // Kameel, 25 Nov 2026: a link the list made may always be ended, even as his only verified link.
+    const firstId = (await q(`select r.claimed_request as id from family_register r where r.email = $1`, [addr_("mum")]))[0]?.id;
     const end = await api(`/api/assignments/${mumAssignment}/end`, { method: "POST", token: office, body: { reason: "Listed in error by the office; checked with the family." } });
-    ok("with his other parent linked, the office ends the link the list made", end.status === 200 && end.body?.ended === true, end.body);
+    ok("the office ends the link the list made, though it was his only one", end.status === 200 && end.body?.ended === true, end.body);
+    const back = await lineOf(office, firstId);
+    ok("...and her request is back in Requests, with the office's line",
+       back?.state === "pending" && (back?.family_line ?? back?.familyLine) === "link_ended" && back?.decidable === true, back);
+    const hers = await lineOf(await google(`walk-mum-${RUN}`, addr_("mum")), firstId);
+    ok("...a line she never reads", hers && (hers.family_line ?? null) === null, hers);
+    // A link the office made by hand keeps db/08's rule.
+    const relink = await api(`/api/requests/${firstId}/decide`, { method: "POST", token: office, body: { grant: true, playerId: A.id } });
+    ok("the office links her again by hand", relink.status === 200 && !!relink.body?.assignmentId, relink.body);
+    const last = await api(`/api/assignments/${relink.body?.assignmentId}/end`, { method: "POST", token: office, body: { reason: "Ended by hand by the office; checked." } });
+    ok("...and that hand-made only link is not ended, said in words (db/08's last-link rule)",
+       last.status === 409 && last.body?.error === "last_verified_link" && inWords(last.body?.detail), last.body);
     const read = await api(`/api/family-list/${HIL}?state=claimed`, { token: office });
     ok("...and the row has no link to end any more", (read.body?.rows ?? []).find((x) => x.email === addr_("mum"))?.live_assignment === null, read.body?.rows);
     const coachEnd = await api(`/api/family-list/rows/${read.body?.rows?.[0]?.id}/withdraw`, { method: "POST", token: coach });

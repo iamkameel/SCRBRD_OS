@@ -2718,14 +2718,20 @@ the row. A wrong date uses up every row for her address and reads as no row
 does; the office's Requests line says "On the family list. The details did not
 agree." A boy under 18 whose own address is listed is recognised by his claim,
 and nothing opens. A declined `player` request now tells the DSO, as a declined
-pupil claim does. Its proof is db/99 §149; its walk is `smoke-family-register`.
+pupil claim does. A link the list made may always be ended by the office, even
+as the boy's only verified link (Kameel, 25 Nov 2026): `role_assignment_end()`
+is re-emitted from its body in place for that one case, and ending it puts her
+request back in Requests, marked, to be linked by hand. Every other link keeps
+db/08's last-link rule. Its proof is db/99 §149; its walk is
+`smoke-family-register`.
 
 To paste:
 
 - **After db/172.** It needs db/168's pupil claim, db/169's
-  `pupil_signin_after_yes()` and db/92's grant door, and re-emits one function,
-  `pupil_claim_send()`, only over db/168's body or its own: anything else fails
-  the paste loudly, changing nothing. It asserts the grant door's callers as
+  `pupil_signin_after_yes()` and db/92's grant door, and re-emits two
+  functions, each only over the body it expects or its own: `pupil_claim_send()`
+  (db/168's) and `role_assignment_end()` (as db/128 and the files after it
+  left it). Anything else fails the paste loudly, changing nothing. It asserts the grant door's callers as
   they now stand (four, by name), so a function added beside them since fails
   it too.
 - **As one transaction:** the SQL Editor's single run, or `psql -1 -v
@@ -2754,7 +2760,7 @@ To paste:
   reset by its last statement); a paste that timed out on its lock is simply
   run again.
 
-Not pasted yet. Hash to check: `sha256 d5d4e059f49d2dbb5206e72d62c8cfb796dd94a1f396393303b7ccb3ab170a31`.
+Not pasted yet. Hash to check: `sha256 c7aaca4cbf5dfbfd4f335cc376beb571155bfcd08ee09a606eb94a4424134ab3`.
 <!-- ── end db/174 ── -->
 
 ### 5 · Cloud Run, the first time

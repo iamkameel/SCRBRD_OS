@@ -40,7 +40,7 @@ group("B. The office's Requests line: one sentence per code family_register_line
 {
   const body = SQL.slice(SQL.indexOf("CREATE OR REPLACE FUNCTION family_register_line("));
   const codes = [...new Set([...body.slice(0, body.indexOf("$$ LANGUAGE")).matchAll(/THEN '([a-z_]+)'|ELSE '([a-z_]+)'/g)].map((m) => m[1] ?? m[2]))];
-  ok("db/174 answers five codes", codes.length === 5);
+  ok("db/174 answers six codes", codes.length === 6);
   for (const c of codes) ok(`${c} has a line`, typeof familyLineWords(c) === "string");
   ok("the design's sentence, word for word", FAMILY_LINE_WORDS.details_disagree === "On the family list. The details did not agree."
      && FAMILY_LINE_WORDS.uploader_lapsed === "On the family list. The person who listed it can no longer make this link.");

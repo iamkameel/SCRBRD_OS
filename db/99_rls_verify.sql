@@ -18423,6 +18423,52 @@ BEGIN
     PERFORM set_config('app.user_id', '', true);
     PERFORM _assert(_v92_notices(HIL, 'A pupil claim was declined') = n + 2, '§149 (q11): a declined pupil claim told no DSO');
 
+  ELSIF p_case = 'end' THEN
+    -- (end) Kameel, 25 Nov 2026: a link the list made may always be ended by
+    -- the office, even as the boy's only verified link; the family goes back
+    -- to Requests to be linked by hand, with the office's line. A link the
+    -- office made by hand keeps db/08's last-link rule.
+    BOY := _v174_boy(T, 14); U := _v174_google(T || '.mum');
+    SELECT * INTO r FROM _v174_list(REG, BOY, 'v174.' || T || '.mum@example.invalid'); ROW_ := r.row_id;
+    SELECT * INTO r FROM _v174_ask(U, 'guardian', _v174_born(BOY));
+    Q := r.req;
+    PERFORM _assert(r.answer = 'linked', format('§149 (end): the list did not link her: %s', r.answer));
+    PERFORM _as(COACH);
+    SELECT e.reason INTO v FROM role_assignment_end((_v92_assignment(U, 'guardian', HIL)).id, 'Verify 174: linked in error.') e;
+    PERFORM _assert(v = 'not_permitted', format('§149 (end): a coach ended the link: %s', v));
+    PERFORM _as(REG);
+    SELECT coalesce(e.reason, 'ok') INTO v FROM role_assignment_end((_v92_assignment(U, 'guardian', HIL)).id, 'Verify 174: linked in error.') e;
+    PERFORM _assert(v = 'ok', format('§149 (end): the office could not end the only link the list made: %s', v));
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v174_link(U, BOY) = '' AND _v92_held(U, HIL) = '', format('§149 (end): the link stands: %s', _v174_link(U, BOY)));
+    PERFORM _assert(_v174_req(Q) = 'pending:-', format('§149 (end): her request reads %s, not back in the queue', _v174_req(Q)));
+    PERFORM _as(REG);
+    PERFORM _assert(family_register_line(Q) = 'link_ended', format('§149 (end): the office''s line is %s', family_register_line(Q)));
+    SELECT count(*) INTO n FROM family_register_rows(HIL) x WHERE x.id = ROW_ AND x.live_assignment IS NULL AND x.outcome = 'granted';
+    PERFORM _assert(n = 1, '§149 (end): the row still offers a link to end');
+    PERFORM _as(U);
+    PERFORM _assert(family_register_line(Q) IS NULL, '§149 (end): she read the office''s line');
+    -- Linked again by hand, from Requests.
+    PERFORM _as(REG);
+    PERFORM _assert((SELECT d.ok FROM decide_role_request(Q, true, NULL, BOY, NULL) d), '§149 (end): the office could not link her by hand');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _assert(_v174_link(U, BOY) = 'verified|pending|' || REG, format('§149 (end): linked by hand reads %s', _v174_link(U, BOY)));
+    -- That hand-made link is now his only one: the rule holds for it.
+    PERFORM _as(REG);
+    SELECT e.reason INTO v FROM role_assignment_end((_v92_assignment(U, 'guardian', HIL)).id, 'Verify 174: ended by hand.') e;
+    PERFORM _assert(v = 'last_verified_link', format('§149 (end): a hand-made only link was ended: %s', coalesce(v, 'ok')));
+    PERFORM set_config('app.user_id', '', true);
+    -- And a hand-made only link of another family, never on the list.
+    BOY2 := _v174_boy(T || 'hand', 13); U2 := _v174_google(T || '.hand');
+    PERFORM _as(U2);
+    INSERT INTO role_request (person_id, role, school_id) VALUES (U2, 'guardian', HIL) RETURNING id INTO Q;
+    PERFORM _as(REG);
+    PERFORM _assert((SELECT d.ok FROM decide_role_request(Q, true, NULL, BOY2, NULL) d), '§149 (end): the hand grant failed');
+    SELECT e.reason INTO v FROM role_assignment_end((_v92_assignment(U2, 'guardian', HIL)).id, 'Verify 174: ended by hand.') e;
+    PERFORM _assert(v = 'last_verified_link', format('§149 (end): another hand-made only link was ended: %s', coalesce(v, 'ok')));
+    PERFORM _assert(_v174_req(Q) = 'granted:' || REG, format('§149 (end): a refused ending moved the request: %s', _v174_req(Q)));
+    PERFORM set_config('app.user_id', '', true);
+
   ELSIF p_case = 'grants' THEN
     -- (grants) The doors are scrbrd_app's alone; the rest, nobody's.
     FOREACH v IN ARRAY ARRAY['family_register_upload(uuid,jsonb,boolean,uuid[])', 'family_register_claim(uuid,date)',
@@ -18437,7 +18483,8 @@ BEGIN
                              'family_address_accounts(text)', 'family_link_ended_on(uuid,uuid)', 'family_link_live(uuid,uuid)',
                              'family_register_child_words(uuid)', 'family_register_notice(uuid,text,text)',
                              'family_register_try(uuid,uuid,text,date,uuid)', 'family_register_use(uuid,uuid,uuid,uuid,text,text)',
-                             'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()'] LOOP
+                             'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
+                             'family_register_made(uuid)', 'family_register_requeue(uuid)'] LOOP
       PERFORM _assert(_v168_acl(v) = '', format('§149 (grants): %s is granted %s', v, _v168_acl(v)));
     END LOOP;
   ELSE
@@ -51010,6 +51057,9 @@ $m130$;
   --              request is never tried
   --   (q11)      a declined pupil claim tells the DSO: his `player`
   --              request (db/174) and his claim (db/168)
+  --   (end)      Kameel, 25 Nov: a list-made only link ended by the office,
+  --              the request back in Requests with its line; a hand-made
+  --              only link still refused
   --   (grants)   ACLs of every function
   -- Broken by hand (25 Nov 2026), each went red for its own reason:
   --   the uploader's authority not asked        → (departed) red: linked
@@ -51037,6 +51087,7 @@ $m130$;
   PERFORM _v174_case('register');
   PERFORM _v174_case('door');
   PERFORM _v174_case('q11');
+  PERFORM _v174_case('end');
   PERFORM _v174_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/174 (section 149) ─────────────────────────────────────────

@@ -85,9 +85,15 @@
 --     family_register_status(school)   the office's.
 --   + family_register_line(request)   the office's line on a request the
 --       list did not link: details_disagree · uploader_lapsed ·
---       details_agree (switched off) · has_account · refused. Never the
+--       details_agree (switched off) · has_account · refused · link_ended
+--       (a list-made link the office ended, §8b). Never the
 --       date she typed; never to the requester.
 --   + the office's notice for each link (or recognition) the list made.
+--   ~ role_assignment_end()   db/77's, as db/128 left it, re-emitted from the
+--       body in place (md5-guarded): a guardian link the family list made may
+--       be ended while it is a minor's last verified link (Kameel, 25 Nov), and
+--       ending it reopens its request in Requests (§8b). Every other link keeps
+--       db/08's rule.
 --   + trigger role_request_player_declined_notice   Q11 (§9).
 --   ~ the one grant door's caller check (db/92 §8, "one door, two callers"):
 --       asserted here as it now stands, four callers by name.
@@ -170,6 +176,9 @@ CREATE TABLE IF NOT EXISTS family_register (
   claimed_by       uuid REFERENCES app_user(id) ON DELETE SET NULL,
   claimed_identity uuid REFERENCES auth_identity(id) ON DELETE SET NULL,
   claimed_request  uuid REFERENCES role_request(id) ON DELETE SET NULL,
+  -- The assignment the list's grant wrote (outcome granted): what "a link the
+  -- list made" means to End role (§8b), whatever later happens to the request.
+  granted_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL,
   -- granted     the link (or a pupil's `player`) was written
   -- recognised  a pupil under 18's claim was recognised; nothing opened
   -- requested   used up, and the office decides (outcome_reason says why)
@@ -187,6 +196,8 @@ CREATE TABLE IF NOT EXISTS family_register (
   -- A claimed row is the record of what happened, and is kept as it is.
   CONSTRAINT family_register_redacted_unclaimed CHECK (redacted_at IS NULL OR claimed_at IS NULL)
 );
+-- A paste of an earlier cut of this file made the table without it.
+ALTER TABLE family_register ADD COLUMN IF NOT EXISTS granted_assignment uuid REFERENCES role_assignment(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS family_register_one_open
   ON family_register (school_id, player_id, email, kind)
   WHERE claimed_at IS NULL AND withdrawn_at IS NULL AND redacted_at IS NULL;
@@ -594,6 +605,7 @@ DECLARE
   v_kind  text;
   v_note  text;
   v_ok    boolean;
+  v_asg   uuid;
   v_born  date;
   v_by    text;
   v_who   text;
@@ -624,7 +636,7 @@ BEGIN
   IF t.why IS NULL THEN
     v_note := format('from the family list, row %s, uploaded %s', t.row_id, to_char(sa_date(t.uploaded_at), 'YYYY-MM-DD'));
     BEGIN
-      SELECT d.ok INTO v_ok FROM role_request_grant_as(p_request, t.uploaded_by, v_note, t.player_id, NULL) d;
+      SELECT d.ok, d.assignment_id INTO v_ok, v_asg FROM role_request_grant_as(p_request, t.uploaded_by, v_note, t.player_id, NULL) d;
       IF v_ok IS NOT TRUE THEN t.why := 'refused'; END IF;
     EXCEPTION WHEN check_violation OR unique_violation OR foreign_key_violation THEN
       t.why := 'refused';
@@ -638,6 +650,7 @@ BEGIN
   END IF;
 
   PERFORM family_register_use(t.row_id, v_me, t.identity_id, p_request, 'granted', NULL);
+  UPDATE family_register SET granted_assignment = v_asg WHERE id = t.row_id;
   PERFORM family_register_log('family_register.claim', r.school_id, ARRAY[t.row_id]);
   -- The office is told, with End link beside the row on the family list.
   SELECT u.name INTO v_by FROM app_user u WHERE u.id = t.uploaded_by;
@@ -787,8 +800,7 @@ RETURNS TABLE (id uuid, player_id uuid, player_name text, team_code text, email 
                live_assignment uuid, withdrawn_at timestamptz, withdrawn_by_name text, redacted_at timestamptz) AS $$
   SELECT r.id, r.player_id, p.full_name, p.team_code, r.email, r.kind, r.relationship, r.valid_until, s.state,
          ub.name, r.uploaded_at, r.upload_id, r.warned_ended_on, r.claimed_at, cb.name, r.outcome, r.outcome_reason,
-         (SELECT q.assignment_id FROM role_request q JOIN role_assignment a ON a.id = q.assignment_id
-           WHERE q.id = r.claimed_request AND r.outcome = 'granted' AND a.active),
+         (SELECT a.id FROM role_assignment a WHERE a.id = r.granted_assignment AND r.outcome = 'granted' AND a.active),
          r.withdrawn_at, wb.name, r.redacted_at
     FROM family_register r
     CROSS JOIN LATERAL (SELECT CASE WHEN r.withdrawn_at IS NOT NULL THEN 'withdrawn'
@@ -847,24 +859,94 @@ CREATE OR REPLACE FUNCTION family_register_status(p_school uuid) RETURNS TABLE (
    WHERE app_user_id() IS NOT NULL AND NOT app_pad_scoped() AND pupil_claim_office(p_school)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
--- The office's line on a request the list did not link (design §5.3): why,
+-- The office's line on a request the list did not link, or whose list-made
+-- link the office ended (§8b) (design §5.3): why,
 -- as a code the screen words. Never the date she typed (it is nowhere);
 -- never to the person who asked, nor to anybody but the office of the
 -- request's school; NULL for a request the list did not touch.
 CREATE OR REPLACE FUNCTION family_register_line(p_request uuid) RETURNS text AS $$
-  SELECT CASE r.outcome_reason
-           WHEN 'details_disagree' THEN 'details_disagree'
-           WHEN 'uploader_authority_lapsed' THEN 'uploader_lapsed'
-           WHEN 'not_switched_on' THEN 'details_agree'
-           WHEN 'has_account' THEN 'has_account'
-           ELSE 'refused' END
+  SELECT CASE WHEN r.outcome = 'granted' THEN 'link_ended'
+              WHEN r.outcome_reason = 'details_disagree' THEN 'details_disagree'
+              WHEN r.outcome_reason = 'uploader_authority_lapsed' THEN 'uploader_lapsed'
+              WHEN r.outcome_reason = 'not_switched_on' THEN 'details_agree'
+              WHEN r.outcome_reason = 'has_account' THEN 'has_account'
+              ELSE 'refused' END
     FROM family_register r JOIN role_request q ON q.id = r.claimed_request
-   WHERE r.claimed_request = p_request AND r.outcome = 'requested'
+   WHERE r.claimed_request = p_request
+     -- A request the list did not link; or one it linked whose link the office ended (§8b), back in the queue.
+     AND (r.outcome = 'requested' OR (r.outcome = 'granted' AND r.kind = 'guardian' AND q.state = 'pending'))
      AND app_user_id() IS NOT NULL AND q.person_id <> app_user_id()
      AND NOT app_pad_scoped() AND pupil_claim_office(q.school_id)
    ORDER BY (r.outcome_reason = 'details_disagree'), r.claimed_at DESC, r.id
    LIMIT 1
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+
+-- ── 8b · End role on a link the list made (Kameel, 25 Nov 2026) ────────
+-- "Yes: a link the list made may always be ended by the office; the family
+-- goes back to the office's queue to be linked by hand." db/08's last-link
+-- rule (role_assignment_end(), db/77 as db/128 left it) keeps every other
+-- link: only a guardian assignment the family list itself granted may be
+-- ended while it is a minor's last verified link. Ending it reopens the
+-- request it was granted on, pending and with no child chosen, so it waits
+-- in Requests for a person to decide; the office's line says why
+-- (family_register_line() 'link_ended'). Nothing of the date she typed is
+-- anywhere to bring back.
+
+-- Was this guardian assignment granted by the family list?
+CREATE OR REPLACE FUNCTION family_register_made(p_assignment uuid) RETURNS boolean AS $$
+  SELECT p_assignment IS NOT NULL AND EXISTS (
+    SELECT 1 FROM family_register r
+     WHERE r.outcome = 'granted' AND r.kind = 'guardian' AND r.granted_assignment = p_assignment)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- Internal, called by role_assignment_end() after the office ended a link
+-- the list made: the request it was granted on goes back to the queue. A
+-- request of hers already waiting there is left as it is.
+CREATE OR REPLACE FUNCTION family_register_requeue(p_assignment uuid) RETURNS void AS $$
+BEGIN
+  IF NOT family_register_made(p_assignment) THEN RETURN; END IF;
+  BEGIN
+    UPDATE role_request q
+       SET state = 'pending', decided_by = NULL, decided_at = NULL, decided_note = NULL,
+           assignment_id = NULL, player_id = NULL
+     WHERE q.id IN (SELECT r.claimed_request FROM family_register r WHERE r.granted_assignment = p_assignment)
+       AND q.assignment_id = p_assignment AND q.role = 'guardian' AND q.state = 'granted';
+  EXCEPTION WHEN unique_violation THEN
+    NULL;
+  END;
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- role_assignment_end(), re-emitted from the body in place: its last-link
+-- refusal asks family_register_made(), and a guardian ending requeues. Only
+-- over db/128's body (its md5) or this file's own; checked in §11 to differ
+-- by exactly these two edits.
+DO $end$
+DECLARE
+  v_fn  regprocedure := 'role_assignment_end(uuid,text)'::regprocedure;
+  v_src text := (SELECT prosrc FROM pg_proc WHERE oid = 'role_assignment_end(uuid,text)'::regprocedure);
+  v_def text;
+  v_a   text := '    IF v_player IS NOT NULL THEN' || chr(10) || '      RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
+  v_a2  text := '    -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
+             || '    IF v_player IS NOT NULL AND NOT family_register_made(a.id) THEN' || chr(10)
+             || '      RETURN QUERY SELECT false, ''last_verified_link''; RETURN;';
+  v_b   text := '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
+  v_b2  text := '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
+             || '  IF a.role = ''guardian'' THEN PERFORM family_register_requeue(a.id); END IF;' || chr(10)
+             || '  RETURN QUERY SELECT true, NULL::text;' || chr(10) || 'END';
+BEGIN
+  IF md5(v_src) = 'd4e6dd793dc2ba3f136f7c543e671f40' THEN RETURN; END IF;   -- a second paste
+  IF md5(v_src) IS DISTINCT FROM '3ea136016eb3607d6c6e07c66c8fefba' THEN
+    RAISE EXCEPTION 'db/174: role_assignment_end() is neither db/128''s nor this file''s (md5 %); factor the version now in place and move its hash', md5(v_src);
+  END IF;
+  IF (length(v_src) - length(replace(v_src, v_a, ''))) / length(v_a) <> 1
+     OR (length(v_src) - length(replace(v_src, v_b, ''))) / length(v_b) <> 1 THEN
+    RAISE EXCEPTION 'db/174: role_assignment_end() does not hold its last-link refusal and its last RETURN once each';
+  END IF;
+  v_def := pg_get_functiondef(v_fn);
+  v_def := replace(replace(v_def, v_a, v_a2), v_b, v_b2);
+  EXECUTE v_def;
+END $end$;
 
 
 -- ── 9 · Q11: a declined pupil claim tells the DSO ──────────────────
@@ -906,7 +988,8 @@ DECLARE
                              'family_register_child_words(uuid)', 'family_register_notice(uuid,text,text)',
                              'family_register_try(uuid,uuid,text,date,uuid)',
                              'family_register_use(uuid,uuid,uuid,uuid,text,text)',
-                             'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()'];
+                             'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
+                             'family_register_made(uuid)', 'family_register_requeue(uuid)'];
 BEGIN
   FOREACH f IN ARRAY v_doors LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure);
@@ -964,6 +1047,17 @@ BEGIN
   IF position(v_block IN v_new) = 0 OR md5(replace(v_new, v_block, '')) IS DISTINCT FROM '026263290b4c3ebba66bbfe172c2a1d3' THEN
     RAISE EXCEPTION 'db/174: pupil_claim_send() is not db/168''s with the family list''s one block';
   END IF;
+  -- role_assignment_end(): db/128's body with §8b's two edits, and nothing else.
+  v_new := (SELECT prosrc FROM pg_proc WHERE oid = 'role_assignment_end(uuid,text)'::regprocedure);
+  IF md5(replace(replace(v_new,
+        '    -- db/174: a link the family list made may always be ended (Kameel, 25 Nov 2026).' || chr(10)
+        || '    IF v_player IS NOT NULL AND NOT family_register_made(a.id) THEN',
+        '    IF v_player IS NOT NULL THEN'),
+        '  -- db/174: the family goes back to Requests, to be linked by hand.' || chr(10)
+        || '  IF a.role = ''guardian'' THEN PERFORM family_register_requeue(a.id); END IF;' || chr(10), ''))
+     IS DISTINCT FROM '3ea136016eb3607d6c6e07c66c8fefba' THEN
+    RAISE EXCEPTION 'db/174: role_assignment_end() is not db/128''s with §8b''s two edits';
+  END IF;
   -- ONE DOOR (db/92 §8, "one door, two callers", as it stands now): the
   -- office's decision, the staff register, the pupil's yes (db/169) and
   -- the family list. Nothing else names it.
@@ -996,7 +1090,8 @@ BEGIN
                                'family_register_child_words(uuid)', 'family_register_notice(uuid,text,text)',
                                'family_register_try(uuid,uuid,text,date,uuid)',
                                'family_register_use(uuid,uuid,uuid,uuid,text,text)',
-                               'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()']) LOOP
+                               'family_register_claim_pupil(uuid,uuid,date)', 'role_request_player_declined_notice()',
+                               'family_register_made(uuid)', 'family_register_requeue(uuid)']) LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = f::regprocedure
                       AND 'search_path=pg_catalog, public, pg_temp' = ANY (coalesce(proconfig, '{}'))) THEN
       RAISE EXCEPTION 'db/174: % does not pin its search_path', f;
