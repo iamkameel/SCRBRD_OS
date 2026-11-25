@@ -823,6 +823,9 @@ const PLAYER_ROUTES = [
   // Correcting one is the office's, and every change is recorded (db/172).
   [/^\/api\/players\/([^/]+)\/date-of-birth\/correction$/, "POST", dobCapture.correct],
   [/^\/api\/players\/([^/]+)\/date-of-birth\/changes$/,    "GET",  dobCapture.changes],
+  // "Coming of age" and the office's "Confirm his date" (db/173).
+  [/^\/api\/players\/([^/]+)\/date-of-birth\/confirm$/,    "POST", dobCapture.confirm],
+  [/^\/api\/schools\/([0-9a-f-]{36})\/coming-of-age$/,       "GET",  dobCapture.comingOfAge],
   // SCRBRD-012. One role at one school for an hour, on the record — see
   // support-access-api.mjs. In this table rather than the fixed one so a
   // retried "begin" with an Idempotency-Key answers from its receipt.
@@ -1545,6 +1548,8 @@ const NOT_PLATFORM_LOGGED = new Set([
   // A boy's date-of-birth changes (db/172): the office of his school only,
   // never under a platform-wide key (player_born_office()), so nothing to log.
   dobCapture.changes,
+  // "Coming of age" (db/173): the same office, the same refusal of the key.
+  dobCapture.comingOfAge,
 ]);
 // Decided, not forgotten: a GET route in neither stops the server at boot,
 // so the first walk that starts it says which. Neither set may hold

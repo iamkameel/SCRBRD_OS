@@ -33,6 +33,8 @@ import { WaysToSignIn } from "./signins.jsx";
 import { SignOutEverywhere } from "./signoutall.jsx";
 import { ClaimsPanel } from "./claims.jsx";
 import { PupilClaimsPanel } from "./pupilClaims.jsx";
+import { ComingOfAgePanel } from "./comingofage.jsx";
+import { mayCorrectBirthday } from "./playeredit.jsx";
 // SCRBRD-083 C4 (db/47): a school's names-off switch per age group.
 import { NamesOffPanel } from "./publicname.jsx";
 // SCRBRD-142 phase 2: the school lists its published matches on the home page.
@@ -354,6 +356,8 @@ function PeoplePart({ role, users: usersFromApp, setUsers: setUsersFromApp, onDi
         )}
         {/* db/168: a pupil under 18 who said "I am a pupil here". The office and the principal answer it. */}
         {signedIn() && holdsCapability(role, "guardian.link.manage") && <PupilClaimsPanel players={PLAYERS}/>}
+        {/* db/173: "Coming of age", the office's: a date nobody at the office checked, of a boy 18 within 60 days. */}
+        {signedIn() && mayCorrectBirthday(role) && <ComingOfAgePanel/>}
         <PeopleTab users={users} players={PLAYERS} staff={STAFF} coaches={COACHES}
                    noAccount={noAccount} noDob={noDob} linkEnded={linkEnded}
                    canEdit={canEdit} pupilsHere={pupilsHere} coding={coding}

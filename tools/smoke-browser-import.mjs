@@ -305,6 +305,19 @@ try {
     ok("...and the boy goes in on it", (await boysNamed()).length === 4, (await boysNamed()).map((r) => r.full_name).join());
   }
 
+  // db/173: "Coming of age" on the office's same page: the seed's boys whose
+  // date nobody at the office checked, each with "Confirm his date".
+  await toImport(off.page);
+  await tid(off.page, "coming-of-age-row").first().waitFor({ timeout: 10000 }).catch(() => {});
+  const coaRows = await tid(off.page, "coming-of-age-row").count();
+  ok("the office's Coming of age lists the seed's unchecked dates", coaRows >= 1, String(coaRows));
+  const coaFloors = await floors(off.page, '[data-testid="coming-of-age"]');
+  ok("...on the 12px and 44px floors at 1366", coaFloors.small.length === 0 && coaFloors.taps.length === 0, coaFloors.small.concat(coaFloors.taps).join(" | "));
+  await tid(off.page, "coming-of-age-confirm").first().click();
+  await tid(off.page, "coming-of-age-said").waitFor({ timeout: 8000 }).catch(() => {});
+  ok("...and Confirm his date takes him off it", /^Confirmed /.test(await tid(off.page, "coming-of-age-said").innerText().catch(() => ""))
+     && (await tid(off.page, "coming-of-age-row").count()) === coaRows - 1);
+
   // The floors with the result on show, then on a phone.
   const okFloors = await floors(off.page, '[data-testid="import-panel"]');
   ok("the clean panel is on the 12px and 44px floors", okFloors.small.length === 0 && okFloors.taps.length === 0, okFloors.small.concat(okFloors.taps).join(" | "));
@@ -313,6 +326,8 @@ try {
   ok("at 390 wide there is no sideways scroll", await noSideways(off.page));
   const phone = await floors(off.page, '[data-testid="import-panel"]');
   ok("...and the panel is on the floors", phone.small.length === 0 && phone.taps.length === 0, phone.small.concat(phone.taps).join(" | "));
+  const coaPhone = await floors(off.page, '[data-testid="coming-of-age"]');
+  ok("...and Coming of age at 390", coaPhone.small.length === 0 && coaPhone.taps.length === 0, coaPhone.small.concat(coaPhone.taps).join(" | "));
   ok("no console errors for the office", off.errors.length === 0, off.errors.join(" | "));
   await off.ctx.close();
 

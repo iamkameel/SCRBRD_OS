@@ -596,17 +596,41 @@ try {
        odry.body?.adults?.count === 1 && odry.body?.needsTick === true && (odry.body?.leftOut ?? []).length === 0
          && (odry.body?.errors ?? []).length === 0, JSON.stringify(odry.body));
     const untick = await importCsv("players", office, { csv: officeFile, schoolId: HIL, commit: true });
-    const wrong = await importCsv("players", office, { csv: officeFile, schoolId: HIL, commit: true, adultsChecked: 2 });
+    // The tick is the hash of the lines it was shown (RT N3): another file's commits nothing.
+    const other = await importCsv("players", office, { csv: officeFile.replace("Office Adultboy", "Office Otherboy"), schoolId: HIL });
+    const wrong = await importCsv("players", office, { csv: officeFile, schoolId: HIL, commit: true, adultsChecked: other.body?.adults?.hash });
     ok("...and without it, or with another count, nothing is written",
        untick.body?.committed === false && wrong.body?.committed === false
          && (await named("Office Adultboy")) === 0 && (await named("Office Minorboy")) === 0, JSON.stringify([untick.body, wrong.body]));
-    const ticked = await importCsv("players", office, { csv: officeFile, schoolId: HIL, commit: true, adultsChecked: 1 });
+    const ticked = await importCsv("players", office, { csv: officeFile, schoolId: HIL, commit: true, adultsChecked: odry.body?.adults?.hash });
     ok("...and with it, the file goes in", ticked.body?.committed === true && ticked.body?.inserted === 2
        && ticked.body?.adults?.checked === true, JSON.stringify(ticked.body));
     const oadult = await rowsOf("Office Adultboy");
     ok("...recorded as the office's import, and off Coming of age",
        JSON.stringify(oadult.map((r) => [r.how, r.by_office])) === JSON.stringify([["import", true]])
          && (await q(`select player_born_confirmed($1) c`, [oadult[0]?.id]))[0]?.c === true, JSON.stringify(oadult));
+
+    // Kameel, 26 Nov 2026 (Q1): a line making him 18 within 60 days is listed
+    // for the tick too. Without it (the office's choice) the date goes in
+    // unconfirmed and is on "Coming of age"; under it, it is the office's.
+    const near = (await q(`select to_char(sa_today() + 30 - interval '18 years', 'YYYY-MM-DD') d`))[0].d;
+    const nearFile = `full_name,team_code,born\nNear Untickboy,U19A,${near}\n`;
+    const ndry = await importCsv("players", office, { csv: nearFile, schoolId: HIL });
+    ok("a line making him 18 within 60 days is listed for the tick, and not required",
+       ndry.body?.adults?.count === 1 && ndry.body?.adults?.lines?.[0]?.now === false && ndry.body?.needsTick === false, JSON.stringify(ndry.body?.adults));
+    const nplain = await importCsv("players", office, { csv: nearFile, schoolId: HIL, commit: true });
+    const nu = await rowsOf("Near Untickboy");
+    ok("...without the tick, it goes in unconfirmed, and is on Coming of age",
+       nplain.body?.committed === true && nu.length === 1 && nu[0].by_office === false
+         && ((await api(`/api/schools/${HIL}/coming-of-age`, { token: office })).body?.rows ?? []).some((r) => r.playerId === nu[0].id),
+       JSON.stringify(nu));
+    const tickFile = nearFile.replace("Near Untickboy", "Near Tickboy");
+    const tdry = await importCsv("players", office, { csv: tickFile, schoolId: HIL });
+    const tcommit = await importCsv("players", office, { csv: tickFile, schoolId: HIL, commit: true, adultsChecked: tdry.body?.adults?.hash });
+    const nt = await rowsOf("Near Tickboy");
+    ok("...under the tick, it is the office's, and off Coming of age",
+       tcommit.body?.committed === true && nt[0]?.by_office === true && (await q(`select player_born_confirmed($1) c`, [nt[0]?.id]))[0]?.c === true,
+       JSON.stringify([tcommit.body, nt]));
 
     // A coach may not import at all.
     const byCoach = await importCsv("players", coach, { csv: file, schoolId: HIL, commit: true });

@@ -2747,14 +2747,22 @@ To paste, in this order:
   (it fails closed: nothing is written).
 - **Paste first, then load Westville** (RT D4): the carry-over's guard and the
   first-date rule must both be in before the first real roster arrives.
-- **After the load**, the office reads `born_unconfirmed(<school id>)` (Coming
-  of age) and confirms each date against the register.
+- **After the load**, the office opens School, People: "Coming of age" lists
+  each boy 18, or 18 within 60 days, on a date nobody at the office checked
+  (`GET /api/schools/:id/coming-of-age`), and "Confirm his date" confirms one
+  (`POST /api/players/:id/date-of-birth/confirm`). The owner in the SQL Editor
+  reads nothing there (no one is signed in). The office's own import counts as
+  checked only for the lines it ticked (Kameel, 26 Nov 2026, Q1).
+- **Who runs the load:** the school's office, through Import. A platform
+  login is not the office of the school: its lines that make a boy 18 are left
+  out. The owner's hand load is recorded as SCRBRD's, and every such boy is on
+  Coming of age until the office confirms him.
 - It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, `DROP ... IF
   EXISTS` before each constraint and trigger. It takes a short lock on `player`
   and `player_born_change` (ten-second `lock_timeout`, reset by its last
   statement); a paste that timed out on its lock is simply run again.
 
-Not pasted yet. Hash to check: `sha256 b9c64f6337eddad5a3e9f1ad988d04b10aedb58fe1ae1b77ead655e3ad2993bf`.
+Not pasted yet. Hash to check: `sha256 f91293254d4b1af02b95648a7955d12316d6f24cbedf7b5c3848994ecce376d2`.
 <!-- ── end db/173 ── -->
 
 ### 5 · Cloud Run, the first time

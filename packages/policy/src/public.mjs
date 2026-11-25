@@ -364,6 +364,9 @@ export const NEVER_PUBLIC = Object.freeze({
   // after, who changed it and how. The office's alone (player_born_changes());
   // never on a page; the whole table.
   player_born_change: "N1",
+  // db/173: who wrote a boy's ID number and when, and whether the office
+  // (never the number). The trigger's alone; never public as a whole.
+  player_id_number_change: "N1",
 });
 
 /**
