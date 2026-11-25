@@ -231,8 +231,8 @@ try {
     ok(`...and no value in it is a clinical word`, home.every((r) => Object.values(r).every((v) => !words.has(String(v)))));
   }
   ok("a pupil who is not his reads none of it (K3)", (await rows("injury_status", pupil)).length === 0);
-  ok("another side's coach reads none of R Pillay's",
-     !(await rows("injury_status", coach2)).some((r) => r.player_id === (await rows("injuries", parent)).find((i) => i.id === HAMSTRING)?.player_id));
+  const pillayId = (await rows("injuries", parent)).find((i) => i.id === HAMSTRING)?.player_id;
+  ok("another side's coach reads none of R Pillay's", Boolean(pillayId) && !(await rows("injury_status", coach2)).some((r) => r.player_id === pillayId));
 
   // ── 5. The worklist ────────────────────────────────────────────
   group("5. The worklist is the physio's");
