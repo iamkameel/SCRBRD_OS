@@ -7,6 +7,7 @@
  * holds the ones that need a database, signed in as the seed's own people:
  *
  *   the parent     Home with her action list, Matches, Notices, Family
+ *   a parent whose terms are not agreed on her own link: the card on Home, Matches and Family, and the terms opened from it
  *   the pupil      Home, Matches, Passport, Me
  *   the coach      Dashboard, the Match Centre list, a live fixture's six tabs, and the Coach tab
  *   the scorer     his home, with the Resume card and the fixtures
@@ -147,6 +148,8 @@ try {
   const mnav = (page, key) => page.locator(`[data-testid="mnav-${key}"]`).first().click({ timeout: 5000 }).then(() => page.waitForTimeout(1200)).catch(() => false);
   const PERSONAS = {
     parent: { email: "parent@example.invalid", screens: [["home", null], ["matches", "fixtures"], ["notices", "notices"], ["family", "family"]] },
+    // N Cele's link is verified and the terms are not agreed (db/98): his section is the card, everywhere.
+    gated: { email: "parent.cele@example.invalid", screens: [["home", null], ["matches", "fixtures"], ["family", "family"]] },
     pupil: { email: "pillay@example.invalid", screens: [["home", null], ["matches", "mymatches"], ["passport", "passport"], ["me", "me"]] },
     scorer: { email: "scorer@example.invalid", screens: [["home", null]] },
     coach: { email: "coach@example.invalid", screens: [["dashboard", null], ["matches", "matches"]] },
@@ -167,6 +170,15 @@ try {
         for (const [screen, key] of p.screens) {
           if (key) await mnav(page, key);
           await check(page, `${label} ${who}`, screen);
+        }
+        if (who === "gated") {
+          // The card on each screen, then the whole text opened from it on Home. Nothing is agreed: the seed's state stays.
+          await mnav(page, "children");
+          await page.locator('[data-testid="family-gate-read"]').click({ timeout: 5000 }).catch(() => {});
+          await page.locator('[data-testid="family-terms-text"]').waitFor({ timeout: 5000 }).catch(() => {});
+          ok(`${label} gated: the card opens the terms in place`, await page.locator('[data-testid="family-terms-text"]').count() === 1);
+          await check(page, `${label} gated`, "terms");
+          await page.locator('[data-testid="family-terms-close"]').click({ timeout: 4000 }).catch(() => {});
         }
         if (who === "coach") {
           // The Match Centre's live fixture: every tab, and the Coach tab.

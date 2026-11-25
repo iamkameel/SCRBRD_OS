@@ -49,6 +49,7 @@ import { signupApi } from "./a11y-signup-mock.mjs";
 import { importApi } from "./a11y-import-mock.mjs";
 import { listingApi, MATCH as LISTING_MATCH } from "./a11y-listing-mock.mjs";
 import { selectionApi, OPEN as SEL_OPEN, SHUT as SEL_SHUT, UNION as SEL_UNION } from "./a11y-selection-mock.mjs";
+import { termsApi, CHILD as TERMS_CHILD } from "./a11y-terms-mock.mjs";
 import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { narrowAudit } from "./a11y-narrow.mjs";
 import { shellHtml } from "../services/api/public/public-api.mjs";
@@ -186,7 +187,7 @@ const TYPE_FLOOR_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0, termsgate: 0, termsfamily: 0, termssheet: 0, termsagreed: 0, termsgatem: 0, termsfamilym: 0, termssheetm: 0, termsagreedm: 0,
   // GA-I13: the scorer's home, on a phone, measured inside its own region — a Resume card with a count, the
   // fixtures with their states, the lines before the toss. Born at 0, and kept there.
   scorerhome: 0,
@@ -251,7 +252,7 @@ const TAP_FLOOR_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0, termsgate: 0, termsfamily: 0, termssheet: 0, termsagreed: 0, termsgatem: 0, termsfamilym: 0, termssheetm: 0, termsagreedm: 0,
 };
 
 /**
@@ -297,7 +298,7 @@ const CONTRAST_CEILING = {
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0, termsgate: 0, termsfamily: 0, termssheet: 0, termsagreed: 0, termsgatem: 0, termsfamilym: 0, termssheetm: 0, termsagreedm: 0,
               scorerhome: 0 },
   daylight: { landing: 0, login: 0, dashboard: 0, matchcentre: 0, matchview: 0, pad: 0, padOver: 0, analytics: 0, career: 0,
               captainhome: 0, captainfixture: 0, captainfield: 0, captainbat: 0, captainafter: 0,
@@ -308,7 +309,7 @@ const CONTRAST_CEILING = {
               practicestart: 0, practiceresume: 0, practicematch: 0, practiceteams: 0, practicesquad: 0, practicetoss: 0,
               practiceopeners: 0, practicebowler: 0, practicepad: 0, practiceweather: 0, practicelist: 0, practiceconfirm: 0,
               importidle: 0, importproblems: 0, importclean: 0, staffcards: 0, staffdetail: 0,
-              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
+              listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0, termsgate: 0, termsfamily: 0, termssheet: 0, termsagreed: 0, termsgatem: 0, termsfamilym: 0, termssheetm: 0, termsagreedm: 0,
               scorerhome: 0 },
 };
 
@@ -373,7 +374,7 @@ const EMOJI_CEILING = {
   // (the director of sport, against tools/a11y-listing-mock.mjs), at 1280 wide and, with an m, at 390: the switch
   // off, on and a reader's (disabled, with its reason), the line, the form, the form with a refusal showing.
   // Measured inside their own regions. Born at 0, and kept there.
-  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0,
+  listing: 0, listingon: 0, listingro: 0, listingline: 0, addground: 0, addgrounderr: 0, listingm: 0, listingonm: 0, listingrom: 0, listinglinem: 0, addgroundm: 0, addgrounderrm: 0, selection: 0, selectionrows: 0, selectionempty: 0, selectionpassport: 0, selectionclosed: 0, selectionm: 0, selectionrowsm: 0, selectionemptym: 0, selectionpassportm: 0, selectionclosedm: 0, trend: 0, termsgate: 0, termsfamily: 0, termssheet: 0, termsagreed: 0, termsgatem: 0, termsfamilym: 0, termssheetm: 0, termsagreedm: 0,
   // GA-I13: the scorer's home.
   scorerhome: 0,
 };
@@ -1245,6 +1246,96 @@ async function selectionWalk(theme, width) {
     ok("no page errors on Selection", errors.length === 0, errors.join(" | "));
   } catch (e) {
     ok(`the ${T_} ${width} Selection walk threw: ${e.message?.slice(0, 160)}`, false);
+  } finally {
+    await ctx.close();
+  }
+}
+
+/**
+ * THE PARENT'S TERMS CARD (GA-I20 D7): a parent whose own verified link has
+ * not agreed the school's terms, against tools/a11y-terms-mock.mjs — no
+ * server, no database — at 1366 wide and at 390 (screens named with an m).
+ * The card in place of her child's section on Home and on Family, the whole
+ * text opened from it (focus moved into the text, "I agree" waiting for the
+ * end, "Connect to agree" with no signal), and the record's words on Home once
+ * she has agreed. Measured inside their own regions, every control named. What
+ * she may read before and after is tools/smoke-browser-read.mjs's, against the
+ * real stack.
+ */
+async function termsWalk(theme, width) {
+  const scheme = theme === "daylight" ? "light" : "dark";
+  const T_ = theme === "daylight" ? "Daylight" : "Floodlit";
+  const m = width < 500 ? "m" : "";
+  const ctx = await browser.newContext({ colorScheme: scheme, viewport: { width, height: width < 500 ? 844 : 900 }, ...(m ? { isMobile: true, hasTouch: true } : {}) });
+  await offline(ctx);
+  const { handle, state } = termsApi();
+  await ctx.route((url) => url.hostname === "localhost" && url.pathname.startsWith("/api/"), (route) => {
+    const u = new URL(route.request().url());
+    const r = handle(route.request().method(), u.pathname, u.searchParams, route.request().method() === "POST" ? route.request().postDataJSON() : undefined);
+    return route.fulfill({ status: r.status, contentType: "application/json", body: JSON.stringify(r.body) });
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  await page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://localhost:${PORT}";`);
+  const tid = (id) => page.locator(`[data-testid="${id}"]`);
+  const goTo = async (nav) => {
+    const bar = (await destLocator(page, nav));
+    if (await bar.count()) await bar.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+  };
+  const check = async (screen, region) => {
+    await page.waitForTimeout(400);
+    ok(`${T_} ${width} ${screen}: the region is on the page`, await page.locator(region).count() === 1);
+    await measure(page, theme, `${screen}${m}`, region);
+    const inRegion = await page.evaluate((region) => [...document.querySelectorAll(`${region} button, ${region} a[href], ${region} input, ${region} select`)]
+      .filter((el) => !(el.getAttribute("aria-label") || el.textContent || (el.id && document.querySelector(`label[for="${el.id}"]`)?.textContent) || "").trim()).length, region);
+    ok(`${T_} ${width} ${screen}: every control in it has a name`, inRegion === 0);
+    ok(`${T_} ${width} ${screen}: no sideways scroll`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  };
+  const card = `[data-testid="family-gate-${TERMS_CHILD}"]`;
+  try {
+    group(`${T_} ${width} — the parent's terms card, the sheet and the record's words`);
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
+    const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
+    if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
+    await page.locator("#login-email").fill("parent.verify@example.invalid");
+    await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector(card, { timeout: 8000 }).catch(() => {});
+    ok("the parent signs in, to her own app, and Home is the card", await tid("persona-bar").count() === 1 && await page.locator(card).count() === 1);
+    ok("...with nothing else of his: no section, no list", await tid("family-home-body").count() === 0 && await tid("todo-card").count() === 0);
+    ok("...and the DSO card under it", await tid("dso-card").count() === 1);
+    await check("termsgate", card);
+
+    await goTo("family");
+    await page.waitForSelector(card, { timeout: 6000 }).catch(() => {});
+    ok("Family draws the same card in his place", await page.locator(card).count() === 1 && await page.locator(`[data-testid="family-child-${TERMS_CHILD}"]`).count() === 0);
+    await check("termsfamily", card);
+
+    await goTo("children");
+    await page.waitForSelector(card, { timeout: 6000 }).catch(() => {});
+    await tid("family-gate-read").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="family-terms-text"]', { timeout: 6000 }).catch(() => {});
+    ok("'Read the terms' opens the whole text in place, and focus goes into it",
+       await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "family-terms-text");
+    ok("...'I agree' waits for the end", await tid("family-terms-agree").isDisabled());
+    await check("termssheet", card);
+    await tid("family-terms-text").evaluate((el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event("scroll")); });
+    await page.waitForFunction(() => !document.querySelector('[data-testid="family-terms-agree"]')?.hasAttribute("disabled"), null, { timeout: 4000 }).catch(() => {});
+    await ctx.setOffline(true);
+    await page.waitForFunction(() => /Connect to agree/.test(document.querySelector('[data-testid="family-terms-agree"]')?.textContent ?? ""), null, { timeout: 4000 }).catch(() => {});
+    ok("...with no signal it says 'Connect to agree' and cannot be pressed", (await tid("family-terms-agree").innerText().catch(() => "")).trim() === "Connect to agree"
+       && await tid("family-terms-agree").isDisabled());
+    await ctx.setOffline(false);
+    await page.waitForFunction(() => /I agree/.test(document.querySelector('[data-testid="family-terms-agree"]')?.textContent ?? ""), null, { timeout: 4000 }).catch(() => {});
+    await tid("family-terms-agree").click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="family-terms-agreed"]', { timeout: 6000 }).catch(() => {});
+    ok("agreed: his section opens under the record's words", state.consent === "granted" && await tid("family-home-body").count() === 1
+       && /^Agreed · \d{1,2} [A-Z][a-z]{2} \d{4}, \d\d:\d\d · popia-2026-01$/.test((await tid("family-terms-agreed").innerText().catch(() => "")).trim()));
+    await check("termsagreed", '[data-testid="family-terms-agreed"]');
+    ok("no page errors on the terms screens", errors.length === 0, errors.join(" | "));
+  } catch (e) {
+    ok(`the ${T_} ${width} terms walk threw: ${e.message?.slice(0, 160)}`, false);
   } finally {
     await ctx.close();
   }
@@ -2463,6 +2554,8 @@ try {
   await listingWalk("floodlit", 390);
   await selectionWalk("floodlit", 1280);
   await selectionWalk("floodlit", 390);
+  await termsWalk("floodlit", 1366);
+  await termsWalk("floodlit", 390);
   await signupWalk("floodlit");
   await practiceWalk("floodlit");
   await scorerHomeWalk("floodlit");
@@ -2474,6 +2567,8 @@ try {
   await listingWalk("daylight", 390);
   await selectionWalk("daylight", 1280);
   await selectionWalk("daylight", 390);
+  await termsWalk("daylight", 1366);
+  await termsWalk("daylight", 390);
   await signupWalk("daylight");
   await practiceWalk("daylight");
   await scorerHomeWalk("daylight");
@@ -2491,6 +2586,7 @@ try {
   if (process.env.A11Y_SHOTS) await (await import("node:fs/promises")).mkdir(process.env.A11Y_SHOTS, { recursive: true });
   if (ONLY && want("selection")) for (const th of /** @type {const} */ (["floodlit", "daylight"])) { await selectionWalk(th, 1280); await selectionWalk(th, 390); }
   if (ONLY && want("listing")) for (const th of /** @type {const} */ (["floodlit", "daylight"])) { await listingWalk(th, 1280); await listingWalk(th, 390); }
+  if (ONLY && want("terms")) for (const th of /** @type {const} */ (["floodlit", "daylight"])) { await termsWalk(th, 1366); await termsWalk(th, 390); }
   for (const width of (process.env.A11Y_WIDTHS ?? "320,375,414").split(",").map(Number)) {
     NARROW = { width };
     for (const th of /** @type {const} */ (["floodlit", "daylight"]).filter((t) => !process.env.A11Y_THEME || t === process.env.A11Y_THEME)) {

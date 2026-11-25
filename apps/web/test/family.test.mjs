@@ -13,8 +13,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { inningsStart, batters, bowler, ball, deriveInnings, BALL_TYPE } from "@scrbrd/scoring";
 import {
   howOutWord, lineFor, fixturesOf, isTheirs, opponentOf, chooseChild, noticesFor, linkEndWords, longDate,
-  pendingWords, linkWords, doorTo, takeDoor,
+  pendingWords, linkWords, doorTo, takeDoor, termsGated, forgetChild, recallChild, rememberChild,
 } from "../src/lib/family.js";
+import { healthPromptKey } from "../src/lib/childKeys.js";
+import { TermsGate } from "../src/views/family/terms.jsx";
 import { asLink } from "../src/lib/live.js";
 import { todoOf, countWords } from "../src/lib/todo.js";
 import { tenantWords } from "../src/lib/words.js";
@@ -403,6 +405,49 @@ group("GA-I20 A1: each child's count on Family is his own; nothing sums them (D1
   const a = todoOf({ ...reads, child: ROHAN }), b = todoOf({ ...reads, child: ANIKA });
   ok("R Pillay '2 to do' (his answer and his missing number); D Mkhize '1 to do' (his answer)", countWords(a) === "2 to do" && countWords(b) === "1 to do", [countWords(a), countWords(b)]);
   ok("...and the words of each count are his own: no '3 to do' anywhere", ![countWords(a), countWords(b)].includes("3 to do"));
+}
+
+group("The terms gate: a child's section is closed while the terms are not agreed on her own link (GA-I20 D7)");
+{
+  ok("never agreed: closed", termsGated({ ...ROHAN, consent: "pending" }) === true);
+  ok("agreed: open", termsGated({ ...ROHAN, consent: "granted", consentVersion: "popia-2026-01" }) === false);
+  ok("agreed under an older version: open (she keeps reading, Q2)", termsGated({ ...ROHAN, consent: "granted", consentVersion: "popia-2025-09" }) === false);
+  ok("withdrawn: open (she keeps sight of his record, Q1)", termsGated({ ...ROHAN, consent: "withdrawn" }) === false);
+  ok("an answer the link cannot hold, or none: closed", termsGated({ ...ROHAN, consent: "maybe" }) && termsGated({ ...ROHAN, consent: undefined }) && termsGated({ ...ROHAN, consent: null }));
+  ok("no child: nothing to close", termsGated(null) === false && termsGated(undefined) === false);
+  // One child's state is his own: a sibling's agreement opens nothing of his.
+  const kids = [{ ...ROHAN, consent: "granted" }, { ...ANIKA, consent: "pending" }];
+  ok("two children, one agreed: only the other is closed", kids.filter(termsGated).map((c) => c.id).join() === ANIKA.id);
+
+  // What the device keeps of a closed child is dropped; another child's is left alone.
+  const mem = new Map();
+  const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+  mem.set("scrbrd.family.child", ANIKA.id); mem.set(healthPromptKey(ANIKA.id), "1"); mem.set(healthPromptKey(ROHAN.id), "1");
+  doorTo(ANIKA.id, "consents");
+  forgetChild(ANIKA.id, store);
+  ok("forgetting him drops the child chosen on Home, his 'Not now' and the door to his card", !mem.has("scrbrd.family.child") && !mem.has(healthPromptKey(ANIKA.id)) && takeDoor(ANIKA.id) === null);
+  ok("...and leaves his brother's", mem.get(healthPromptKey(ROHAN.id)) === "1");
+  mem.set("scrbrd.family.child", ROHAN.id);
+  forgetChild(ANIKA.id, store);
+  ok("...and a brother chosen on Home stays chosen", mem.get("scrbrd.family.child") === ROHAN.id);
+  doorTo(ROHAN.id, "ring"); forgetChild(ANIKA.id, store);
+  ok("...and a door to the brother's card stays open", takeDoor(ROHAN.id) === "ring");
+  const thrower = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+  let threw = false; try { forgetChild(ANIKA.id, thrower); forgetChild(ANIKA.id, null); } catch { threw = true; }
+  ok("...storage refused or absent: nothing thrown", !threw);
+  ok("recallChild and rememberChild are untouched by it (no storage here: null, quietly)", recallChild() === null && rememberChild("x") === undefined);
+
+  // The card, drawn: whose terms, which school, what opens, one button; nothing else of his.
+  const gated = { ...ANIKA, knownAs: "Anika", schoolName: "Westville Boys' High", team: "U15A", consent: "pending",
+                  relationship: "parent", verification: "verified", from: "2026-01-12" };
+  const html = renderToStaticMarkup(h(TermsGate, { child: gated, w: tenantWords({ kind: "school" }) }));
+  const text = html.replace(/<[^>]+>/g, " ").replace(/&#x27;|&apos;/g, "'").replace(/\s+/g, " ").trim();
+  ok("the card says whose terms, at which school, and what opens", text === "Anika · Westville Boys' High Read and agree to the school's terms for Anika. Anika's fixtures, answers and record open here when you agree. Read the terms", text);
+  ok("...and nothing else of his: no team, no date, no other name, and the text itself waits for the tap", !/U15A|2026|Mkhize|Pillay|Rohan/.test(html) && !/family-terms-text/.test(html), html);
+  ok("...one button, 'Read the terms', at the 44px floor", (html.match(/<button/g) ?? []).length === 1 && /min-height:44px/.test(html) && /data-testid="family-gate-read"/.test(html));
+  ok("...the card is his by id, for the walks", html.includes(`data-testid="family-gate-${ANIKA.id}"`));
+  const club = renderToStaticMarkup(h(TermsGate, { child: { ...gated, schoolName: "Durban Cricket Academy" }, w: tenantWords({ kind: "academy" }) }));
+  ok("...in the place's own word", /the academy&#x27;s terms for Anika|the academy's terms for Anika/.test(club), club);
 }
 
 group("SCRBRD-138 phase B: the coach's plan is the live one for the fixture and the side, and nothing else");

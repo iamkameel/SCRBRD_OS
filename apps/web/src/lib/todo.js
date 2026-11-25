@@ -18,7 +18,8 @@
  *   R6  the fixture moved under HER lift and she has not stood behind it again.
  *   R7  on the day: the driver says he was handed over, or the car home has
  *       left, and nobody has said he is with his family yet.
- *   R8a the school's terms are not agreed on her own link.
+ *   R8a the school's terms are withdrawn on her own link (never agreed: the
+ *       whole section is the card that asks, and no row repeats it).
  *   R8b his name on public pages: she has not answered.
  *   R8c health monitoring is in use at his school and not answered.
  *   R9  no number is on record to ring if he is hurt (a count, N2).
@@ -342,12 +343,15 @@ export function todoOf(o) {
   // The undated rows, after the dated ones, in the design's fixed order.
   const next = upcoming[0] ?? null;
   const nextStart = next ? startMs(next) : null;
-  // R8a: the terms, on her own link (never the pupil's: his self link is not a guardian's).
-  if (!self && child.consent && child.consent !== "granted") {
+  // R8a: the terms withdrawn on her own link (never the pupil's: his self link
+  // is not a guardian's). Terms never agreed are not a row: his whole section
+  // is then the card that asks for them (views/family/terms.jsx TermsGate), and
+  // a fact is said once.
+  if (!self && child.consent === "withdrawn") {
     undated.push(row({ rule: "R8a", key: child.id, child,
-      fact: child.consent === "withdrawn" && child.consentAt
+      fact: child.consentAt
         ? `You withdrew the school's terms for ${first} on ${longDate(child.consentAt)}. Lifts and health monitoring are off until they are agreed again.`
-        : `The school's terms for ${first} are not agreed yet.`,
+        : `You withdrew the school's terms for ${first}. Lifts and health monitoring are off until they are agreed again.`,
       owner: "you (your own agreement)", byWhenText: child.from ? `since ${longDate(child.from)}` : null,
       // GA-I20 A2 (N6, D7): she reads and agrees them herself, on his Family card.
       source: "my_children", sourceText: "from your link to the school", door: { kind: "terms", label: "Read and agree" } }, now));
