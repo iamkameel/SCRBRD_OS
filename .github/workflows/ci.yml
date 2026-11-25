@@ -520,13 +520,9 @@ jobs:
           POSTGRES_PASSWORD: scrbrd
           POSTGRES_DB: scrbrd
         ports: ["5432:5432"]
-        # --shm-size: Docker's default /dev/shm is 64 MB, and Postgres puts a
-        # parallel query's shared memory there; with the larger work_mem below
-        # a parallel hash could outgrow it.
         options: >-
           --health-cmd "pg_isready -U scrbrd -d scrbrd"
           --health-interval 2s --health-timeout 3s --health-retries 30
-          --shm-size 1g
     steps:
       - uses: actions/checkout@v4
       # No version here on purpose: package.json's packageManager field names
@@ -553,31 +549,10 @@ jobs:
           exit 1
 
 
-      # The service container is thrown away when the job ends, so its
-      # database needs no durability (Kameel, 25 Nov 2026): no fsync, no
-      # waiting on the WAL at commit, no full-page images, and more memory
-      # than the image's defaults (128 MB shared_buffers, 4 MB work_mem) on a
-      # runner with 16 GB. A service container takes no command line, so the
-      # settings go in with ALTER SYSTEM and the container restarts to read
-      # them (shared_buffers needs the restart; the rest would reload). This
-      # changes only this job's container: docker-compose.yml, a developer's
-      # database and production are untouched.
-      - name: Tune the throwaway database
-        env:
-          PG: ${{ job.services.postgres.id }}
-        run: |
-          for s in "fsync = off" "synchronous_commit = off" "full_page_writes = off" \
-                   "shared_buffers = '2GB'" "work_mem = '64MB'" "maintenance_work_mem = '512MB'" \
-                   "max_wal_size = '8GB'" "checkpoint_timeout = '30min'"; do
-            docker exec "$PG" psql -U scrbrd -d scrbrd -v ON_ERROR_STOP=1 -qc "ALTER SYSTEM SET $s"
-          done
-          docker restart "$PG" >/dev/null
-          for i in $(seq 1 60); do
-            docker exec "$PG" pg_isready -q -U scrbrd -d scrbrd && break
-            [ "$i" = 60 ] && { echo "::error::Postgres did not come back after the restart"; docker logs "$PG" | tail -20; exit 1; }
-            sleep 1
-          done
-          docker exec "$PG" psql -U scrbrd -d scrbrd -Atc "SELECT string_agg(name || '=' || setting || coalesce(unit, ''), ' ' ORDER BY name) FROM pg_settings WHERE name IN ('fsync','synchronous_commit','full_page_writes','shared_buffers','work_mem','maintenance_work_mem','max_wal_size','checkpoint_timeout')"
+      # No database tuning here (25 Nov). These shards were never the slow part,
+      # and a tuned run lost its runner mid-walk with Chromium on the same
+      # machine; the extra memory is the likely cause. The verifier and the API
+      # shards keep the tuning.
 
       # The repo depends on playwright-core, which drives a browser but does not
       # download one. The full package is pulled in here only to fetch Chromium
