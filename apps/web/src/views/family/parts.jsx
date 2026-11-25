@@ -236,13 +236,14 @@ function AnswerKey({ value, label, on, suggested, onTap, pid, describedBy }) {
   return (
     <button type="button" className="pressBtn os-state" aria-pressed={on} data-testid={`availability-set-${pid}-${value}`}
       data-suggested={suggested ? "true" : undefined} aria-describedby={suggested ? describedBy : undefined} onClick={onTap}
-      style={{ minHeight: "56px", padding: `${T.space.xs} ${T.space.sm}`, borderRadius: T.radius.md, cursor: "pointer",
-        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: T.space.xs, flexWrap: "wrap", textAlign: "center",
+      style={{ minHeight: "56px", padding: T.space.xs, borderRadius: T.radius.md, cursor: "pointer", minWidth: 0,
+        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: T.space.xs, textAlign: "center",
         background: on ? T.surface.interactive : "transparent", color: T.content.primary,
         border: `1px ${suggested && !on ? "dashed" : "solid"} ${on ? T.content.primary : suggested ? T.line.strong : T.line.normal}`,
         boxShadow: on ? `inset 0 0 0 1px ${T.content.primary}` : "none",
         ...T.role.control, fontSize: "15px", lineHeight: 1.2, fontWeight: on ? 700 : 500 }}>
-      {on && <Icon name="check"/>}{label}
+      {/* The tick beside the word, never above it: the label breaks between its words ("Not / available"), the tick stays put. */}
+      {on && <Icon name="check" style={{ flexShrink: 0 }}/>}<span style={{ minWidth: 0 }}>{label}</span>
     </button>
   );
 }

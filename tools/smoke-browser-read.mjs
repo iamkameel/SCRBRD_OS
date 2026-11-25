@@ -388,7 +388,9 @@ try {
   await afterReads(parent.page, 1500);
   ok("the fixture opens: where, when and the bus", /Verify Step4 XI/.test(await ptid("fixture-title").innerText().catch(() => ""))
      && /Leaves 07:15 · the Chapel car park/.test(await ptid("bus-card").innerText().catch(() => "")));
-  ok("...his answer is not given yet", /No answer yet/.test(await ptid(`availability-state-${PILLAY}`).innerText().catch(() => "")));
+  ok("...his answer is not given yet", await ptid(`availability-state-${PILLAY}`).first().getAttribute("data-status").catch(() => "") === "none"
+     && /No answer yet/.test(await ptid(`availability-by-${PILLAY}`).innerText().catch(() => "")));
+  ok("...and Back names where she came from: Matches (slice 9)", /^Matches$/.test((await ptid("family-back").innerText().catch(() => "")).trim()));
   {
     // REACH R-H (db/131; STEP4 Q10, Kameel 27 Sep 2026): the eleven to a
     // parent, names and order, under her child's own line, which stays first.
@@ -407,13 +409,19 @@ try {
     ok("...her child's row marked, and only his", (await parent.page.locator('[data-testid="side-sheet-row"][data-his="true"]').count()) === 1);
     ok("...no team-mate's answer, fitness or age on the card", !/injur|rehab|fitness|born|years old|doubtful|unavailable/i.test(card), card);
   }
+  // Slice 9: one tap sends; the key stays pressed and the line says so. The reason and note follow, if she wants.
   await ptid(`availability-set-${PILLAY}-unavailable`).click({ timeout: 4000 }).catch(() => {});
+  await afterReads(parent.page, 1200);
+  ok("one tap: Not available stays pressed, 'Sent to the coach · <the day>'",
+     await ptid(`availability-set-${PILLAY}-unavailable`).getAttribute("aria-pressed").catch(() => "") === "true"
+     && /^Sent to the coach · \w{3} \d{1,2} \w{3}$/.test((await ptid(`availability-by-${PILLAY}`).innerText().catch(() => "")).replace(/\s+/g, " ").trim()));
+  await ptid(`availability-why-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
   await parent.page.selectOption(`[data-testid="availability-reason-${PILLAY}"]`, "travel").catch(() => {});
   await ptid(`availability-note-${PILLAY}`).fill("Away for a family wedding").catch(() => {});
   await ptid(`availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
   await afterReads(parent.page, 1500);
-  ok("she tells the coach: unavailable, said by her", /Unavailable/.test(await ptid(`availability-state-${PILLAY}`).innerText().catch(() => ""))
-     && /said by you/.test(await ptid(`availability-by-${PILLAY}`).innerText().catch(() => "")));
+  ok("she adds a reason: still not available, still sent by her", await ptid(`availability-state-${PILLAY}`).first().getAttribute("data-status").catch(() => "") === "unavailable"
+     && /^Sent to the coach/.test((await ptid(`availability-by-${PILLAY}`).innerText().catch(() => "")).trim()));
   const said = (await owner.query(
     `select a.status, a.reason_kind, a.note, u.email from match_availability a join app_user u on u.id = a.declared_by
       where a.match_id = $1 and a.player_id = $2`, [DECL, PILLAY])).rows[0];
@@ -2859,7 +2867,10 @@ try {
       const ptext = await g.page.locator('[data-testid="fixture-availability"]').first().innerText({ timeout: 4000 }).catch(() => "");
       ok("the fixture opens, for the moved fixture", /Verify 122 XI/.test(await g.page.locator('[data-testid="fixture-title"]').innerText().catch(() => "")));
       const state = (p, who) => p.locator(`[data-testid="availability-state-${who}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
-      ok("his boy's answer says it needs reconfirming, not available", /needs reconfirming/i.test(await state(g.page, PILLAY)));
+      // The family's keys say their answer as data-status (slice 9: the pressed key is the answer; the coach's badge keeps its word).
+      const gstate = (who) => g.page.locator(`[data-testid="availability-state-${who}"]`).first().getAttribute("data-status", { timeout: 3000 }).catch(() => "");
+      ok("his boy's answer says it needs reconfirming, not available", await gstate(PILLAY) === "needs_reconfirming"
+         && await g.page.locator(`[data-testid="availability-state-${PILLAY}"] [aria-pressed="true"]`).count() === 0);
       const was = await g.page.locator(`[data-testid="availability-was-${PILLAY}"]`).first().innerText({ timeout: 3000 }).catch(() => "");
       ok("...with what it was, and about which fixture",
          /was available for \w{3} \d{1,2} \w{3} \d\d:\d\d at Gordon Sherwood Oval · T20, 20 overs/.test(was));
@@ -2868,7 +2879,8 @@ try {
          && await g.page.locator(`[data-testid="availability-state-${WHITFIELD}"]`).count() === 0);
       await g.page.locator(`[data-testid="availability-again-${PILLAY}"]`).first().click({ timeout: 4000 }).catch(() => {});
       await afterReads(g.page, 1500);
-      ok("one tap answers again: available", /^available$/i.test((await state(g.page, PILLAY)).trim())
+      ok("one tap answers again: available", await gstate(PILLAY) === "available"
+         && await g.page.locator(`[data-testid="availability-set-${PILLAY}-available"]`).first().getAttribute("aria-pressed").catch(() => "") === "true"
          && await g.page.locator(`[data-testid="availability-was-${PILLAY}"]`).count() === 0);
       const row = (await owner.query(
         `select a.declared_by = $3 as by_him, (a.fixture_starts_at = m.starts_at) as current,
@@ -3245,16 +3257,17 @@ try {
       await afterReads(A.page, 1200);
       ok("the row's door opens the fixture, where she answers today", /Verify GA-I20 XI/.test(await at("fixture-title").innerText().catch(() => ""))
          && await at(`availability-set-${PILLAY}-available`).count() === 1);
+      // One tap sends (slice 9).
       await at(`availability-set-${PILLAY}-available`).click({ timeout: 4000 }).catch(() => {});
-      await at(`availability-send-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
       await afterReads(A.page, 1500);
-      ok("she declares him available", /^available$/i.test((await at(`availability-state-${PILLAY}`).innerText().catch(() => "")).trim())
+      ok("she declares him available", await at(`availability-state-${PILLAY}`).first().getAttribute("data-status").catch(() => "") === "available"
          && (await owner.query(`select status from match_availability where match_id = $1 and player_id = $2`, [T, PILLAY])).rows[0]?.status === "available");
       await at("family-back").click({ timeout: 4000 }).catch(() => {});
       await A.page.waitForTimeout(400);
       const after = await settled(A.page);
       ok("back on Home the row is gone, and the card says so: 'Nothing to do for R Pillay'", after === "Nothing to do for R Pillay" && await at(`todo-row-${T}`).count() === 0, after);
-      ok("...the next fixture's own card still names his answer (the one record, said once)", /Available/.test(await at("next-fixture").innerText().catch(() => "")));
+      ok("...the next fixture's own card still names his answer (the one record, said once)",
+         await A.page.locator(`[data-testid="next-fixture"] [data-testid="availability-state-${PILLAY}"]`).first().getAttribute("data-status").catch(() => "") === "available");
       await B.page.reload({ waitUntil: "networkidle" });
       // The token is held in memory only, so a reload is a demonstration until she signs in again.
       ok("a reload drops the token: the demonstration, with nothing of the family's", /Sign in to see your family/.test(await text(B.page)) && await B.page.locator('[data-testid="todo-card"]').count() === 0);
@@ -3305,7 +3318,9 @@ try {
       const kdCard = (await st("family-home-body").innerText().catch(() => ""));
       ok("K Dlamini's Home: his own side's Kearsney fixture leads, his answer owed in it, and not asked a second time",
          /v Kearsney|Kearsney/.test(await st("next-fixture").innerText().catch(() => "")) && await st("next-fixture").getAttribute("data-weight") === "lead"
-         && /No answer yet/.test(await st("next-fixture").innerText().catch(() => "")) && await todo(S.page).count() === 0 && await st(`todo-row-${KEARSNEY}`).count() === 0, kdCard.slice(0, 300));
+         // Slice 9: "no answer" is the keys' state; K Dlamini's open injury may suggest Not available (still unanswered).
+         && await S.page.locator(`[data-testid="next-fixture"] [data-testid="availability-state-${KD}"]`).first().getAttribute("data-status").catch(() => "") === "none"
+         && await todo(S.page).count() === 0 && await st(`todo-row-${KEARSNEY}`).count() === 0, kdCard.slice(0, 300));
       ok("...and no row of D Mkhize's: not his Westville fixture, not his name", await st(`todo-row-${DMF}`).count() === 0 && !/Westville|Mkhize/.test(kdCard), kdCard);
       ok("COACH-PARENT: her coach's read of K Dlamini's fixture returned the side (more than one boy), yet his Home shows his answer alone and no other boy",
          sideRows.some((rows) => rows.length >= 2 && rows.some((x) => x.player_id === WHITFIELD))
