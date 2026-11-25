@@ -268,7 +268,7 @@ function PotmSide({ s, basis, rule, unnamed, two, potm, nom }) {
                 <textarea data-testid="mc-potm-reason" value={reason} maxLength={POTM_REASON_MAX} onChange={(e) => setReason(e.target.value)}
                   style={{ width: "100%", minHeight: "72px", padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md, resize: "vertical",
                     border: `1px solid ${T.line.normal}`, background: T.surface.raised, color: T.content.primary,
-                    fontFamily: T.type.body, fontSize: "14px", boxSizing: "border-box" }}/>
+                    fontFamily: T.type.body, fontSize:T.role.control.fontSize, boxSizing: "border-box" }}/>
               </label>
               <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap" }}>
                 <button type="button" data-testid="mc-potm-withdraw-go" disabled={busy} onClick={goWithdraw} className="pressBtn os-state" style={btn(true)}>

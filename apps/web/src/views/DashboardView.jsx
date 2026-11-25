@@ -27,9 +27,12 @@ import { MatchCard } from "../ui/matchCard.jsx";
 import { sideOfTeam } from "../lib/matchCentre.js";
 import { decidedOn, openWords, resultSaidOf } from "../lib/matchCard.js";
 import { cockpitGate } from "../lib/cockpit.js";
+import { missingDuties, nobodyOnRecord } from "../lib/signals.js";
 import { requestCoach, requestDuties, requestResult } from "../lib/cockpitNav.js";
 import { fixFor, requestFix } from "../lib/fixNote.js";
 import { couldConfirmResult, profile } from "../lib/session.js";
+import { scoresItHere } from "../lib/enterScoring.js";
+import { useDutyScorerHere, useLogOnThisPhone } from "../lib/scoringHere.js";
 import { LastMatch } from "./cockpit/RecentMatches.jsx";
 import { NeedsYou } from "./needsyou.jsx";
 import { DsoCard } from "./family/dso.jsx";
@@ -85,10 +88,11 @@ function demoInnings(match, players) {
  * word and a state — never a percentage — from the same match_duties read
  * DutyRoster and ReadinessOverview already run.
  */
-const READY_SLOTS = [
+export const READY_SLOTS = [
   { key: "squad",     label: "Team sheet",    on: (has) => has("squad") },
   { key: "transport", label: "Transport",     on: (has) => has("transport") },
-  { key: "officials", label: "Officials",     on: (has) => has("umpire") || has("third_umpire") || has("referee") },
+  // Every needed duty held, by S8's own rule (the queue's O4); otherwise the chip names what is missing in its words.
+  { key: "officials", label: "Officials",     on: (has) => missingDuties(has).length === 0, missing: (has) => missingDuties(has).map(nobodyOnRecord).join(" · ") },
   { key: "ground",    label: "Ground report", on: (has) => has("ground") },
 ];
 
@@ -217,7 +221,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                     next = null, busTime = null, weather = null, dutyRows = [], weekMatches = [], weekTraining = [], out = [], unread = [],
                     reads = null, onRetry, onNav, onOpenScorer, matchDay = null, held = true, off = {},
                     needsYou = null, nextFold = null, lastMatch = null, dso = null, chipDoor = null,
-                    liveInnings = null, liveResult = null, liveConditions = null, nowLine = null, nowAction = null, openMatch = null }) {
+                    liveInnings = null, liveResult = null, liveConditions = null, nowLine = null, nowAction = null, nowAlso = null, openMatch = null }) {
   // The roles the person HOLDS, as the menu is drawn from, not the one badge role: a coach who is also a
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
   // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
@@ -268,7 +272,8 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                     onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" }
                 : nowAction ?? (holds("scoring.edit")
                 ? { label: "Resume scoring", onClick: () => onOpenScorer && onOpenScorer(liveMatch), testid: "day-now-open" }
-                : { label: openMatch ? openWords(liveMatch) : "Match Centre", onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" })}/>
+                : { label: openMatch ? openWords(liveMatch) : "Match Centre", onClick: () => (openMatch ? openMatch(liveMatch) : onNav && onNav("matches")), testid: "day-now-open" })}
+              also={liveDecided ? null : nowAlso}/>
           </BentoCard>
         )}
 
@@ -309,7 +314,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
                       border: `1px solid ${on ? D.emerald + "38" : T.line.normal}`,
                       color: on ? D.emerald : T.content.primary,
                     };
-                    const words = `${s.label} · ${on ? "on record" : "nothing on record"}`;
+                    const words = `${s.label} · ${on ? "on record" : s.missing ? s.missing(hasDuty) : "nothing on record"}`;
                     // Each chip opens the screen that deals with it, for this fixture (§1.4): the sheet, the trip,
                     // the duties, the ground. A chip whose screen this reader has none of stays a word and a state.
                     const go = chipDoor ? chipDoor(s.key, next) : null;
@@ -548,8 +553,15 @@ function DashboardView({ role, onNav, onOpenScorer }) {
   const ourEnd = liveGate?.end ?? liveMatch?.mySide ?? null;
   const batEnd = atCrease && !atCrease.complete && liveMatch ? sideOfTeam(liveMatch, atCrease.battingTeam) : null;
   const nowLine = ourEnd && batEnd ? (batEnd === ourEnd ? "We're batting" : "We're bowling") : null;
-  const nowAction = liveMatch && liveGate && !holdsAsHeld(role, "scoring.edit")
+  // Slice 10 (question 7): his side's coach is led to the Coach tab whether or not he may score; "Open scorer" sits
+  // beside it, quieter, only where he is the one scoring this fixture (lib/enterScoring.js scoresItHere: the
+  // existing per-fixture check first, then this phone's saved log or an appointment to it).
+  const nowAction = liveMatch && liveGate
     ? { label: "Coach tab", testid: "day-now-open", onClick: () => { requestCoach(liveMatch.id, false); onNav("matches"); } } : null;
+  const logHere = useLogOnThisPhone(nowAction && onOpenScorer ? liveMatch.id : null);
+  const dutyHere = useDutyScorerHere(nowAction && onOpenScorer ? liveMatch.id : null, signedIn() ? profile()?.user?.id ?? null : null);
+  const nowAlso = nowAction && onOpenScorer && scoresItHere(assignments, liveMatch, { onThisPhone: logHere, appointedByDuty: dutyHere })
+    ? { label: "Open scorer", testid: "day-now-scorer", onClick: () => onOpenScorer(liveMatch) } : null;
 
   const followedBlock = showFollowed
     ? <div className="os-page" data-testid="today-followed"><FollowedSchools followed={followed} lead={followedFirst}/></div> : null;
@@ -557,7 +569,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     <>
     {followedFirst && followedBlock}
     <DaySheet role={role} live={matchesAreLive || signedIn()} liveMatch={liveMatch} board={board} boardState={liveScore}
-      liveInnings={liveInnings} liveResult={signedIn() ? liveScore.result : null} liveConditions={signedIn() ? liveScore.conditions : null} nowLine={nowLine} nowAction={nowAction} openMatch={openMatch}
+      liveInnings={liveInnings} liveResult={signedIn() ? liveScore.result : null} liveConditions={signedIn() ? liveScore.conditions : null} nowLine={nowLine} nowAction={nowAction} nowAlso={nowAlso} openMatch={openMatch}
       next={next} busTime={busTime} weather={weather} dutyRows={dutyRows}
       weekMatches={weekMatches} weekTraining={weekTraining} out={out} unread={unread}
       reads={reads} off={off} onRetry={() => setNonce((n) => n + 1)}

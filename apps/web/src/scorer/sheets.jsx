@@ -334,12 +334,16 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
 // tab of their own screen.
 const HANDOVER_POLL_MS = 2500;
 
-function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onClaimed, onTakenOver, onCancelled, onClose, conditionsHash }) {
-  const [tab, setTab] = useState(startTab);
+// `takeOnly` (redesign slice 13): opened from the other-phone screen, where
+// this phone holds nothing to hand over, the sheet is the code and the check
+// alone, with no Hand over tab.
+function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", takeOnly = false, onHandedOver, onClaimed, onTakenOver, onCancelled, onClose, conditionsHash }) {
+  const [chosen, setTab] = useState(startTab);
+  const tab = takeOnly ? "take" : chosen;
   return (
-    <Sheet title="Handover" accent={D.sky} onClose={onClose}>
+    <Sheet title={takeOnly ? "Enter the handover code" : "Handover"} accent={D.sky} onClose={onClose}>
       <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
-        <div style={{display:"flex",gap:"6px"}}>
+        {!takeOnly&&<div style={{display:"flex",gap:"6px"}}>
           {[["hand","Hand over"],["take","Take over"]].map(([id,label])=>(
             <button key={id} data-testid={`handover-tab-${id}`} onClick={()=>setTab(id)} className="pressBtn" style={{
               flex:1,minHeight:"44px",padding:"9px",borderRadius:D.pill,cursor:"pointer",border:"none",
@@ -348,7 +352,7 @@ function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, 
               {label}
             </button>
           ))}
-        </div>
+        </div>}
         {tab==="hand"
           ? <HandOverTab matchId={matchId} device={device} epoch={epoch} pending={pending} held={held} onShowHeld={onShowHeld} ballInFlight={ballInFlight}
               onHandedOver={onHandedOver} onCancelled={onCancelled} onClose={onClose}/>
@@ -855,7 +859,7 @@ function CustomBatEntry({onSend}){
       <div style={{display:"flex",gap:"8px"}}>
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="Player name…" aria-label="Player name"
           style={{flex:1,minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-            color:D.textPrimary,fontSize:"14px",fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
+            color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
           onKeyDown={e=>{if(e.key==="Enter"&&name.trim()){
             // The sheet closes on this keydown and focus goes back to the key that opened it
             // (the Wicket key, after a wicket): the rest of this key press would press it.
@@ -1077,7 +1081,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           <input value={fielterFilter} onChange={e=>setFielderFilter(e.target.value)} aria-label="Search fielders"
             placeholder="Search fielder…"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px",marginBottom:"8px"}}/>
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"9px 13px",marginBottom:"8px"}}/>
           <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"180px",overflowY:"auto",overscrollBehavior:"contain"}}>
             {filteredFielders.map(p=>(
               <button key={p.name} onClick={()=>pickFielder(p.name)} className="pressBtn" aria-pressed={fielder===p.name||second===p.name} style={{
@@ -1118,7 +1122,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           <input value={!fieldingSquad.find(p=>p.name===fielder)&&fielder!==twelfth?.name&&fielder?fielder:""} 
             onChange={e=>{setFielder(e.target.value);setSecond("");setAdding(false);}} placeholder="Type any name…" aria-label="Fielder not in the squad"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,marginTop:"6px",
-              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"9px 13px"}}/>
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"9px 13px"}}/>
         </div>
       )}
       {needsFielder&&(!fieldingSquad||!fieldingSquad.length)&&(
@@ -1126,7 +1130,7 @@ function WicketSheet({batName,striker=null,nonStriker=null,fieldingSquad,edition
           <Lbl sx={{marginBottom:"7px"}}>{mode===DISMISSAL.CAUGHT?"Caught by":"Run out by"}</Lbl>
           <input value={fielder} onChange={e=>setFielder(e.target.value)} placeholder="Fielder name (optional)" aria-label="Fielder name, optional"
             style={{width:"100%",background:D.surf2,border:"1px solid "+D.border,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"13px",fontFamily:D.body,padding:"11px 14px"}}/>
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"11px 14px"}}/>
         </div>
       )}
       <div style={{display:"flex",gap:"10px",marginTop:"4px"}}>
@@ -1217,7 +1221,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
           <input value={filter} onChange={e=>setFilter(e.target.value)} aria-label="Search bowlers"
             placeholder="Search bowler…"
             style={{width:"100%",minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.textMuted}`,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"14px",fontFamily:D.body,padding:"9px 14px"}}
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"9px 14px"}}
             onFocus={e=>e.target.style.borderColor=D.amber+"66"}
             onBlur={e=>e.target.style.borderColor=D.textMuted}/>
         </div>
@@ -1281,7 +1285,7 @@ function NewOverSheet({ovNum,inn=null,prevBowlers,bowlingSquad,bowlingTeamKey,la
         <div style={{display:"flex",gap:"8px"}}>
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="Bowler name…" aria-label="Bowler name"
             style={{flex:1,minHeight:"44px",boxSizing:"border-box",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"14px",fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,fontWeight:500,padding:"10px 14px"}}
             onFocus={e=>e.target.style.borderColor=D.amber+"66"} onBlur={e=>e.target.style.borderColor=D.border}
             onKeyDown={e=>{if(e.key==="Enter"&&name.trim()&&canBowl({name:name.trim()}))onConfirm(name.trim());}}/>
           <Btn variant="amber" disabled={!name.trim()||!canBowl({name:name.trim()})} onClick={()=>name.trim()&&canBowl({name:name.trim()})&&onConfirm(name.trim())} sx={{borderRadius:D.md,padding:"10px 18px",minHeight:"44px"}}>Go</Btn>

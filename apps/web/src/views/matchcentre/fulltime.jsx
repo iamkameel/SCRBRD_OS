@@ -87,7 +87,7 @@ const dismiss = (matchId) => { try { localStorage.setItem(confirmKey(matchId), "
 const fieldStyle = () => ({
   width: "100%", minHeight: "44px", padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md,
   border: `1px solid ${T.line.normal}`, background: T.surface.raised, color: T.content.primary,
-  fontFamily: T.type.body, fontSize: "14px", boxSizing: "border-box",
+  fontFamily: T.type.body, fontSize: T.role.control.fontSize, boxSizing: "border-box",
 });
 const REQUEST_REFUSAL = {
   target_required: "Choose a delivery first.",

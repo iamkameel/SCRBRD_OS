@@ -18,7 +18,7 @@ import { panelsOf } from "../src/lib/cockpit.js";
 import { FORBIDDEN_FIELDS, NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
 import { isSoon } from "../src/lib/cockpit.js";
 import { CLOCK, SHOWN, WINDOW_DAYS, chooseFixtures, chooseSchoolFixtures, countOf, deadlineAt, entersQueue, fixtureRows, groupByDay, headerOf, headerWords, isDue,
-  isQueueReader, liftExceptionRows, officeReader, officeRows, queueGate, unreadOf } from "../src/lib/queue.js";
+  isQueueReader, liftExceptionRows, needsYouWords, officeAt, officeOnly, officeReader, officeRows, queueGate, splitForReader, tossWords, unreadOf, verbOf } from "../src/lib/queue.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -184,8 +184,8 @@ group("The queue's clock: constants, each firing at its threshold and not one sh
      [[{ school: HIL, state: "booked", capacity: 4, departAt: null }], null, [{ school: HIL, state: "cancelled", capacity: 4, departAt: dep }]]
        .every((t) => deadlineAt("bus", SAT, t, HIL)?.at === SAT_AT && deadlineAt("bus", SAT, t, HIL)?.clock === "firstBall"));
   const r = fixtureRows({ match: SAT, gate: DIRECTOR_G, now: THU_AT, reads: answered({ readiness: [rd("a", { declaredStatus: null })] }) });
-  ok("a row's deadline reads 'was due Thu 09:00' once its clock has run out",
-     r.rows[0].deadline.words === "was due Thu 09:00" && r.rows[0].deadline.due === true, r.rows[0].deadline);
+  ok("a row's deadline reads 'before the toss (Sat 09:00)' once its clock has run out (question 8, decided 19 Nov), still due",
+     r.rows[0].deadline.words === "before the toss (Sat 09:00)" && r.rows[0].deadline.due === true, r.rows[0].deadline);
   ok("...and 'by Thu 09:00' before it (the answers' row of an earlier day, read on the Wednesday)",
      fixtureRows({ match: SAT, gate: DIRECTOR_G, now: THU_AT - 1, reads: answered({ readiness: [rd("a", { declaredStatus: null, selected: true, clinicallyRestricted: true })] }) }).rows.find((x) => x.rule === "S3")?.deadline?.words === "by Thu 09:00");
   ok("...S7 fires at 48 hours (the clock) and not a millisecond short of it",
@@ -428,6 +428,50 @@ group("Everything the school-wide screen says passes the never-list (§5)");
   const hook = readFileSync(new URL("../src/views/cockpit/useQueue.js", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   ok("the hook asks for no workload, no spells, no notices and no opposition, and the lift exceptions only through its tap",
      !/workload|bowling_spells|opposition|notifications|directives/.test(hook) && (hook.match(/lifts\/exceptions/g) ?? []).length === 1 && /checkLifts/.test(hook));
+}
+
+
+group("The coach's queue (redesign slice 11): one count, a verb, 'before the toss', and the office's rows kept off his Needs you");
+{
+  const THU = THU_AT + 60e3;
+  ok("a deadline already past says 'before the toss' with the start's day, and the time alone on the day itself",
+     tossWords(SAT_AT, THU) === "before the toss (Sat 09:00)" && tossWords(SAT_AT, SAT_AT - 2 * H) === "before the toss (09:00)");
+  const past = fixtureRows({ match: SAT, gate: DIRECTOR_G, now: SAT_AT - H, reads: answered({ duties: [], readiness: [rd("a", { declaredStatus: null })] }) });
+  ok("on the day, a clock run out reads 'before the toss (09:00)' and one still running 'by first ball', never 'was due' or 'overdue'",
+     past.rows.find((x) => x.rule === "S7")?.deadline?.words === "before the toss (09:00)" && past.rows.find((x) => x.rule === "S7")?.deadline?.due === true
+     && past.rows.filter((x) => x.rule === "O4").every((x) => x.deadline.words === "by first ball (Sat 09:00)" && !x.deadline.due)
+     && !past.rows.some((x) => /was due|overdue/.test(x.deadline?.words ?? "")), past.rows.map((x) => x.deadline?.words));
+  const ahead = fixtureRows({ match: SAT, gate: DIRECTOR_G, now: THU, reads: answered({ duties: [] }) }).rows.find((x) => x.rule === "O4");
+  ok("...while a clock still runs, 'by first ball (Sat 09:00)' as before", ahead?.deadline?.words === "by first ball (Sat 09:00)" && !ahead.deadline.due, ahead?.deadline);
+
+  // A team coach's group: S7 is his; nobody on record for the scorer or the umpire is the office's alone.
+  const coachGate = gateOf("coach", "U15A");
+  const g = fixtureRows({ match: SAT, gate: coachGate, now: THU, reads: answered({ duties: [], readiness: [rd("a", { declaredStatus: null }), rd("b", { declaredStatus: null })] }) });
+  ok("the group carries its school, for who is the office there", g.school === HIL);
+  ok("O4 rows are the office's alone; the side's rows are not", g.rows.filter(officeOnly).map((x) => x.rule).join() === "O4,O4" && !g.rows.filter((x) => x.rule === "S7").some(officeOnly));
+  const coach = [A("coach", HIL, "U15A")];
+  const split = splitForReader(g, coach);
+  ok("a team coach: the side's rows on his Needs you, nobody-on-record kept off it and said as the office's",
+     split.mine.map((x) => x.rule).join() === "S7" && split.office.map((x) => x.rule).join() === "O4,O4", { mine: split.mine.map((x) => x.rule), office: split.office.map((x) => x.rule) });
+  for (const role of ["directorofsport", "schooladmin", "sportsadmin", "principal"]) {
+    const s2 = splitForReader(g, [...coach, A(role, HIL)]);
+    ok(`...a coach who is also ${role} at the school is the office there: every row on his Needs you, none set aside`, s2.office.length === 0 && s2.mine.length === g.rows.filter((x) => x.state === "open").length);
+  }
+  ok("...the office at ANOTHER school, a team-scoped role, a person-scoped role or a single fixture's is not the office here",
+     [A("directorofsport", KES), A("teammanager", HIL, "U15A"), A("guardian", HIL, null, { subjects: ["p1"] }), A("directorofsport", HIL, null, { fixture: "other" })]
+       .every((a) => !officeAt([a], HIL)) && officeAt([A("directorofsport", HIL)], HIL) && !officeAt([A("directorofsport", HIL)], null));
+  ok("a moved fixture's answers stay his (the office's and the coach's), and information is never a row",
+     !officeOnly(/** @type {any} */ ({ rule: "O5", owner: "the office; the U15A coach or team manager for the answers" }))
+     && splitForReader({ school: HIL, rows: [/** @type {any} */ ({ id: "w", rule: "S9", state: "info", owner: null })] }, coach).mine.length === 0);
+
+  ok("one verb a row: Chase, Swap him / them, Pick the side, Check the bus, Appoint, Set the conditions; none for the rest",
+     ["S7", "S6", "S1", "O4", "S10", "O5", "O1", "R1"].map((rule) => verbOf(/** @type {any} */ ({ rule, count: 1 }))).join() === "Chase,Pick the side,Check the bus,Appoint,Set the conditions,,,"
+     && verbOf(/** @type {any} */ ({ rule: "S3", count: 1 })) === "Swap him" && verbOf(/** @type {any} */ ({ rule: "S3", count: 2 })) === "Swap them");
+  ok("one count: '3 need you', '1 needs you', 'Nothing needs you' only when nothing is open and every read answered",
+     needsYouWords({ open: 3 }) === "3 need you" && needsYouWords({ open: 1 }) === "1 needs you" && needsYouWords({ open: 0 }) === "Nothing needs you");
+  ok("...a failed read is said beside the count only when there is one, and never as 'nothing'",
+     needsYouWords({ open: 0, failed: 1 }) === "0 need you · 1 read failed" && needsYouWords({ open: 2, failed: 2 }) === "2 need you · 2 reads failed"
+     && needsYouWords({ open: 0, failed: 1, sayFailed: false }) === "0 need you" && !/0 reads failed/.test(needsYouWords({ open: 2, failed: 0 })));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

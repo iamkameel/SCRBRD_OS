@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { D, textOn, themed } from "../design/tokens.js";
+import { D, T, textOn, themed } from "../design/tokens.js";
 import { Badge, Btn, Card, EmptyState, Input, Modal, SectionHeader, Select } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
 import { NewsCover } from "../ui/NewsCover.jsx";
@@ -319,7 +319,7 @@ function NewsView({ role }) {
             <textarea id="news-compose-body" aria-describedby="news-compose-readers" value={post.body} onChange={e=>setPost(p=>({...p,body:e.target.value}))} rows={5}
               placeholder="What people need to know."
               style={{width:"100%",padding:"9px 12px",background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,
-                color:D.textPrimary,fontFamily:D.body,fontSize:"13px",resize:"vertical"}}/>
+                color:D.textPrimary,fontFamily:D.body,fontSize:T.role.control.fontSize,resize:"vertical"}}/>
           </div>
           {/* D9: medium, a pointer on the phone; low stays in the app. Never high. */}
           <label data-testid="news-compose-phones-row" style={{display:"flex",gap:"10px",alignItems:"flex-start",minHeight:"44px",cursor:"pointer",marginBottom:"14px"}}>

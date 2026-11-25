@@ -272,12 +272,23 @@ try {
 
   ok("her own claim did not silently take the token", (await dbq(
     `select state from scoring_session where match_id = '77777777-0000-0000-0000-000000000002'`))[0]?.state === "handover_pending");
-  ok("...and the screen offers Take over rather than the ordinary pad chrome",
-     /Take over/i.test(await incoming.text()));
+  // Redesign slice 13 (Flow E): a phone that holds nothing of the match opens
+  // on one screen, before any toss sheet: who is handing over, the code, the score.
+  const otherPhone = incoming.page.locator('[data-testid="other-phone"]');
+  ok("...and the pad opens on the other-phone screen, not the pad or a toss sheet",
+     await otherPhone.waitFor({ timeout: 8000 }).then(() => true).catch(() => false)
+     && (await otherPhone.getAttribute("data-kind")) === "handover"
+     && (await incoming.page.locator('[data-testid="toss-sheet"], [data-testid="basic-pad"]').count()) === 0,
+     (await incoming.text()).slice(0, 240));
+  const handingOver = await incoming.page.locator('[data-testid="other-phone-who"]').innerText().catch(() => "");
+  // The director of sport may read the scorer's account (user.read), so the read names him.
+  const outgoingName = (await dbq(`select name from app_user where email = 'scorer@example.invalid'`))[0]?.name ?? "?";
+  ok("...saying who is handing over, as the server names the holder", handingOver.trim() === `${outgoingName} is handing this match over.`, handingOver);
 
-  await incoming.page.locator('[data-testid="open-handover"]').first().click({ timeout: 3000 });
+  await incoming.page.locator('[data-testid="other-phone-code"]').click({ timeout: 3000 });
   await incoming.page.waitForTimeout(300);
-  ok("her sheet opens straight on Take over", await incoming.page.locator('[data-testid="handover-code-entry"]').count() === 1);
+  ok("Enter the handover code: her sheet opens straight on the code", await incoming.page.locator('[data-testid="handover-code-entry"]').count() === 1);
+  ok("...with nothing to hand over offered", await incoming.page.locator('[data-testid="handover-tab-hand"]').count() === 0);
 
   await incoming.page.fill('[data-testid="handover-code-entry"]', code.trim());
   await incoming.page.locator('[data-testid="handover-claim"]').click({ timeout: 3000 });

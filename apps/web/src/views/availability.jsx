@@ -15,7 +15,7 @@
  * the old answer back as one tap.
  */
 import { useMemo, useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { Badge, Btn, Card, ReadState, Select } from "../ui/primitives.jsx";
 import { readState } from "../lib/readState.js";
 import { useLive } from "../lib/live.js";
@@ -113,7 +113,7 @@ function PlayerAnswer({ role, match, upcoming, onPick, player }) {
           Fixture
           <select aria-label="Which fixture" value={match.id} onChange={(e) => onPick(e.target.value)}
             style={{ minHeight: "44px", padding: "9px 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
-              color: D.textPrimary, fontFamily: D.body, fontSize: "14px", boxSizing: "border-box", width: "100%" }}>
+              color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, boxSizing: "border-box", width: "100%" }}>
             {upcoming.map((m) => <option key={m.id} value={m.id}>{`v ${vs(m)} · ${humanDateTime(m.date, m.time)}`}</option>)}
           </select>
         </label>

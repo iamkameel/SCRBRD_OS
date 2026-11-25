@@ -127,7 +127,7 @@ function GlobalSearch({ role, onNav, onClose }) {
           <input ref={inputRef} value={q} onChange={e=>{setQ(e.target.value);setAiMode(false);setAiAnswer("");}} aria-label="Search, or ask Stats-Magic"
             onKeyDown={e=>{if(e.key==="Escape")onClose();if(e.key==="Enter")askGuru();}}
             placeholder="Search players, matches, staff… or ask Stats-Magic anything"
-            style={{flex:1,minWidth:0,minHeight:"44px",padding:"0 12px",background:"transparent",border:`1px solid ${T.content.tertiary}`,borderRadius:D.md,fontFamily:D.body,fontSize:"14px",color:D.textPrimary,}}/>
+            style={{flex:1,minWidth:0,minHeight:"44px",padding:"0 12px",background:"transparent",border:`1px solid ${T.content.tertiary}`,borderRadius:D.md,fontFamily:D.body,fontSize:T.role.control.fontSize,color:D.textPrimary,}}/>
           {looksLikeStat&&!aiMode&&(
             <button onClick={askGuru} className="pressBtn" style={{display:"flex",alignItems:"center",gap:"5px",padding:"5px 12px",minHeight:"44px",borderRadius:D.pill,cursor:"pointer",background:`${D.violet}18`,border:`1px solid ${D.violet}44`,fontFamily:D.head,fontSize:"12px",fontWeight:700,color:D.violetText,whiteSpace:"nowrap"}}>
               ✦ Ask Stats-Magic
