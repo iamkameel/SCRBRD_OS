@@ -16,9 +16,10 @@
 import { readFileSync } from "node:fs";
 import { panelsOf } from "../src/lib/cockpit.js";
 import { FORBIDDEN_FIELDS, NEVER_ON_THE_COCKPIT } from "../src/lib/cockpitNever.js";
-import { isSoon } from "../src/lib/cockpit.js";
+import { isSoon, sideFoot, sideRows, unanswered } from "../src/lib/cockpit.js";
+import { nameList, namedFact, ownSide } from "../src/lib/queueNames.js";
 import { CLOCK, SHOWN, WINDOW_DAYS, chooseFixtures, chooseSchoolFixtures, countOf, deadlineAt, entersQueue, fixtureRows, groupByDay, headerOf, headerWords, isDue,
-  isQueueReader, liftExceptionRows, needsYouWords, officeAt, officeOnly, officeReader, officeRows, queueGate, splitForReader, tossWords, unreadOf, verbOf } from "../src/lib/queue.js";
+  isQueueReader, liftExceptionRows, needsYouWords, officeAt, officeOnly, officeReader, organiserAt, organiserOnly, officeRows, queueGate, splitForReader, tossWords, unreadOf, verbOf } from "../src/lib/queue.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${JSON.stringify(d)}`); } };
@@ -472,6 +473,64 @@ group("The coach's queue (redesign slice 11): one count, a verb, 'before the tos
   ok("...a failed read is said beside the count only when there is one, and never as 'nothing'",
      needsYouWords({ open: 0, failed: 1 }) === "0 need you · 1 read failed" && needsYouWords({ open: 2, failed: 2 }) === "2 need you · 2 reads failed"
      && needsYouWords({ open: 0, failed: 1, sayFailed: false }) === "0 need you" && !/0 reads failed/.test(needsYouWords({ open: 2, failed: 0 })));
+}
+
+
+group("The coach follow-ups (Kameel, 25 Nov, as recommended)");
+{
+  const THU = THU_AT + 60e3;
+  const coach = [A("coach", HIL, "U15A")];
+  // 1 · S10 is the organiser's: off his Needs you, on the card as the organiser's; his who holds the right.
+  const g = fixtureRows({ match: SAT, gate: gateOf("coach", "U15A"), now: THU, reads: answered({ conditions: { state: "defaults", cap: null, freeHit: null }, readiness: [rd("a", { declaredStatus: null })] }) });
+  const sp = splitForReader(g, coach);
+  ok("1. no playing conditions (S10) is the organiser's: off a coach's Needs you, set aside as the organiser's",
+     sp.organiser.map((r) => r.rule).join() === "S10" && !sp.mine.some((r) => r.rule === "S10") && sp.mine.some((r) => r.rule === "S7") && g.rows.filter(organiserOnly).length === 1);
+  ok("...and his who holds the organiser's right (a competition admin, at the school or at none); the director is not the organiser",
+     splitForReader(g, [...coach, A("competitionadmin", null)]).organiser.length === 0 && splitForReader(g, [...coach, A("competitionadmin", null)]).mine.some((r) => r.rule === "S10")
+     && organiserAt([A("competitionadmin", HIL)], HIL) && !organiserAt([A("competitionadmin", KES)], HIL) && !organiserAt([A("directorofsport", HIL)], HIL)
+     && splitForReader(g, [A("directorofsport", HIL)]).organiser.length === 1);
+
+  // 2 · One set to chase: S7 and the card's foot.
+  const asked = [rd("a", { declaredStatus: null, selected: true }), rd("b", { declaredStatus: null, selected: false }), rd("c", { declaredStatus: null, selected: true, clinicallyRestricted: true }),
+    rd("d", { declaredStatus: "needs_reconfirming", selected: true }), rd("e", { selected: true }), rd("x", { declaredStatus: null, team: "U14B" })];
+  const s7 = fixtureRows({ match: SAT, gate: gateOf("coach", "U15A"), now: THU, reads: answered({ readiness: asked }) }).rows.find((r) => r.rule === "S7");
+  const foot = sideFoot(sideRows(asked, "home", { status: true }), { chase: unanswered(asked, "U15A").length });
+  ok("2. S7 counts everyone asked for our side with no answer: on the sheet or not, restricted or not; not another team's, not one asked again",
+     s7?.count === 3 && unanswered(asked, "U15A").map((r) => r.playerId).join() === "a,b,c", s7);
+  ok("...and the card's foot says the same number to chase, the boy asked again said as such", /· 3 to chase · 1 asked again/.test(foot) && foot.startsWith("4 named"), foot);
+  ok("...the Coach tab's foot, handed no number, is as it was", sideFoot(sideRows(asked, "home", { status: true })) === "4 named · 2 to chase · 1 restricted");
+
+  // 3 · His own side by name; never a reason, a note, an injury or a date.
+  const secret = { reasonKind: "family", reason: "A family funeral in Durban", note: "hamstring, see the physio", injuryType: "hamstring strain", severity: "moderate", phase: "rehab", returnDate: "2026-10-18" };
+  const side = [rd("t", { name: "T Bekker", selected: true, clinicallyRestricted: true, declaredStatus: "available", ...secret }),
+    rd("p", { name: "R Pillay", selected: true, declaredStatus: "unavailable", ...secret }),
+    ...["Q One", "Q Two", "Q Three"].map((n, i) => rd(`u${i}`, { name: n, declaredStatus: null, ...secret }))];
+  const own = fixtureRows({ match: SAT, gate: gateOf("coach", "U15A"), now: THU, reads: answered({ readiness: side }) });
+  const by = (id) => own.rows.find((r) => r.id.endsWith(id));
+  const sideOf = { team: own.team, end: own.end, status: own.mayStatus };
+  const said = [namedFact(by(":S3:restricted"), side, sideOf), namedFact(by(":S3:unavailable"), side, sideOf), namedFact(by(":S7"), side, sideOf)];
+  ok("3. his own side's rows name the boy: 'T Bekker is restricted', 'R Pillay is marked unavailable', 'Q One, Q Two and 1 more have not answered'",
+     said.join("|") === "T Bekker is restricted|R Pillay is marked unavailable|Q One, Q Two and 1 more have not answered", said);
+  ok("...NEVER a reason, a note, an injury, its severity or phase, or a return date", said.every((t) => !/funeral|Durban|family|hamstring|physio|strain|moderate|rehab|2026|18 Oct|Oct/i.test(t)), said);
+  ok("...the queue's own rows stay counts, with no name in them", own.rows.every((r) => !/Bekker|Pillay|Q One/.test(r.fact)) && by(":S3:restricted").fact === "1 restricted boy on the sheet");
+  ok("...a name list: one, two, then 'and N more'", nameList(["A"], 1) === "A" && nameList(["A", "B"], 2) === "A and B" && nameList(["A", "B", "C"], 3) === "A, B and 1 more");
+  ok("...a row the names cannot account for, or a missing name, keeps its count", namedFact({ ...by(":S7"), count: 4 }, side, sideOf) === null
+     && namedFact(by(":S7"), side.map((r) => (r.playerId === "u0" ? { ...r, name: null } : r)), sideOf) === null && namedFact(by(":S7"), null, sideOf) === null
+     && namedFact(/** @type {any} */ ({ rule: "S6", id: "x:S6", count: 7 }), side, sideOf) === null);
+  ok("...his own side is ONE team assignment for that school's team; a school-wide coach, the director, another team's coach or another school's is not",
+     ownSide(coach, { school: HIL, team: "U15A" }) && ownSide([A("teammanager", HIL, "U15A")], { school: HIL, team: "U15A" })
+     && [[A("coach", HIL)], [A("directorofsport", HIL)], [A("coach", HIL, "U14B")], [A("coach", KES, "U15A")], [A("player", HIL, "U15A")], [A("coach", HIL, "U15A", { fixture: "f" })]]
+       .every((as) => !ownSide(as, { school: HIL, team: "U15A" })));
+  const lib = readFileSync(new URL("../src/lib/queueNames.js", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  ok("...the module takes nothing from a row but its name, and reads nothing", !/\.(reason\w*|note|injury\w*|severity|phase|returnDate|rtw\w*|byWhom|declaredByName)\b/.test(lib) && !/api\(|fetch\(|readLive|useLive/.test(lib));
+
+  // 4 · The bus before the match day: one fact for a lift holder too.
+  const bus = answered({ trips: [{ school: HIL, state: "booked", capacity: 4, seatsTaken: 0 }] });
+  const liftHolder = gateOf("coach", "U15A");
+  const busRow = fixtureRows({ match: SAT, gate: liftHolder, now: THU, reads: bus }).rows.find((r) => r.rule === "S1");
+  ok("4. before the match day a lift holder's bus row says 'lifts not counted', as Today does, never silence", liftHolder.panels.lifts === true && busRow?.fact === "Bus seats 4 · 11 named (lifts not counted)", busRow?.fact);
+  ok("...on the match day, a lift holder whose lifts were not read is still not told a count it did not read",
+     !fixtureRows({ match: SAT, gate: liftHolder, now: SAT_AT - H, reads: bus }).rows.some((r) => r.rule === "S1"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

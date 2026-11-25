@@ -18,7 +18,8 @@ import { lastMatchWords } from "../src/lib/recentMatches.js";
 import { COMPARE_FLOOR } from "../src/lib/compare.js";
 import { MIN_MATCHES, seasonLineWords } from "../src/lib/sideSeason.js";
 import { needsYouRows } from "../src/views/needsyou.jsx";
-import { READY_SLOTS, chipOrder, weekOf } from "../src/views/DashboardView.jsx";
+import { DaySheet, READY_SLOTS, chipOrder, weekOf } from "../src/views/DashboardView.jsx";
+import { buildDaySheet, buildMatch } from "../src/views/pitchdeck/demo.js";
 import { ruleS8 } from "../src/lib/signals.js";
 import { formLetter, teamResults } from "../src/views/TeamPage.jsx";
 import { MobileNav, SportSwitcher } from "../src/shell/MobileNav.jsx";
@@ -88,11 +89,32 @@ group("Needs you lands on the fix");
   const coachRows = needsYouRows(/** @type {any} */ (qs), [{ role: "coach", school: "hil", team: "U15A" }, { role: "coach", school: "hil", team: "U14B" }]);
   ok("a coach across two squads: his rows from both, the office's left off, each naming its fixture",
      eq(coachRows.map((r) => [r.id, r.where]), [["s7", "U15A v Kearsney"], ["s6", "U14B v Michaelhouse"]]));
+  // Kameel, 25 Nov: S10 is the organiser's; his own side's rows name the boy from the queue's own readiness read.
+  const named = { offices: [], results: null, potm: null, readsOf: (/** @type {string} */ id) => (id === "m1" ? { readiness: [
+    { playerId: "t", name: "T Bekker", team: "U15A", side: "home", selected: true, clinicallyRestricted: true, declaredStatus: "available", reason: "A family funeral", note: "hamstring" }] } : null),
+    groups: [{ id: "m1", school: "hil", team: "U15A", end: "home", mayStatus: true, label: "U15A v Kearsney", rows: [
+      { id: "m1:S3:restricted", rule: "S3", state: "open", count: 1, fact: "1 restricted boy on the sheet", owner: "the U15A coach or team manager" },
+      { id: "m1:S10", rule: "S10", state: "open", count: 1, fact: "No playing conditions are set", owner: "the competition's organiser" }] }] };
+  const hisRows = needsYouRows(/** @type {any} */ (named), [{ role: "coach", school: "hil", team: "U15A" }]);
+  ok("his own side: 'T Bekker is restricted', named and marked so; no reason or note; the organiser's row left off",
+     eq(hisRows.map((r) => [r.fact, r.named]), [["T Bekker is restricted", true]]) && !/funeral|hamstring/.test(JSON.stringify(hisRows)));
+  ok("...the director's same rows stay a count, and the organiser's row is off his too",
+     eq(needsYouRows(/** @type {any} */ (named), [{ role: "directorofsport", school: "hil" }]).map((r) => [r.fact, r.named ?? false]), [["1 restricted boy on the sheet", false]]));
   ok("...the director, the office there: the office's row stays on his", eq(needsYouRows(/** @type {any} */ (qs), [{ role: "directorofsport", school: "hil" }]).map((r) => r.id), ["s7", "o4", "s6"]));
 }
 
 group("The day sheet (§3.10)");
 {
+  {
+    // Kameel, 25 Nov (DESIGN_DIRECTION §3.3): on his side's match day, before the toss, the match leads and Needs you follows it.
+    const day = buildDaySheet(buildMatch());
+    const mark = h("div", { "data-testid": "needs-you-mark" });
+    const order = (/** @type {boolean} */ after) => { const html = renderToStaticMarkup(h(DaySheet, { ...day, liveMatch: null, needsYou: mark, needsYouAfterNext: after }));
+      return html.indexOf('data-testid="needs-you-mark"') < html.indexOf('data-testid="day-next"') ? "needs-you first" : "match first"; };
+    ok("on his match day the next fixture leads and Needs you sits under it; on any other day Needs you leads, as before",
+       order(true) === "match first" && order(false) === "needs-you first", [order(true), order(false)]);
+    ok("...and DashboardView sets it only for his side's fixture today, not live", /needsYouAfterNext=\{!!\(signedIn\(\) && next && !liveMatch && isMatchDay\(next, Date\.now\(\)\) && cockpitGate\(assignments, next\)\)\}/.test(readFileSync(new URL("../src/views/DashboardView.jsx", import.meta.url), "utf8")));
+  }
   const slots = [{ key: "a", on: (has) => has("a") }, { key: "b", on: (has) => has("b") }, { key: "c", on: (has) => has("c") }];
   {
     // One fact, one answer (slice 11): the Officials chip is S8's rule (the queue's O4), in its words.
