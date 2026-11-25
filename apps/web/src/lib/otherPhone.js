@@ -25,15 +25,23 @@
  * a phone with balls of its own keeps the pad and the banner that lists them
  * (syncBanner.jsx). And only while what it knows says another phone holds the
  * scoring: the claim was refused as `lease_active`, `handover_pending` or
- * `verifying`, or, before the claim has answered, the read says so. A lapsed
- * lease is not this screen: that is the confirmed take-over, on the pad's
- * banner (db/126), as before.
+ * `verifying`, or, before the claim has answered, the read says so.
+ *
+ * A LAPSED HOLD (Kameel, 25 Nov 2026, question 2 of slice 13): the claim was
+ * refused as `held_elsewhere` (the other phone's lease ran out, db/126), or,
+ * before the claim has answered, the read says `lapsed`. The same screen,
+ * saying the other phone has gone quiet, with "Take over scoring" as its
+ * primary: the existing confirmed take-over (PadSync attach("takeover")),
+ * unchanged. The screen only replaces the toss sheet and the keys.
  *
  * PURE. No React, no DOM, no fetch. apps/web/test/other-phone.test.mjs holds it.
  */
 
 /** The claim's refusals that mean another phone holds, or is handing over, the scoring. */
 export const HELD_REASONS = Object.freeze(new Set(["lease_active", "handover_pending", "verifying"]));
+
+/** The claim's refusal for a hold whose lease ran out: the confirmed take-over (db/126). */
+export const LAPSED_REASON = "held_elsewhere";
 
 /** Where the pad stands while it has no answer yet: still asking, or with no way to ask. */
 const NO_ANSWER = new Set([null, undefined, "attaching", "offline", "unreachable", "server_error", "busy"]);
@@ -73,18 +81,27 @@ export function showOtherPhone({ fresh, holder = null, status = null }) {
   if (status?.attached) return false;
   if ((status?.pending ?? 0) > 0 || (status?.held ?? 0) > 0) return false;
   const reason = status?.reason ?? null;
-  if (HELD_REASONS.has(reason)) return true;
-  return NO_ANSWER.has(reason) && heldByAnother(holder);
+  if (HELD_REASONS.has(reason) || reason === LAPSED_REASON) return true;
+  return NO_ANSWER.has(reason) && (heldByAnother(holder) || lapsedHold(holder));
+}
+
+/**
+ * Does the read say a phone held this match and its lease has run out?
+ * @param {{state?: string | null, held?: string | null} | null | undefined} h
+ */
+export function lapsedHold(h) {
+  return !!h && h.state === "active" && h.held === "lapsed";
 }
 
 /**
  * Which of the four it is: another person's phone, your own other phone, a
  * handover waiting for its code, or one being confirmed.
  * @param {any} holder  @param {string | null | undefined} reason
- * @returns {"another" | "you" | "handover" | "verifying"}
+ * @returns {"another" | "you" | "handover" | "verifying" | "lapsed"}
  */
 export function kindOf(holder, reason) {
   const st = holder?.state ?? null;
+  if (reason === LAPSED_REASON || (lapsedHold(holder) && !HELD_REASONS.has(reason))) return "lapsed";
   if (reason === "verifying" || (st === "verifying" && !HELD_REASONS.has(reason))) return "verifying";
   if (reason === "handover_pending" || (st === "handover_pending" && !HELD_REASONS.has(reason))) return "handover";
   return holder?.held === "you" ? "you" : "another";
@@ -94,11 +111,17 @@ export function kindOf(holder, reason) {
  * The screen's words. A name only where the read gave one for the phone that
  * holds it now; otherwise the sentence says "Someone else", never a guess.
  * @param {any} holder  @param {string | null | undefined} reason
+ * @param {string | null} [lastAt]  the server's last ball, "14:21" (a lapsed hold only: what the take-over is confirmed against)
  * @returns {{kind: string, lead: string, body: string, line: string}}
  *   lead  the screen's heading;  body  what to do;  line  Today's one line (§2.2)
  */
-export function otherPhoneWords(holder, reason) {
+export function otherPhoneWords(holder, reason, lastAt = null) {
   const kind = kindOf(holder, reason);
+  // The banner's own words for the confirmed take-over (syncBanner.jsx held_elsewhere), under Kameel's heading.
+  if (kind === "lapsed") return { kind,
+    lead: "Nobody has scored on the other phone for a while.",
+    body: `${lastAt ? `The server's last ball from it came in at ${lastAt}.` : "The server has no ball from it yet."} If that phone has stopped (a flat battery, a crash), take over here; if it is still scoring, leave it: one phone scores a match. Check the scoreboard and the book first.`,
+    line: "Nobody has scored on the other phone for a while" };
   const who = heldByAnother(holder) && holder?.held !== "you" ? holder?.who ?? null : null;
   if (kind === "verifying") return { kind,
     lead: "A handover of this match is being confirmed on another phone.",

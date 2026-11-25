@@ -48,7 +48,7 @@ import { retireHurtEvent, resumeChoices, consentChoices } from "./retire.js";
 import { bowlerToSuspend, replacementEvent, suspendEvent, suspensionRefusalWords, suspensionsInMatch } from "./suspension.js";
 import { MenuItem, MenuSection, PadMenu } from "./padMenu.jsx";
 import { ExitKey, Pad, PadBoard, asksOneTap, usePinnedBoard } from "./pad.jsx";
-import { SyncBanner } from "./syncBanner.jsx";
+import { SyncBanner, clockOf } from "./syncBanner.jsx";
 import { OtherPhoneScreen, readHolder } from "./otherPhone.jsx";
 import { showOtherPhone } from "../lib/otherPhone.js";
 import { SecondAccountSheet, PenStandsLine, PenStandsSheet } from "./secondAccount.jsx";
@@ -2832,7 +2832,10 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
       <OtherPhoneScreen match={match} holder={holder} reason={padStatus?.reason??null} onExit={onExit}
         onCode={()=>setModal("handover")}
         onWatch={onWatch&&matchId?()=>onWatch(matchId):null}
-        onCheck={checkHolder} checking={checkingHolder}/>
+        onCheck={checkHolder} checking={checkingHolder}
+        // A lapsed hold (Kameel, 25 Nov 2026): the banner's own confirmed take-over and the server's last ball, unchanged.
+        lastAt={clockOf(padStatus?.heldElsewhere?.at)}
+        onTakeOver={padStatus?.reason==="held_elsewhere"?()=>syncRef.current?.attach("takeover"):null}/>
     </>
   );
 

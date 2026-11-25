@@ -10,7 +10,7 @@
  */
 import { readFileSync } from "node:fs";
 import {
-  CHECK_AGAIN_WORDS, HELD_REASONS, heldByAnother, holderOf, kindOf, otherPhoneWords, showOtherPhone, todayLine,
+  CHECK_AGAIN_WORDS, HELD_REASONS, LAPSED_REASON, heldByAnother, holderOf, kindOf, lapsedHold, otherPhoneWords, showOtherPhone, todayLine,
 } from "../src/lib/otherPhone.js";
 import { scorerFixtures } from "../src/lib/scorerHome.js";
 
@@ -53,12 +53,31 @@ group("When the screen shows: a phone holding nothing of the match, another hold
      !showOtherPhone({ fresh: false, holder: another, status: st({ reason: "lease_active" }) }));
   ok("a ball waiting to send: the pad and its banner", !showOtherPhone({ fresh: true, holder: another, status: st({ reason: "lease_active", pending: 1 }) }));
   ok("a refused ball held here: the pad", !showOtherPhone({ fresh: true, holder: another, status: st({ reason: "lease_active", held: 1 }) }));
-  ok("a lapsed lease (held_elsewhere): the pad's confirmed take-over, whatever the read said",
-     !showOtherPhone({ fresh: true, holder: another, status: st({ reason: "held_elsewhere" }) }));
   for (const reason of ["match_complete", "no_capability", "not_signed_in", "pad_ended", "epoch_moved", "token_moved", "moved_on"]) {
     ok(`the server said ${reason}: the pad says it`, !showOtherPhone({ fresh: true, holder: another, status: st({ reason }) }));
   }
   ok("the read says this device holds it: the pad", !showOtherPhone({ fresh: true, holder: holderOf([row({ held: "this_device" })]), status: null }));
+}
+
+group("A lapsed hold (Kameel, 25 Nov 2026): the same screen, the confirmed take-over its primary");
+{
+  const lapsed = holderOf([row({ held: "lapsed" })]);
+  ok("the read's lapsed lease is a lapsed hold, not one held now", lapsedHold(lapsed) && !heldByAnother(lapsed));
+  ok("...an idle session is neither", !lapsedHold(holderOf([row({ state: "idle", held: null })])));
+  ok("the claim refused as held_elsewhere: the screen", LAPSED_REASON === "held_elsewhere" && showOtherPhone({ fresh: true, holder: null, status: st({ reason: "held_elsewhere" }) }));
+  ok("...before the claim answers, from the read alone (no toss sheet first)", showOtherPhone({ fresh: true, holder: lapsed, status: st({ reason: "attaching" }) }));
+  ok("...not on a phone with something of the match saved here", !showOtherPhone({ fresh: false, holder: lapsed, status: st({ reason: "held_elsewhere" }) }));
+  ok("...nor with a ball waiting to send", !showOtherPhone({ fresh: true, holder: lapsed, status: st({ reason: "held_elsewhere", pending: 2 }) }));
+  ok("...nor once taken over (attached)", !showOtherPhone({ fresh: true, holder: lapsed, status: st({ reason: "held_elsewhere", attached: true }) }));
+  ok("Somebody else took it meanwhile (epoch_moved): the pad's banner, as before", !showOtherPhone({ fresh: true, holder: lapsed, status: st({ reason: "epoch_moved" }) }));
+  ok("the kind: lapsed, from the claim or the read", kindOf(null, "held_elsewhere") === "lapsed" && kindOf(lapsed, null) === "lapsed");
+  ok("...a live lease in the claim's answer wins over an older read", kindOf(lapsed, "lease_active") === "another");
+  const w = otherPhoneWords(lapsed, "held_elsewhere", "14:21");
+  ok("says plainly the other phone has gone quiet", w.lead === "Nobody has scored on the other phone for a while.", w.lead);
+  ok("...with the server's last ball, what the take-over is confirmed against", /last ball from it came in at 14:21/.test(w.body), w.body);
+  ok("...and to leave it if it is still scoring", /if it is still scoring, leave it/.test(w.body));
+  ok("...or that the server has no ball from it", /no ball from it yet/.test(otherPhoneWords(null, "held_elsewhere").body));
+  ok("...naming nobody", !/Naidoo/.test(JSON.stringify(otherPhoneWords(holderOf([row({ held: "lapsed" })]), "held_elsewhere", "14:21"))));
 }
 
 group("The words: who, from the read; never a guess");
@@ -101,16 +120,19 @@ group("The screen and the pad (source)");
 {
   const src = readFileSync(new URL("../src/scorer/otherPhone.jsx", import.meta.url), "utf8");
   const eng = readFileSync(new URL("../src/scorer/engine.jsx", import.meta.url), "utf8");
-  ok("one primary: Enter the handover code", (src.match(/primary testId=/g) ?? []).length === 1 && /primary testId="other-phone-code"[^>]*>Enter the handover code/.test(src));
+  ok("one primary at a time: Take over scoring for a lapsed hold, else Enter the handover code",
+     (src.match(/primary testId=/g) ?? []).length === 2 && /\{lapsed\s*\? <Wide primary testId="sync-confirm-takeover"[^>]*>Take over scoring<\/Wide>\s*: <Wide primary testId="other-phone-code"[^>]*>Enter the handover code/.test(src));
+  ok("the take-over is the pad's own confirmed one, offered only on the claim's held_elsewhere answer",
+     /onTakeOver=\{padStatus\?\.reason==="held_elsewhere"\?\(\)=>syncRef\.current\?\.attach\("takeover"\):null\}/.test(eng) && /disabled=\{!onTakeOver\}/.test(src));
   ok("Watch the score is there", /Watch the score/.test(src));
   ok("the screen reads only match_duties", (src.match(/api\(/g) ?? []).length === 1 && /\/api\/read\/match_duties\?matchId=/.test(src));
-  ok("it claims nothing itself: Check again is the pad's own attach", !/session\/claim|handover\/claim|takeover/.test(src) && /attach\("open"\)/.test(eng));
+  ok("it claims nothing itself: Check again is the pad's own attach", !/session\/claim|handover\/claim|\/takeover|api\(`\/api\/matches/.test(src) && /attach\("open"\)/.test(eng));
   ok("the pad draws it before the match screen, with only the handover sheet over it",
      /if\(otherPhone\)return \(/.test(eng) && /\{modal==="handover"&&renderModal\(\)\}/.test(eng));
   ok("the sheet opened from it is the code alone", /takeOnly=\{otherPhone\}/.test(eng));
   ok("a pad that has held the token since it opened is never fresh again (a fork, a handover: its banner)",
      /fresh: freshOpen && !heldHere/.test(eng) && /if \(padStatus\?\.attached\) setHeldHere\(true\)/.test(eng));
-  ok("no 44px floor broken: every button sets minHeight to the floor", (src.match(/minHeight: `\$\{T\.floor\.target\}px`/g) ?? []).length === 2);
+  ok("no 44px floor broken: every button sets minHeight to the floor", (src.match(/minHeight: `\$\{T\.floor\.target\}px`/g) ?? []).length === 2 && (src.match(/<button /g) ?? []).length === 2);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
