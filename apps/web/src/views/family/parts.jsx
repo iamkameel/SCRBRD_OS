@@ -274,8 +274,8 @@ function AnswerKey({ value, label, on, suggested, onTap, pid, describedBy }) {
 export function AvailabilityBlock({ match, child, role, self = false, onSent = null }) {
   const [nonce, setNonce] = useState(0);
   const { rows, loading, error } = useLive("availability", role, nonce, { matchId: match.id });
-  // The same `injuries` read his Home's line makes; only whose, open and the return date are used (injuredAnswer).
-  const injuries = useLive("injuries", role);
+  // The same `injury_status` read his Home's line makes: whose, open and the return date, nothing clinical (injuredAnswer).
+  const injuries = useLive("injury_status", role);
   const live = rows.find((r) => r.playerId === child.id) ?? null;
   const [sending, setSending] = useState(/** @type {string | null} */ (null));
   const [sent, setSent] = useState(/** @type {any} */ (null));

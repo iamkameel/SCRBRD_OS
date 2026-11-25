@@ -401,6 +401,29 @@ export const READ_QUERIES = {
             order by date_injured desc`,
   },
   /**
+   * HIS OPEN INJURIES AS THE HOME SAYS THEM: "Injured · back Fri 4 Dec"
+   * (redesign slices 8 and 9; Kameel's question 6 (a), 19 Nov: never the
+   * injury's name on Home). Whose, and the return date, for each injury still
+   * open, and nothing else: no name, severity, phase, note or physio comes
+   * back, whatever the reader's tier, so the clinical words never reach the
+   * Home or the availability answer. The full `injuries` read stays behind
+   * his Health history.
+   *
+   * Open is judged as the Injuries screen judges it (lib/injury.js
+   * isOpenInjury): not cleared where the reader reads the phase, still
+   * restricted where he reads the status tier alone. Both come from
+   * injury_masked under the caller's own row security, so the read widens
+   * nothing and no row comes back that `injuries` would not give him.
+   */
+  injury_status: {
+    masked: true,
+    text: `select player_id, school_id, rtw_date,
+                  (injury_left_on(player_id, school_id) is not null) as left_school
+             from injury_masked
+            where coalesce(phase <> 'cleared', restricted, false)
+            order by player_id, rtw_date`,
+  },
+  /**
    * ONE INJURY'S REVIEWS, as a dated history (GA-I19 D3, db/111). Each row
    * at the reader's own tier, from injury_review_masked: that a review
    * happened and what it left his availability as for anybody who reads the
