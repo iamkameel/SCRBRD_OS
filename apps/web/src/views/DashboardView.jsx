@@ -443,7 +443,18 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
               {[["Today", fanToday], ["This week", fanLater]].filter(([, rows]) => rows.length > 0).map(([head, rows]) => (
                 <section key={head} aria-label={head} data-testid={`day-group-${head === "Today" ? "today" : "week"}`}>
                   <h3 style={groupHead}>{head}</h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>{rows.map((m) => weekRow(m))}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: T.space.sm }}>{rows.map((m) => (
+                    <div key={m.id}>
+                      {weekRow(m)}
+                      {/* One quiet line on the next match: the weather the removed Next fixture card read (no new read). */}
+                      {m.id === next?.id && weatherWords(weather) && (
+                        <p data-testid="day-weather" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary, margin: `${T.space.xs} 0 0` }}>
+                          <Icon name={isIcon(weather.icon) ? weather.icon : "cloud-sun"}/> {weatherWords(weather)}
+                          {observedStamp(weather, { status: next.status }) && <span data-testid="weather-observed"> · {observedStamp(weather, { status: next.status }).text}</span>}
+                        </p>
+                      )}
+                    </div>
+                  ))}</div>
                 </section>
               ))}
             </div>
@@ -509,7 +520,13 @@ function FanNews({ role, nonce, onNav }) {
       <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: T.space.sm }}>
         {posts.map((n) => (
           <li key={n.id} data-testid={`news-headline-${n.id}`}>
-            <div style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere" }}>{n.title}</div>
+            {onNav ? (
+              // The post opens in the Newsfeed by its own address (#read-<id>, which that screen reads on opening).
+              <button type="button" className="pressBtn" data-testid={`news-headline-open-${n.id}`} aria-label={`Read: ${n.title}`}
+                onClick={() => { try { window.location.hash = `read-${n.id}`; } catch { /* no address: the feed opens */ } onNav("news"); }}
+                style={{ ...T.role.body, display: "block", width: "100%", minHeight: T.floor.target, textAlign: "left", padding: 0, border: "none", background: "transparent",
+                  fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere", cursor: "pointer" }}>{n.title}</button>
+            ) : <div style={{ ...T.role.body, fontWeight: 600, color: T.content.primary, overflowWrap: "anywhere" }}>{n.title}</div>}
             <div style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>{n.audience ? `${n.audience} · ` : ""}{humanDate(String(n.at ?? "").slice(0, 10))}</div>
           </li>
         ))}
