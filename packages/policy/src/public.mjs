@@ -354,6 +354,11 @@ export const NEVER_PUBLIC = Object.freeze({
   // year he typed, and which roster row the office matched him to: his own,
   // the office's and the principal's alone (R4). Never on a page; the whole table.
   pupil_claim: "N4",
+  // ── db/172, a date of birth corrected by the office ──
+  // N1. Every change to a boy's recorded date of birth: the date before and
+  // after, who changed it and how. The office's alone (player_born_changes());
+  // never on a page; the whole table.
+  player_born_change: "N1",
 });
 
 /**
