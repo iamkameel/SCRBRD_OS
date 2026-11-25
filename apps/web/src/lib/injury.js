@@ -177,8 +177,34 @@ const seenWord = (first) => (first ? "Recorded" : "Seen by the physio");
  */
 const hasLeftSchool = (injury) => injury?.leftSchool === true;
 
+
+/**
+ * His open injury as one quiet line on his own Home or his parent's
+ * (redesign slice 8; the role reviews' direction §3.2 Flow A, Kameel's
+ * question 6 (a), 19 Nov): "Recovering: hamstring · back Fri 4 Dec". Read
+ * from the same `injuries` rows his Health history draws (his parent's
+ * Family card, his own Me), narrowed to the one boy, so it shows nobody
+ * anything that screen does not. The injury's name is drawn only where the
+ * read carried it; the phase, severity, notes and physio never are. Null when
+ * nothing is open, or he has left the injury's school.
+ *
+ * What the availability buttons do while he is injured (question 6's pre-filled
+ * answer) is not this line's: it says, and asks nothing.
+ * @param {any[]} rows  @param {{id: string}} child  @param {(iso: string) => string} fmt  the date as a person reads it
+ */
+function recoveringLine(rows, child, fmt) {
+  const open = (rows ?? []).filter((i) => i && i.player === child.id && isOpenInjury(i) && !hasLeftSchool(i))
+    // The one he will be back from last: the line says when he is back.
+    .sort((a, b) => String(b.rtw ?? "9999").localeCompare(String(a.rtw ?? "9999")));
+  const i = open[0];
+  if (!i) return null;
+  const what = typeof i.type === "string" && i.type.trim() ? `Recovering: ${i.type.trim()}` : "Recovering";
+  const rtw = day10(i.rtw);
+  return rtw ? `${what} · back ${fmt(rtw)}` : what;
+}
+
 export {
   NEXT_REVIEW_SHORTCUTS, PHASE_WORDS, REASON_ORDER, REFUSAL, SEVERITY_WORDS,
   addDaysIso, day10, daysBetween, hasLeftSchool, injuryCounts, injurySay, isOpenInjury,
-  phaseWord, reasonLine, saToday, seenWord, severityWord,
+  phaseWord, reasonLine, recoveringLine, saToday, seenWord, severityWord,
 };

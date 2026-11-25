@@ -28,7 +28,7 @@ import { T } from "../../design/tokens.js";
 import { api, signedIn } from "../../lib/api.js";
 import { readLive } from "../../lib/live.js";
 import { useFeatures } from "../../lib/features.js";
-import { OFF, fixturesToRead, recordOf, todoOf } from "../../lib/todo.js";
+import { OFF, SHOWN_ROWS, fixturesToRead, recordOf, todoOf, underLead } from "../../lib/todo.js";
 import { Action, Card, Line, OpenRow } from "./parts.jsx";
 
 /**
@@ -109,6 +109,19 @@ export function useTodo({ child, matches, matchesRead, now, self = false, day = 
   return { t, record };
 }
 
+/**
+ * The list for one child as a Home holds it (redesign slice 8): the Home
+ * makes the reads once, so its lead can ask whether the next fixture's answer
+ * is owed (lib/homeLead.js) and the card below draws the same answer. `retry`
+ * reads every source again.
+ * @param {Parameters<typeof useTodo>[0]} p
+ */
+export function useTodoList(p) {
+  const [again, setAgain] = useState(0);
+  const { t, record } = useTodo({ ...p, again });
+  return { t, record, retry: () => setAgain((n) => n + 1) };
+}
+
 /** A row's two lines: who answers it, by when, and where it came from. */
 function Facts({ row }) {
   return (
@@ -126,15 +139,22 @@ function Facts({ row }) {
 const rowTestId = (row) => (row.rule === "R1" || row.rule === "R2" ? `todo-row-${row.matchId}` : `todo-row-${row.rule}-${row.id.split(":")[1]}`);
 
 /**
- * @param {{child: any, matches: any[], matchesRead: {loading: boolean, error: any}, onOpen: (m: any) => void, now: number,
- *          self?: boolean, day?: Record<string, any> | null, onDayRetry?: () => void,
+ * The card under a Home's lead ("Also for you", the role reviews' direction
+ * §2.6): `todo` is the Home's own useTodoList(). `lead` is the fixture whose
+ * card above already holds his answer: its R1 or R2 row is not drawn again,
+ * and the count says it is above (lib/todo.js underLead). Up to SHOWN_ROWS
+ * rows open; the rest of the window under "N more", the later fixtures under
+ * "Later", as before.
+ * @param {{todo: ReturnType<typeof useTodoList>, matches: any[], onOpen: (m: any) => void,
+ *          lead?: string | null, onDayRetry?: () => void,
  *          onDoor?: (panel: "consents" | "ring" | "terms") => void}} p
  */
-export function TodoCard({ child, matches, matchesRead, onOpen, now, self = false, day = null, onDayRetry, onDoor }) {
-  const [again, setAgain] = useState(0);
+export function TodoCard({ todo, matches, onOpen, lead = null, onDayRetry, onDoor }) {
   const [showLater, setShowLater] = useState(false);
-  const { t, record } = useTodo({ child, matches, matchesRead, now, self, day, again });
+  const [showMore, setShowMore] = useState(false);
   if (!signedIn()) return null;
+  const { record } = todo;
+  const t = underLead(todo.t, lead);
   const byId = (id) => matches.find((m) => m.id === id);
   const go = (row) => {
     const d = row.door;
@@ -146,26 +166,33 @@ export function TodoCard({ child, matches, matchesRead, onOpen, now, self = fals
     }
     onDoor?.(d.kind);
   };
-  const retry = (row) => { if (row.source === "lifts_day") onDayRetry?.(); setAgain((n) => n + 1); };
+  const retry = (row) => { if (row.source === "lifts_day") onDayRetry?.(); todo.retry(); };
   const openRow = (row) => (
     <OpenRow key={row.id} testid={rowTestId(row)} onClick={() => go(row)} aside={row.door.label}>
       <Facts row={row}/>
     </OpenRow>
   );
+  const shown = showMore ? t.rows : t.rows.slice(0, SHOWN_ROWS);
+  const more = t.rows.length - SHOWN_ROWS;
   return (
     <>
       <Card label={t.label} testid="todo-card">
         <div aria-live="polite">
           <Line strong testid="todo-count">{t.line}</Line>
         </div>
-        {t.rows.length > 0 && (
+        {shown.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: T.space.sm }}>
-            {t.rows.map((row) => row.state === "open" ? openRow(row) : (
+            {shown.map((row) => row.state === "open" ? openRow(row) : (
               <div key={row.id} data-testid={`todo-unread-${row.key}`} style={{ display: "grid", gap: T.space.sm }}>
                 <Line quiet>{row.fact}</Line>
                 {row.door && <div><Action onClick={() => retry(row)} testid="todo-retry">{row.door.label}</Action></div>}
               </div>
             ))}
+          </div>
+        )}
+        {more > 0 && (
+          <div>
+            <Action pressed={showMore} onClick={() => setShowMore((v) => !v)} testid="todo-more">{showMore ? "Show fewer" : `${more} more`}</Action>
           </div>
         )}
         {t.later.line && (
@@ -179,7 +206,7 @@ export function TodoCard({ child, matches, matchesRead, onOpen, now, self = fals
         {t.clocked && <Line quiet testid="todo-clock">{t.clockWords}</Line>}
       </Card>
       {record && (record.lines.length > 0 || record.info.length > 0) && (
-        <Card label="What you have agreed" testid="todo-record">
+        <Card label="What you have agreed" testid="todo-record" weight="quiet">
           {record.lines.map((l) => (
             <div key={l.key} data-testid={`todo-record-${l.key}`} style={{ display: "grid", gap: "2px" }}>
               <span style={{ ...T.role.body, color: T.content.primary }}>{l.label}: <strong>{l.words}</strong></span>
