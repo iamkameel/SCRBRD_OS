@@ -25,7 +25,9 @@
  *
  * Routes (all signed in; a pad's resume credential reaches nothing here):
  *   GET  /api/pupil/state                 his own: { claim: null | { state, schoolId, schoolName, name, year,
- *                                           saidOn, sentOn, keepUntil, safeguarding } }
+ *                                           saidOn, sentOn, keepUntil, safeguarding },
+ *                                           ownSignIn: { pupil, open } }  (db/169: state 'closed' when a
+ *                                           no closed his page again)
  *   POST /api/pupil/claim { schoolId, name, year? }   { ok: true } or { error }; a `born` is dropped
  *   POST /api/pupil/remove                his own account, now (only an account that is nothing but a claim);
  *                                         an account kept for a safeguarding concern answers not_a_claim,
@@ -34,6 +36,9 @@
  *   GET  /api/pupil-claims?schoolId=      the office's Pupil claims list: { rows }
  *   POST /api/pupil-claims/:id/recognise { playerId }
  *   POST /api/pupil-claims/:id/decline
+ *   POST /api/pupil-claims/:id/not-him    db/169 (S10): "This account is not him", for a claim the office
+ *                                         recognised (and a yes may have opened): its pupil roles end, its
+ *                                         links go, the boy's yeses are closed, the claim is declined
  *   POST /api/pupil-claims/clear { schoolId }   the accounts past their 30 days: { removed }
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
@@ -58,6 +63,7 @@ export const PUPIL_CLAIM_STATUS = Object.freeze({
   player_is_an_adult: 409,
   player_required: 422,
   not_a_claim: 409,
+  not_recognised: 409,
 });
 
 /** A my_pupil_state() row, as his screen reads it. @param {any} r */
@@ -127,7 +133,18 @@ export function pupilClaimRoutes({ pool, secret }) {
       // The days as the database writes them (YYYY-MM-DD), never a Date: pg would read a date at local midnight.
       const { rows } = await client.query(`select state, school_id, school_name, typed_name, typed_year, said_under_18_on::text, sent_on::text,
                                                  keep_until::text, safeguarding from my_pupil_state()`);
-      return { claim: pupilState(rows[0]) };
+      // db/169: is this a pupil's account, and is his own sign-in in force? A
+      // pupil enrolled by the office, whose page a no has closed, has no claim:
+      // his basic view is drawn from this, in the same sentence ('closed').
+      const { rows: [o] } = await client.query(`select pupil, open, school_id, school_name from my_own_signin()`);
+      const ownSignIn = o ? { pupil: o.pupil === true, open: o.open !== false } : { pupil: false, open: true };
+      /** @type {any} */
+      let claim = pupilState(rows[0]);
+      if (!claim && ownSignIn.pupil && !ownSignIn.open && o?.school_id) {
+        claim = { state: "closed", schoolId: String(o.school_id), schoolName: String(o.school_name ?? ""), name: null, year: null,
+                  saidOn: "", sentOn: "", keepUntil: null, safeguarding: true };
+      }
+      return { claim, ownSignIn };
     }),
 
     claim: handle(async (client, req) => {
@@ -164,6 +181,11 @@ export function pupilClaimRoutes({ pool, secret }) {
 
     decline: handle(async (client, req) => {
       const { rows } = await client.query(`select * from pupil_claim_decline($1)`, [idOf(req)]);
+      return verdict(rows[0]);
+    }),
+
+    notHim: handle(async (client, req) => {
+      const { rows } = await client.query(`select * from pupil_claim_not_him($1)`, [idOf(req)]);
       return verdict(rows[0]);
     }),
 

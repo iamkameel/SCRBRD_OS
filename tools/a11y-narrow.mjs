@@ -19,8 +19,11 @@
  * its lists must be empty on which screen (they all must, at 320), and the
  * exploratory runs print the lists in full so a failure can be read, not guessed.
  *
- * Everything here runs in the page. No dependency, no network.
+ * Everything here runs in the page. No dependency, no network. The two floors
+ * are the design tokens' own (T.floor.target, T.floor.read), so a walk and the
+ * screens cannot hold two different numbers.
  */
+import { T } from "../apps/web/src/design/tokens.js";
 
 export const NARROW_WIDTHS = [320, 375, 414];
 
@@ -28,7 +31,7 @@ export const NARROW_WIDTHS = [320, 375, 414];
  * @param {import("playwright-core").Page} page
  * @param {{ root?: string | null, tap?: number, floor?: number }} [opts]
  */
-export const narrowAudit = (page, { root = null, tap = 44, floor = 12 } = {}) => page.evaluate(({ root, tap, floor }) => {
+export const narrowAudit = (page, { root = null, tap = T.floor.target, floor = T.floor.read } = {}) => page.evaluate(({ root, tap, floor }) => {
   const base = root ? document.querySelector(root) : document.body;
   const out = { found: !!base, sideways: [], offscreen: [], clipped: [], overlap: [], small: [], tiny: [], weak: [] };
   if (!base) return out;

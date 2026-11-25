@@ -190,6 +190,19 @@ export function couldFinalise(schoolId, teamCode) {
 }
 
 /**
+ * May this person ask for Pro mode on this fixture (db/170: team.select or
+ * fixture.update at the home side)? Like couldFinalise(), it decides whether
+ * to OFFER the control, never whether to allow it: match_capture_request()
+ * asks app_can() again.
+ */
+export function couldAskProMode(schoolId, teamCode) {
+  return (_profile?.assignments ?? []).some((a) =>
+    (roleGrants(a.role, "team.select") || roleGrants(a.role, "fixture.update")) &&
+    (a.school == null || a.school === schoolId) &&
+    (a.team == null || a.team === teamCode));
+}
+
+/**
  * May this person confirm the result of this fixture (redesign slice 4;
  * DESIGN_DIRECTION Q2, Kameel, 20 Nov 2026: "the coach confirms the result")?
  * Confirming is db/130's finish: scoring.finalise at the home side. The coach,

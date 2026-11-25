@@ -39,6 +39,8 @@ Three words, and only two of them public: **Provisional** (complete, not confirm
 
 **Decided 2026-11-04 (Kameel), word for word:** "Who presses 'Finish the match' after the last ball? A: the scorer (or the coach, the director of sport, the sports admin: everyone who holds 'scoring.finalise') finishes it from the pad's result screen. A pupil who holds a scorer role may finish too." Built as db/130 (PR #234).
 
+**Decision (Kameel, 20 Nov, on the board): keep the separation. After a match, the coach's confirm finishes it; the official result stays with the director of sport or the competition organiser (OFFICIAL_RESULT D3 unchanged).**
+
 ---
 
 ## 2 · States, and how each is known

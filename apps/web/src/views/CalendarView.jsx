@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, px, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Badge, Card, ReadState, SectionHeader } from "../ui/primitives.jsx";
 import { WeatherChip } from "./shared.jsx";
@@ -76,10 +76,11 @@ function CalendarView({ role, onNav }) {
       <SectionHeader title="Fixture Calendar" sub={trainingOff ? "Matches and school schedule" : "Matches, training sessions and school schedule"} color={D.sky}
         actions={
           <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
-            <button onClick={()=>setMonthOffset(o=>o-1)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"5px 12px",cursor:"pointer",color:D.textSecondary,fontSize:"14px"}}>‹</button>
+            {/* §3.5: each of the three is 44 × 44 at the least (T.floor.target); they were 31×28 and 63×28. */}
+            <button type="button" onClick={()=>setMonthOffset(o=>o-1)} className="pressBtn" aria-label="Previous month" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,minWidth:px(T.floor.target),minHeight:px(T.floor.target),padding:"0 12px",cursor:"pointer",color:D.textSecondary,fontSize:"14px"}}>‹</button>
             <span style={{fontFamily:D.head,fontSize:"13px",fontWeight:700,color:D.textPrimary,minWidth:"160px",textAlign:"center"}}>{monthName}</span>
-            <button onClick={()=>setMonthOffset(o=>o+1)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,padding:"5px 12px",cursor:"pointer",color:D.textSecondary,fontSize:"14px"}}>›</button>
-            <button onClick={()=>setMonthOffset(0)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.pill,padding:"5px 14px",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"12px"}}>Today</button>
+            <button type="button" onClick={()=>setMonthOffset(o=>o+1)} className="pressBtn" aria-label="Next month" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.md,minWidth:px(T.floor.target),minHeight:px(T.floor.target),padding:"0 12px",cursor:"pointer",color:D.textSecondary,fontSize:"14px"}}>›</button>
+            <button type="button" onClick={()=>setMonthOffset(0)} className="pressBtn" style={{background:D.surf2,border:`1px solid ${D.border}`,borderRadius:D.pill,minHeight:px(T.floor.target),minWidth:px(T.floor.target),padding:"0 14px",cursor:"pointer",color:D.textMuted,fontFamily:D.body,fontSize:"12px"}}>Today</button>
           </div>
         }/>
 

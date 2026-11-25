@@ -160,7 +160,12 @@ export async function sessionProfile(pool, secret, bearer) {
   return runAsPrincipal(pool, secret, bearer, async (client, principal) => {
     const { rows: me } = await client.query(
       `select id, name, email from app_user where id = $1`, [principal.userId]);
-    const { rows: assignments } = await client.query(
+    // db/169: a pupil's account whose own sign-in is not in force holds
+    // nothing the API will honour (app_can() refuses every assignment), so
+    // its workspace is drawn as the account with no school's: his basic view.
+    const { rows: [own] } = await client.query(`select pupil, open from my_own_signin()`);
+    const closed = own?.pupil === true && own?.open === false;
+    const { rows: assignments } = closed ? { rows: [] } : await client.query(
       `select a.id, a.role, a.school_id, s.name as school_name, a.team_code,
               a.season, a.fixture_id, a.valid_from, a.valid_until, a.expires_at,
               -- WHO this assignment is about: a guardian's children, or, for a
@@ -196,6 +201,7 @@ export async function sessionProfile(pool, secret, bearer) {
     return {
       user: me[0] ? { id: me[0].id, name: me[0].name, email: me[0].email } : null,
       deviceId: principal.deviceId,
+      ...(closed ? { ownSignInClosed: true } : {}),
       assignments: assignments.map(a => ({
         id: a.id, role: a.role,
         school: a.school_id, schoolName: a.school_name,

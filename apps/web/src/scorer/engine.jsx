@@ -160,7 +160,8 @@ const sideSourceOf = (sides) => ({ home: sides.home.source, away: sides.away.sou
   twelfth: { home: sides.home.twelfth ?? null, away: sides.away.twelfth ?? null } });
 
 /**
- * The toss for a fixture, as the server recorded it. SCRBRD-067.
+ * The fixture's own row, read fresh: the toss as the server recorded it
+ * (SCRBRD-067; tossFromRow), and what its coach asked for (db/170).
  *
  * Read through the fixture list the Match Centre already reads —
  * GET /api/read/matches, under fixture.read, whose rows carry toss_won_by,
@@ -168,19 +169,31 @@ const sideSourceOf = (sides) => ({ home: sides.home.source, away: sides.away.sou
  * a new endpoint: the scorer holds fixture.read over any match it may score,
  * and a second read of the same row would be a second policy to keep in step.
  *
- * Null when there is no toss, no server, or the read failed. Null is not
- * "the home side": the pad then asks (TossSheet), because the innings it
- * opens cannot be undone.
+ * No toss in the row (or no row) is not "the home side": the pad then asks
+ * (TossSheet), because the innings it opens cannot be undone.
+ *
+ * The same row carries what its coach asked the pad to declare (db/170's
+ * capture_profile; Pro mode is "full"). Null when there is no session, no
+ * server, or the read failed or timed out; tossFromRow(null) is no toss.
+ *
+ * Fresh because the request may change after the scorer's screen loaded its
+ * list (review S4, 20 Nov): a coach who turns Pro mode on at 09:30 for a
+ * screen opened at 09:00 must reach the toss at 09:45, or the pad declares
+ * quick and the fixture's request is then fixed at full beside an innings
+ * that never asked it.
  */
-async function liveToss(cfg) {
+async function liveFixtureRow(cfg, timeoutMs = 10000) {
   if (!cfg?.matchId || !signedIn()) return null;
   try {
-    const { rows } = await api("/api/read/matches");
-    return tossFromRow(rows.find((r) => r.id === cfg.matchId));
+    const { rows } = await api("/api/read/matches", { timeoutMs });
+    return rows.find((r) => r.id === cfg.matchId) ?? null;
   } catch {
     return null;
   }
 }
+
+/** What a fresh row asks, or what was known before when there is no row. */
+const askedOf = (row, known) => (row ? (row.capture_profile ?? null) : (known ?? null));
 
 /**
  * The server's log for a fixture, as events — or null when there is no
@@ -771,6 +784,9 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
   // no signal there is nowhere else the match exists, so the log goes to disk
   // on every change and is rehydrated on return.
   const [matchId, setMatchId] = useState(null);
+  // What the fixture asked the pad to declare at the toss (db/170): the
+  // list's answer when the pad opened, then each fresh read of the row.
+  const askedRef = useRef(resume?.cfg?.captureProfile ?? null);
   const [saveState, setSaveState] = useState({ kind: null, restored: false, savedAt: null });
   const hydratedRef = useRef(false);
 
@@ -856,8 +872,13 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
           // Each end's squad is the side its coach named, where there is one
           // (scorer/side.js): the pad scores who the safeguarding checks let
           // onto the sheet, not the whole roster around them.
-          const [sides, toss] = await Promise.all([liveSides(resume.cfg), liveToss(resume.cfg)]);
+          const [sides, row] = await Promise.all([liveSides(resume.cfg), liveFixtureRow(resume.cfg)]);
           if (cancelled) return;
+          const toss = tossFromRow(row);
+          // What the fixture asks, from the row just read, not the list the
+          // screen loaded when it opened (db/170; review S4). No row (no
+          // signal), and the list's answer stands.
+          askedRef.current = askedOf(row, askedRef.current);
           homeSquadRef.current = sides?.home.squad ?? null;
           awaySquadRef.current = sides?.away.squad ?? null;
           if (sides) setSideSource(sideSourceOf(sides));
@@ -867,13 +888,15 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
             ...firstInningsSides({ batsFirst: toss.batsFirst, fixture: resume.cfg,
               homeSquad: homeSquadRef.current, awaySquad: awaySquadRef.current }),
             overs: resume.cfg.overs ?? 20,
-            // A fixture that carries a declaration passes it on; none does yet,
-            // so this innings opens declared quick: runs first, one tap a ball
-            // (redesign slice 3, question 1). The declaration is what the pad
+            // A fixture that carries a declaration passes it on: Pro mode, which
+            // its coach asked for before the toss (db/170), declares full, the
+            // shot and the field on every ball. One that asks nothing opens
+            // declared quick: runs first, one tap a ball (redesign slice 3,
+            // question 1). The declaration is what the pad
             // asks, so the charts read its missing points as never asked for,
             // not as missing. The scorer may declare Full or Standard on the
             // opener sheet before the first ball; the latest one stands.
-            captureProfile: resume.cfg.captureProfile ?? CAPTURE_PROFILE.QUICK,
+            captureProfile: askedRef.current ?? CAPTURE_PROFILE.QUICK,
             id: openId,
           })] : [], []];
           if (toss) mintedRef.current.add(openId);
@@ -1328,9 +1351,10 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
     const open={...inningsStart({
       ...firstInningsSides({batsFirst,fixture:match,homeSquad:homeSquadRef.current,awaySquad:awaySquadRef.current}),
       overs:match.overs??20,
-      // Runs first: undeclared by the fixture, the innings declares quick, as
-      // the opening on hydration does (above). Never a second innings_start.
-      captureProfile:match.captureProfile??CAPTURE_PROFILE.QUICK,
+      // Pro mode (db/170) declares what the fixture's coach asked for; a
+      // fixture that asks nothing declares quick, runs first, as the opening
+      // on hydration does (above). Never a second innings_start.
+      captureProfile:askedRef.current??CAPTURE_PROFILE.QUICK,
     }),innings:0,id:newEventId(deviceIdRef.current,matchIdRef.current??"local")};
     setEvents(prev=>{
       if((prev[0]??[]).some(e=>e.kind===KIND.INNINGS_START))return prev;
@@ -1358,6 +1382,14 @@ function SCRBRD({resume,onSignIn,onExit,role=null,onPracticeActive=null,padEntry
         const answer={wonBy:toss.wonBy,decision:toss.decision};
         if(engine) await engine.queueToss(answer).catch(()=>{ pendingTossRef.current=answer; });
         else pendingTossRef.current=answer;
+      }
+      // What the fixture asks, read again now the coin has landed (db/170;
+      // review S4): the toss sheet may have stood open a while. Capped short,
+      // and skipped with no signal, so the innings still opens at once; on no
+      // answer the last known request stands.
+      if(fixtureLive&&(typeof navigator==="undefined"||navigator.onLine!==false)){
+        const row=await liveFixtureRow(match,2500);
+        askedRef.current=askedOf(row,askedRef.current);
       }
       openFirstInnings(batsFirst);
       setModal("opener");

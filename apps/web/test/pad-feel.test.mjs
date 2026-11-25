@@ -419,9 +419,17 @@ group("Runs first (redesign slice 3, question 1): how the pad asks, never what i
   const strip = (/** @type {any} */ i) => { const { declaredProfile, ...rest } = i; return JSON.stringify(rest); };
   ok("...and the declaration changes nothing else the fold says", strip(dflt) === strip(plain) && dflt.declaredProfile === "quick");
   const engine = src("apps/web/src/scorer/engine.jsx");
-  ok("both places a fixture's first innings opens declare quick when the fixture declares nothing",
-     engine.includes("captureProfile: resume.cfg.captureProfile ?? CAPTURE_PROFILE.QUICK,")
-       && engine.includes("captureProfile:match.captureProfile??CAPTURE_PROFILE.QUICK,"));
+  ok("both places a fixture's first innings opens declare what it asks, and quick when it asks nothing",
+     engine.includes("captureProfile: askedRef.current ?? CAPTURE_PROFILE.QUICK,")
+       && engine.includes("captureProfile:askedRef.current??CAPTURE_PROFILE.QUICK,"));
+  // Pro mode (db/170; review S4): what the fixture asks is read fresh, from
+  // the row the toss comes from when the pad opens and again when the toss is
+  // answered, and the list's answer stands only with no row.
+  ok("...read fresh: from the list at first, then the row at opening and at the toss",
+     engine.includes("const askedRef = useRef(resume?.cfg?.captureProfile ?? null);")
+       && engine.includes("askedRef.current = askedOf(row, askedRef.current);")
+       && /const row=await liveFixtureRow\(match,2500\);\s*askedRef\.current=askedOf\(row,askedRef\.current\);\s*\}\s*openFirstInnings\(batsFirst\);/.test(engine)
+       && engine.includes("const askedOf = (row, known) => (row ? (row.capture_profile ?? null) : (known ?? null));"));
   ok("the engine asks asksOneTap, with the menu's choice for this innings only",
      /const basic=asksOneTap\(inn\?\.declaredProfile,basicChoice\?\.innings===curIn\?basicChoice\.basic:null\);/.test(engine));
 }

@@ -303,12 +303,16 @@ group("R7: the handover, on the day only");
 
 group("R8a, R8b, R8c, R9: the undated rows, after the dated ones, in the design's order");
 {
+  // Terms never agreed are his whole section's card (TermsGate), so the list never says them a second time.
   const pending = todoOf(quiet({ child: { ...ROHAN_G, consent: "pending", consentVersion: null, consentAt: null } }));
-  ok("R8a: the terms not agreed on her own link", pending.rows[0]?.rule === "R8a" && pending.rows[0].fact === "The school's terms for Rohan are not agreed yet."
-     && pending.rows[0].door?.kind === "terms" && pending.rows[0].door?.label === "Read and agree"
-     && pending.rows[0].owner === "you (your own agreement)" && pending.rows[0].byWhenText === "since 12 Jan 2026", pending.rows[0]);
+  ok("R8a: terms never agreed are not a row (the card in place of his section says it, once)", pending.clear && !pending.rows.some((x) => x.rule === "R8a"), rulesOf(pending));
   const withdrawn = todoOf(quiet({ child: { ...ROHAN_G, consent: "withdrawn", consentAt: "2026-09-03T08:00:00Z" } }));
-  ok("...withdrawn: said with its date", withdrawn.rows[0]?.fact === "You withdrew the school's terms for Rohan on 3 Sep 2026. Lifts and health monitoring are off until they are agreed again.", withdrawn.rows[0]?.fact);
+  ok("R8a: withdrawn on her own link, said with its date", withdrawn.rows[0]?.rule === "R8a"
+     && withdrawn.rows[0]?.fact === "You withdrew the school's terms for Rohan on 3 Sep 2026. Lifts and health monitoring are off until they are agreed again."
+     && withdrawn.rows[0].door?.kind === "terms" && withdrawn.rows[0].door?.label === "Read and agree"
+     && withdrawn.rows[0].owner === "you (your own agreement)" && withdrawn.rows[0].byWhenText === "since 12 Jan 2026", withdrawn.rows[0]);
+  const undated = todoOf(quiet({ child: { ...ROHAN_G, consent: "withdrawn", consentAt: null } }));
+  ok("...withdrawn with no time on record: still said as withdrawn, never as 'not agreed'", undated.rows[0]?.fact === "You withdrew the school's terms for Rohan. Lifts and health monitoring are off until they are agreed again.", undated.rows[0]?.fact);
   const pn = todoOf(quiet({ publicName: { mine: { state: "not_answered", actor: null, version: null, recordedAt: null } } }));
   ok("R8b: her own public-name answer not given", pn.rows.length === 1 && pn.rows[0].rule === "R8b" && /Rohan is shown as "Batter" or "Bowler" on public pages until someone answers/.test(pn.rows[0].fact), pn.rows[0]?.fact);
   ok("...a 'no' clears it as surely as a 'yes'", todoOf(quiet({ publicName: { mine: { state: "refused", actor: "you" } } })).clear);
@@ -328,7 +332,7 @@ group("R8a, R8b, R8c, R9: the undated rows, after the dated ones, in the design'
   ok("...one live number clears it", todoOf(quiet({ contacts: [{ playerId: "p-rohan", active: 1 }] })).clear);
   ok("...no row in the count read (another family's child, a reader without the right): no R9, never a zero", todoOf(quiet({ contacts: [] })).clear && todoOf(quiet({ contacts: [{ playerId: "p-other", active: 0 }] })).clear);
   ok("...the count failing: a row", rulesOf(todoOf(quiet({ contacts: null }))) === "unread:emergency_contact_count");
-  const all = todoOf(quiet({ answers: said([SAT, [row("p-rohan", null)]]), child: { ...ROHAN_G, consent: "pending" }, contacts: [{ playerId: "p-rohan", active: 0 }],
+  const all = todoOf(quiet({ answers: said([SAT, [row("p-rohan", null)]]), child: { ...ROHAN_G, consent: "withdrawn" }, contacts: [{ playerId: "p-rohan", active: 0 }],
     consents: [health()], publicName: { mine: { state: "not_answered" } }, lifts: { sat: [offer({ mySeats: [seat("p-rohan", "awaiting_guardian")] })] } }));
   ok("order: the dated rows nearest first (R3 at 07:15 before R1's Sat 09:00 start), then R8a, R8b, R8c, R9", rulesOf(all) === "R3,R1,R8a,R8b,R8c,R9", rulesOf(all));
   ok("...counted together, one child's: '6 to do'", all.line === "6 to do" && countWords(all) === "6 to do", all.line);
@@ -395,7 +399,7 @@ group("A1's words: never a reason, a number, another child, 'done' or a percenta
 {
   const NAMES = /Pillay|Mkhize|Bekker|Naidoo|Cele|Dlamini|p-sibling|p-other|p-b\d/;
   const states = [
-    todoOf(quiet({ answers: said([SAT, side(row("p-rohan", null))]), child: { ...ROHAN_G, consent: "pending" }, contacts: [{ playerId: "p-rohan", active: 0 }],
+    todoOf(quiet({ answers: said([SAT, side(row("p-rohan", null))]), child: { ...ROHAN_G, consent: "withdrawn" }, contacts: [{ playerId: "p-rohan", active: 0 }],
       consents: [{ kind: "health", playerId: "p-rohan", relation: "guardian", state: "not_answered", moduleOn: true, canSayYes: true }], publicName: { mine: { state: "not_answered" } },
       lifts: { sat: [offer({ mine: true, awaitingDriver: true, mySeats: [seat("p-rohan", "awaiting_guardian"), seat("p-sibling", "requested")] })] },
       requests: [{ offerId: "o-1", matchId: "sat", schoolId: HIL, team: "1XI", leg: "out", meetAt: MEET_SAT, requested: 3 }] })),

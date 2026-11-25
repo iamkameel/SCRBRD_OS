@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { T, clr } from "../design/tokens.js";
+import { T, clr, px } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { ASK_INTRO, ASK_PUPIL, ASK_STATE_WORDS, JOBS, NAME_MAX, TOWN_MAX, askSentWords, askWords, buildAsk } from "../lib/schoolAsk.js";
 
@@ -15,7 +15,7 @@ import { ASK_INTRO, ASK_PUPIL, ASK_STATE_WORDS, JOBS, NAME_MAX, TOWN_MAX, askSen
 
 const FONT = { head: "'Syne',sans-serif", body: "'DM Sans',sans-serif" };
 const text = (size = 14, color = T.content.secondary) => ({ fontFamily: FONT.body, fontSize: `${size}px`, lineHeight: 1.5, color });
-const input = () => ({ width: "100%", minHeight: "44px", boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
+const input = () => ({ width: "100%", minHeight: px(T.floor.target), boxSizing: "border-box", padding: "10px 12px", borderRadius: "10px",
   background: T.fill.field, border: `1px solid ${T.line.normal}`, color: T.content.primary, fontFamily: FONT.body, fontSize: "16px" });
 const label = () => ({ display: "block", fontFamily: FONT.head, fontSize: "12px", fontWeight: 700, color: T.content.secondary, marginBottom: "6px" });
 
@@ -26,7 +26,7 @@ function Btn({ children, kind = "quiet", style, ...rest }) {
   const main = kind === "primary";
   return (
     <button type="button" className="pressBtn" {...rest}
-      style={{ minHeight: "44px", padding: "10px 18px", borderRadius: "999px", boxSizing: "border-box",
+      style={{ minHeight: px(T.floor.target), padding: "10px 18px", borderRadius: "999px", boxSizing: "border-box",
         cursor: rest.disabled ? "not-allowed" : "pointer", opacity: rest.disabled ? 0.5 : 1,
         border: main ? "none" : `1px solid ${T.line.strong}`,
         background: main ? T.light.action : "transparent", color: main ? T.light.ink : T.content.secondary,
@@ -38,7 +38,7 @@ function Btn({ children, kind = "quiet", style, ...rest }) {
 export function AskSchoolLink({ onAsk, testId = "join-school-ask", children = "Ask SCRBRD to add my school" }) {
   return (
     <button type="button" className="pressBtn" onClick={onAsk} data-testid={testId}
-      style={{ display: "inline-flex", alignItems: "center", minHeight: "44px", padding: "0", border: "none", background: "transparent",
+      style={{ display: "inline-flex", alignItems: "center", minHeight: px(T.floor.target), padding: "0", border: "none", background: "transparent",
         cursor: "pointer", color: T.brand.blueText, fontFamily: FONT.body, fontSize: "14px", fontWeight: 600, textAlign: "left" }}>
       {children}
     </button>

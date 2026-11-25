@@ -20,8 +20,8 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
-  GUARDIAN_TERMS_VERSION, GUARDIAN_TERMS, AGREE_KEPT_WORDS, agreeRefusalWords, agreedWords, confirmWords, doneWords,
-  guardianCandidates, guardianLinkWords, renderTerms, termsContacts, termsRuns,
+  GUARDIAN_TERMS_VERSION, GUARDIAN_TERMS, AGREE_KEPT_WORDS, CONNECT_TO_AGREE, agreeRefusalWords, agreedWords, confirmWords, doneWords,
+  gateWords, guardianCandidates, guardianLinkWords, notAgreeingWords, renderTerms, termsContacts, termsRuns,
 } from "../src/lib/guardianLink.js";
 
 let pass = 0, fail = 0;
@@ -164,6 +164,27 @@ group("N6: what the parent is told she agrees to, and what she is told if it is 
   }
   ok("no answer is a failure, not a refusal", agreeRefusalWords(new Error("offline"), "Rohan").kind === "failed");
   ok("an unknown code is a failure with the code, not a raw refusal", agreeRefusalWords({ status: 500, code: "boom" }, "Rohan").text.includes("boom"));
+}
+
+group("The card in place of his section, and the sheet's last line (GA-I20 D7)");
+{
+  const g = gateWords({ name: "M Cele", school: "Hilton College" });
+  ok("whose terms, at which school", g.head === "M Cele · Hilton College", g.head);
+  ok("the ask, in the design's words", g.ask === "Read and agree to the school's terms for M Cele.", g.ask);
+  ok("what opens when she agrees, by his name", g.opens === "M Cele's fixtures, answers and record open here when you agree.", g.opens);
+  ok("one button: 'Read the terms'", g.button === "Read the terms");
+  ok("no school on the row: his name alone, never 'undefined'", gateWords({ name: "M Cele", school: null }).head === "M Cele");
+  ok("the place's own word", gateWords({ name: "M Cele", school: "X", place: "club" }).ask === "Read and agree to the club's terms for M Cele.");
+  // The same words for every child behind the gate: nothing in them can differ for a boy with a concern, a mark or a notice.
+  const keys = Object.keys(g).sort().join();
+  ok("the card's words are four, and take only his name, the school and the place", keys === "ask,button,head,opens", keys);
+  const all = Object.values(g).join(" ");
+  ok("...no count, no 'waiting', no 'notice', no 'concern', no date", !/\d|waiting|notice|concern|held|share/i.test(all), all);
+  ok("the sheet's last line: tell the office, and the written request stays hers",
+     notAgreeingWords("M Cele") === "If you do not want to agree, tell the school office. You may still ask the office in writing for what the school holds about M Cele.",
+     notAgreeingWords("M Cele"));
+  ok("...in the place's own word", /tell the academy office\. .*what the academy holds/.test(notAgreeingWords("M Cele", "academy")));
+  ok("offline: 'Connect to agree', never a queued agreement", CONNECT_TO_AGREE === "Connect to agree");
 }
 
 console.log(`\nGUARDIAN LINK SCREEN: ${pass} passed, ${fail} failed`);

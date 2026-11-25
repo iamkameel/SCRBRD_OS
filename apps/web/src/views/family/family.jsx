@@ -13,7 +13,7 @@
  * NOTHING HERE DECIDES ACCESS. Every read is the server's, under the
  * reader's own policy; the screens only choose what to draw.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
 import { useNotifications, report, reportable } from "../../lib/notifications.js";
@@ -21,7 +21,8 @@ import { signedIn } from "../../lib/api.js";
 import { useNav } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { tenantWords } from "../../lib/words.js";
-import { chooseChild, doorTo, fixturesOf, linkWords, pendingWords, recallChild, rememberChild } from "../../lib/family.js";
+import { chooseChild, doorTo, fixturesOf, forgetChild, linkWords, pendingWords, recallChild, rememberChild, termsGated } from "../../lib/family.js";
+import { agreedWords } from "../../lib/guardianLink.js";
 import { Action, Card, ChildSwitcher, Line, NoneOr, Page, RetryBtn, Title } from "./parts.jsx";
 import { readState } from "../../lib/readState.js";
 import { LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
@@ -34,6 +35,18 @@ import { TodoCard, TodoCount } from "./todo.jsx";
 import { AppointedCard, AppointedOnMatch } from "./scoring.jsx";
 import { DsoCard } from "./dso.jsx";
 import { WaitingTerms } from "../terms.jsx";
+import { TermsGate } from "./terms.jsx";
+
+/**
+ * A child whose terms are not agreed on her own link: what this device holds
+ * of him is dropped as soon as her links say so (lib/family.js forgetChild).
+ * Keyed on the ids, so it runs once per answer, not on every draw.
+ * @param {any[]} kids
+ */
+function useForgetGated(kids) {
+  const gated = (kids ?? []).filter(termsGated).map((c) => c.id).join(",");
+  useEffect(() => { for (const id of gated ? gated.split(",") : []) forgetChild(id); }, [gated]);
+}
 
 /** The children this parent answers for, the one chosen, and the fixture list the cards share. */
 function useChildren(role) {
@@ -44,7 +57,9 @@ function useChildren(role) {
   const { rows: matches } = matchesRead;
   const [picked, setPicked] = useState(recallChild);
   const child = chooseChild(kids, matches, picked, Date.now());
-  const choose = (c) => { rememberChild(c.id); setPicked(c.id); };
+  useForgetGated(kids);
+  // A child behind the terms is chosen for this visit only, never remembered on the device.
+  const choose = (c) => { if (!termsGated(c)) rememberChild(c.id); setPicked(c.id); };
   // "No fixture is arranged" is said only of a fixtures read that answered.
   const matchesSaid = readState(matchesRead, { what: "the fixtures" });
   // matchesRead is the whole read: the To-do card takes { loading, error } from it, the next-fixture card the sentence.
@@ -117,8 +132,23 @@ export function FamilyHome({ role, onNav, onOpenScorer }) {
   const { kids, child, choose, loading, error, matches, matchesRead, matchesSaid, retry } = useChildren(role);
   const nav = useNav(role);
   const [open, setOpen] = useState(null);
+  // The children she has just agreed the terms for, on this visit: his section
+  // then opens under the record's own words ("Agreed · time · version").
+  const [agreed, setAgreed] = useState(/** @type {string[]} */ ([]));
   const raise = onNav ? () => onNav("safeguarding") : null;
   if (!child) return <NoChild loading={loading} error={error} testid="family-home" onRetry={retry} onRaise={raise} role={role} onOpenScorer={onOpenScorer}/>;
+  // The terms not agreed on her own link: his section is the card alone, and the DSO card under it.
+  if (termsGated(child)) {
+    return (
+      <Page testid="family-home">
+        <ChildSwitcher kids={kids} chosen={child} onChoose={(c) => { setOpen(null); choose(c); }}/>
+        <AppointedCard role={role} onOpenScorer={onOpenScorer}/>
+        <TermsGate key={child.id} child={child} w={tenantWords({ kind: child.schoolKind, relationship: child.relationship })}
+          onAgreed={() => { setAgreed((a) => [...a, child.id]); retry(); }}/>
+        <DsoCard onRaise={raise}/>
+      </Page>
+    );
+  }
   if (open?.kind === "match") {
     return (
       <>
@@ -136,11 +166,12 @@ export function FamilyHome({ role, onNav, onOpenScorer }) {
     );
   }
   return <FamilyHomeBody role={role} onNav={onNav} kids={kids} child={child} choose={choose} matches={matches}
-    matchesRead={matchesRead} matchesSaid={matchesSaid} retry={retry} nav={nav} setOpen={setOpen} onOpenScorer={onOpenScorer} onRaise={raise}/>;
+    matchesRead={matchesRead} matchesSaid={matchesSaid} retry={retry} nav={nav} setOpen={setOpen} onOpenScorer={onOpenScorer} onRaise={raise}
+    justAgreed={agreed.includes(child.id)}/>;
 }
 
 /** The Home for the chosen child: its own component, so the day's reads (a hook) are made for him alone. */
-function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead, matchesSaid, retry, nav, setOpen, onOpenScorer, onRaise }) {
+function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead, matchesSaid, retry, nav, setOpen, onOpenScorer, onRaise, justAgreed = false }) {
   const now = Date.now();
   // §1.9, §1.10: while his match is live, its board leads his section; otherwise it sits after his lifts.
   const isLive = fixturesOf(matches, child, now).live.length > 0;
@@ -161,6 +192,12 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
           <Title testid="family-child">{child.knownAs || child.name}</Title>
           <Line quiet testid="family-child-school">{schoolLine(child)}</Line>
         </header>
+        {/* Just agreed, on this visit: the record's words, from her link as read again. */}
+        {justAgreed && child.consent === "granted" && (
+          <p role="status" data-testid="family-terms-agreed" style={{ ...T.role.body, margin: 0, fontWeight: 600, color: T.content.primary }}>
+            {agreedWords(child.consentAt, child.consentVersion)}
+          </p>
+        )}
         {isLive && live}
         <NextFixtureCard child={child} matches={matches} role={role} now={now} said={matchesSaid} onRetry={retry}
           onOpen={(m) => setOpen({ kind: "fixture", match: m })}
@@ -200,6 +237,15 @@ function FamilyHomeBody({ onNav, role, kids, child, choose, matches, matchesRead
 export function FamilyMatches({ role }) {
   const { kids, child, choose, loading, error, retry } = useChildren(role);
   if (!child) return <NoChild loading={loading} error={error} onRetry={retry} testid="family-matches"/>;
+  // His fixtures open with his section, once the terms are agreed on her own link.
+  if (termsGated(child)) {
+    return (
+      <Page testid="family-matches">
+        <ChildSwitcher kids={kids} chosen={child} onChoose={choose}/>
+        <TermsGate key={child.id} child={child} w={tenantWords({ kind: child.schoolKind, relationship: child.relationship })} onAgreed={retry}/>
+      </Page>
+    );
+  }
   return (
     <Page testid="family-matches">
       <ChildMatches key={child.id} child={child} role={role}
@@ -315,6 +361,7 @@ export function FamilyFile({ role, onNav }) {
   // The fixtures, for each child's count (GA-I20 A1): the same read the Home makes.
   const matchesRead = useLive("matches", role);
   const links = useLinkLines(kids.length > 0);
+  useForgetGated(kids);
   if (!kids.length) return <NoChild loading={loading} error={error} onRetry={() => setNonce((n) => n + 1)} testid="family-file"/>;
   const now = Date.now();
   // His count opens his Home: the child is chosen as the switcher chooses him.
@@ -322,10 +369,12 @@ export function FamilyFile({ role, onNav }) {
   return (
     <Page testid="family-file">
       <Title>Family</Title>
-      {kids.map((c) => (
-        <ChildFileCard key={c.id} child={c} role={role} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })}
-          todo={<TodoCount child={c} matches={matchesRead.rows} matchesRead={matchesRead} now={now} onOpen={() => openHome(c)}/>}
-          onAgreed={() => setNonce((n) => n + 1)}/>
+      {kids.map((c) => (termsGated(c)
+        // The terms not agreed on her own link: the same card as on Home, in his place.
+        ? <TermsGate key={c.id} child={c} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })} onAgreed={() => setNonce((n) => n + 1)}/>
+        : <ChildFileCard key={c.id} child={c} role={role} w={tenantWords({ kind: c.schoolKind, relationship: c.relationship })}
+            todo={<TodoCount child={c} matches={matchesRead.rows} matchesRead={matchesRead} now={now} onOpen={() => openHome(c)}/>}
+            onAgreed={() => setNonce((n) => n + 1)}/>
       ))}
       {/* Her other links, not live (GA-I20 A2): an ended or unverified link beside a live one is still said. */}
       {(links.lines.length > 0 || links.failed) && (

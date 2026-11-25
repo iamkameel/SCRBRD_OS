@@ -30,6 +30,13 @@
  *      off consent and takes no answer.
  *   6. Nothing on those pieces is set under 12px, nothing pressed is under
  *      44px, and they draw in Daylight as well as Floodlit.
+ *   7. HIS OWN SIGN-IN (db/169, SCRBRD-140 Migration B, Q5/Q6). A boy of 15
+ *      with his own account and no yes reads nothing; his mother opens "His
+ *      own sign-in" on his file, taps "Allow his own sign-in", and his own
+ *      session reads his side at once; she taps "Stop his own sign-in" and
+ *      the same session reads nothing again, and its workspace is empty. A
+ *      boy whose yes is the school's (R Pillay, carried over) is told so and
+ *      offered no Stop.
  *
  * Leaves the database as it found it.
  *
@@ -62,6 +69,12 @@ const U_MUM = "88888888-0000-0000-0000-0000000000b9";
 const U_NEW = "88888888-0000-0000-0000-0000000000bc";
 const A = { self: "a5510000-0000-0000-0000-0000000000b8", player: "a5510000-0000-0000-0000-0000000000b9", mum: "a5510000-0000-0000-0000-0000000000ba" };
 const L = { self: "a5520000-0000-0000-0000-0000000000b8", mum: "a5520000-0000-0000-0000-0000000000b9" };
+// Step 7 (db/169): a boy of 15 with his own account and no yes, and D Pillay's link to him.
+const THABO = "aaaaaaaa-0000-0000-0000-0000000000c1";
+const U_THABO = "88888888-0000-0000-0000-0000000000c1";
+const U_DPILLAY = "88888888-0000-0000-0000-000000000005";
+const A7 = { self: "a5510000-0000-0000-0000-0000000000c1", player: "a5510000-0000-0000-0000-0000000000c2", mum: "a5510000-0000-0000-0000-0000000000c3" };
+const L7 = { self: "a5520000-0000-0000-0000-0000000000c1", mum: "a5520000-0000-0000-0000-0000000000c2" };
 
 let pass = 0, fail = 0;
 const ok = (n, c, d = "") => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${d}` : ""); } };
@@ -426,6 +439,87 @@ try {
   ok("no page error on the join form", signup.errors.length === 0, signup.errors.join(" | "));
   await signup.ctx.close();
 
+  // ── 7. His own sign-in (db/169) ─────────────────────────────────
+  group("His own sign-in: she allows it, and stops it (db/169)");
+  {
+    await q(`delete from app_user where id = $1`, [U_THABO]).catch(() => {});
+    await q(`delete from role_assignment where id = $1`, [A7.mum]).catch(() => {});
+    await q(`delete from player where id = $1`, [THABO]).catch(() => {});
+    await q(`insert into player (id, school_id, team_code, full_name, surname, squad_no, playing_role, born)
+             values ($1, $2, 'U16A', 'Thabo Fifteen', 'Fifteen', 87, 'batter', (current_date - interval '15 years 2 months')::date)`, [THABO, HIL]);
+    await q(`insert into app_user (id, school_id, email, name, role, player_id)
+             values ($1, $2, 'thabo.fifteen@example.invalid', 'Thabo Fifteen', 'player', $3)`, [U_THABO, HIL, THABO]);
+    await q(`insert into role_assignment (id, person_id, role, school_id, team_code) values
+               ($1, $4, 'selfaccess', $6, null), ($2, $4, 'player', $6, 'U16A'), ($3, $5, 'guardian', $6, null)`,
+            [A7.self, A7.player, A7.mum, U_THABO, U_DPILLAY, HIL]);
+    // His own link as the grant without the form writes it now (pending); hers verified and agreed.
+    await q(`insert into assignment_subject (id, assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                             consent_state, consent_version, consent_at, valid_from) values
+               ($1, $3, $5, 'self',   'verified', $6, now(), 'pending', null, null, current_date - 30),
+               ($2, $4, $5, 'parent', 'verified', $6, now(), 'granted', 'popia-2026-01', now(), current_date - 30)`,
+            [L7.self, L7.mum, A7.self, A7.mum, THABO, REGISTRAR]);
+    const boyToken = (await (await fetch(`${API}/api/auth/dev-login`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "thabo.fifteen@example.invalid", deviceId: "consent-walk-own-signin" }) })).json()).token;
+    const asBoy = async (path) => (await fetch(`${API}${path}`, { headers: { authorization: `Bearer ${boyToken}` } })).json();
+    const players = async () => ((await asBoy("/api/read/players")).rows ?? []).length;
+    const held = async () => ((await asBoy("/api/session")).assignments ?? []).length;
+    ok("he has a session", !!boyToken);
+    ok("with no yes, his session reads no player and holds nothing", (await players()) === 0 && (await held()) === 0);
+    const st = await asBoy("/api/pupil/state");
+    ok("...and his own screen is told it is closed", st?.ownSignIn?.pupil === true && st?.ownSignIn?.open === false && st?.claim?.state === "closed",
+       JSON.stringify(st).slice(0, 200));
+
+    const mum = await open();
+    ok("his mother signs in", await signIn(mum.page, "parent@example.invalid"));
+    const fam = tid(mum.page, "nav-family").first();
+    if (await fam.count()) await fam.click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1500);
+    const row = tid(mum.page, `family-open-signin-${THABO}`);
+    ok("his file has a row for his own sign-in", (await row.count()) === 1);
+    await row.click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1200);
+    let words = await tid(mum.page, "own-signin-words").innerText().catch(() => "");
+    ok("it says he cannot sign in, and sees what the public sees", /cannot sign in to his own page/.test(words) && /public sees/.test(words), words);
+    const f7 = await floors(mum.page, `own-signin-${THABO}`);
+    ok("nothing in it is under 12px, nothing pressed under 44px", f7.small.length === 0 && f7.tiny.length === 0, [...f7.small, ...f7.tiny].slice(0, 4).join(" · "));
+    await tid(mum.page, "own-signin-allow").click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1500);
+    words = await tid(mum.page, "own-signin-words").innerText().catch(() => "");
+    ok("she allows it: the row says so, with Stop beside it", /You allowed Thabo Fifteen's own sign-in/.test(words) && (await tid(mum.page, "own-signin-stop").count()) === 1, words);
+    const rec = await q(`select answer, how, given_by, terms_version from pupil_signin_consent where player_id = $1 order by seq`, [THABO]);
+    ok("...recorded with her, and her terms version", rec.length === 1 && rec[0].answer === "yes" && rec[0].how === "guardian"
+       && rec[0].given_by === U_DPILLAY && rec[0].terms_version === "popia-2026-01", JSON.stringify(rec));
+    ok("...and his own session, unchanged, reads his side at once", (await players()) > 0 && (await held()) > 0);
+    await tid(mum.page, "own-signin-stop").click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1500);
+    words = await tid(mum.page, "own-signin-words").innerText().catch(() => "");
+    ok("she stops it: the row says he cannot sign in", /cannot sign in to his own page/.test(words), words);
+    ok("...and the same session reads nothing again, holding nothing", (await players()) === 0 && (await held()) === 0);
+    // R Pillay's yes is the school's stamp, carried over at the paste. She is
+    // told only what it attests (S3: no form is claimed) and, having agreed the
+    // terms, may stop it herself (Kameel, 20 Nov, B); her own yes opens him again.
+    const pillayRow = tid(mum.page, `family-open-signin-${PILLAY}`);
+    await pillayRow.click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1200);
+    const pRow = tid(mum.page, `own-signin-${PILLAY}`);
+    let pw = await pRow.innerText().catch(() => "");
+    ok("R Pillay's row says the school opened it when it enrolled him, and claims no form",
+       /opened R Pillay's own sign-in when it enrolled him/.test(pw) && /No signed consent form was recorded/.test(pw) && !/has .*consent form .*on file/.test(pw), pw);
+    ok("...and offers her Stop (B)", (await pRow.locator('[data-testid="own-signin-stop"]').count()) === 1);
+    await pRow.locator('[data-testid="own-signin-stop"]').click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1500);
+    pw = await pRow.innerText().catch(() => "");
+    ok("she stops it: he cannot sign in", /cannot sign in to his own page/.test(pw), pw);
+    const pRec = await q(`select answer, how from pupil_signin_consent where player_id = $1 order by seq`, [PILLAY]);
+    ok("...recorded as her no, after the school's stamp", pRec.length === 2 && pRec[0].how === "enrolled" && pRec[1].answer === "no" && pRec[1].how === "guardian", JSON.stringify(pRec));
+    await pRow.locator('[data-testid="own-signin-allow"]').click({ timeout: 6000 }).catch(() => {});
+    await afterReads(mum.page, 1500);
+    pw = await pRow.innerText().catch(() => "");
+    ok("her own yes opens him again", /You allowed R Pillay's own sign-in/.test(pw), pw);
+    ok("no page error for his mother", mum.errors.length === 0, mum.errors.join(" | "));
+    await mum.ctx.close();
+  }
+
   // ── 6. Daylight ─────────────────────────────────────────────────
   group("The section in Daylight");
   const day = await open("daylight");
@@ -450,6 +544,10 @@ try {
   await q(`delete from access_log where person_id = $1`, [U_NEW]).catch(() => {});
   await q(`delete from app_user where id in ($1, $2, $3)`, [U_SIPHO, U_MUM, U_NEW]).catch(() => {});
   await q(`delete from player where id = $1`, [SIPHO]).catch(() => {});
+  await q(`delete from access_log where person_id = $1`, [U_THABO]).catch(() => {});
+  await q(`delete from app_user where id = $1`, [U_THABO]).catch(() => {});
+  await q(`delete from role_assignment where id = $1`, [A7.mum]).catch(() => {});
+  await q(`delete from player where id = $1`, [THABO]).catch(() => {});
   await q(`delete from role_request where email = 'a.newparent@example.invalid'`).catch(() => {});
   await q(`delete from feature_grant where key = 'workload_monitoring' and school_id = $1`, [HIL]).catch(() => {});
   await browser.close();
