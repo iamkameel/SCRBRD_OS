@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { T } from "../design/tokens.js";
+import { T, px } from "../design/tokens.js";
 import { arrange, statusSentence } from "../home/sections/LiveStrip.jsx";
 import { confirmFollow, dismissFollow } from "../lib/follow.js";
 
@@ -56,12 +56,12 @@ export function FollowedSchools({ followed, lead = false, onAskView = null, view
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <button type="button" className="pressBtn" data-testid="follow-confirm" disabled={answering}
               onClick={async () => { setAnswering(true); await confirmFollow(); setAnswering(false); }}
-              style={{ minHeight: "44px", padding: "10px 18px", borderRadius: "999px", border: "none", background: T.light.action, color: T.light.ink,
+              style={{ minHeight: px(T.floor.target), padding: "10px 18px", borderRadius: "999px", border: "none", background: T.light.action, color: T.light.ink,
                 cursor: answering ? "not-allowed" : "pointer", opacity: answering ? 0.5 : 1, fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
               {answering ? "Following…" : "Follow"}
             </button>
             <button type="button" className="pressBtn" data-testid="follow-not-now" disabled={answering} onClick={() => dismissFollow()}
-              style={{ minHeight: "44px", padding: "10px 18px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
+              style={{ minHeight: px(T.floor.target), padding: "10px 18px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
                 color: T.content.secondary, cursor: "pointer", fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
               Not now
             </button>
@@ -81,7 +81,7 @@ export function FollowedSchools({ followed, lead = false, onAskView = null, view
           {failed && !data && (
             <div role="status" data-testid="followed-failed" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: T.space.md, margin: "0 0 12px" }}>
               <p style={{ ...T.role.body, margin: 0, color: T.content.secondary }}>Couldn't load today's matches. They show here when the connection is back.</p>
-              {reload && <button type="button" onClick={reload} data-testid="followed-retry" className="pressBtn" style={{ minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill,
+              {reload && <button type="button" onClick={reload} data-testid="followed-retry" className="pressBtn" style={{ minHeight: px(T.floor.target), minWidth: px(T.floor.target), padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill,
                 border: `1px solid ${T.line.normal}`, background: "transparent", color: T.content.primary, fontFamily: T.type.head, fontSize: "14px", fontWeight: 700, cursor: "pointer" }}>Retry</button>}
             </div>
           )}
@@ -101,14 +101,14 @@ export function FollowedSchools({ followed, lead = false, onAskView = null, view
                   {onAskView && !(viewAsk?.id === s.id && viewAsk.ok) && (
                     <button type="button" className="pressBtn" data-testid={`ask-view-${s.code}`} onClick={() => onAskView(s)}
                       aria-label={`Ask ${s.name} for its signed-in view`}
-                      style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
+                      style={{ minHeight: px(T.floor.target), padding: "10px 16px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
                         color: T.content.secondary, cursor: "pointer", fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
                       Ask the school for its signed-in view
                     </button>
                   )}
                   <button type="button" className="pressBtn" data-testid={`unfollow-${s.code}`} disabled={busy === s.id} onClick={() => stop(s.id, s.name)}
                     aria-label={`Stop following ${s.name}`}
-                    style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
+                    style={{ minHeight: px(T.floor.target), padding: "10px 16px", borderRadius: "999px", border: `1px solid ${T.line.strong}`, background: "transparent",
                       color: T.content.secondary, cursor: busy === s.id ? "not-allowed" : "pointer", opacity: busy === s.id ? 0.5 : 1,
                       fontFamily: T.type.head, fontSize: "13px", fontWeight: 700 }}>
                     {busy === s.id ? "Stopping…" : "Stop following"}
@@ -139,7 +139,7 @@ function FollowedCard({ f }) {
   const tag = live ? "LIVE" : f.status === "complete" ? "RESULT" : f.status === "abandoned" ? "ABANDONED" : f.status === "postponed" ? "POSTPONED" : "TODAY";
   return (
     <a href={`/${done ? "scorecard" : "live"}/${encodeURIComponent(f.id)}`} data-testid="followed-card" data-status={f.status}
-      style={{ display: "block", textDecoration: "none", borderRadius: "14px", background: T.board.face, padding: "14px 16px", minHeight: "44px",
+      style={{ display: "block", textDecoration: "none", borderRadius: "14px", background: T.board.face, padding: "14px 16px", minHeight: px(T.floor.target),
         border: `1px solid ${live ? "rgba(52,229,138,0.55)" : T.board.rule}` }}>
       <span style={{ fontFamily: T.type.mono, fontSize: "12px", letterSpacing: "0.12em", color: live ? LIVE : T.board.dim, display: "inline-flex", alignItems: "center", gap: "8px" }}>
         {live && <span aria-hidden="true" className="live-dot" style={{ background: LIVE }}/>}{tag}

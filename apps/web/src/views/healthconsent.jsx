@@ -2,6 +2,7 @@ import { useState } from "react";
 import { T, inkOn } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useLive } from "../lib/live.js";
+import { healthPromptKey } from "../lib/childKeys.js";
 
 /**
  * Health monitoring's own consent (SCRBRD-110 §7; db/60).
@@ -305,12 +306,11 @@ export function EighteenCardView({ mine, busy = false, said = "", onAnswer }) {
  * switch or a guardian's own account carries no half-given state, and the
  * card simply asks again on another device, or if storage here is blocked.
  */
-const promptDismissKey = (playerId) => `scrbrd:health-consent-prompt:${playerId}`;
 const isPromptDismissed = (playerId) => {
-  try { return localStorage.getItem(promptDismissKey(playerId)) === "1"; } catch { return false; }
+  try { return localStorage.getItem(healthPromptKey(playerId)) === "1"; } catch { return false; }
 };
 const dismissPrompt = (playerId) => {
-  try { localStorage.setItem(promptDismissKey(playerId), "1"); }
+  try { localStorage.setItem(healthPromptKey(playerId), "1"); }
   catch { /* private window or storage blocked: the card simply shows again next time,
              which is the safe side to fail on — never worse than asking twice. */ }
 };

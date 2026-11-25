@@ -134,6 +134,8 @@
 | Q7 | "Who looked" stays the office's answer until the in-app view lands | the text as written |
 | Q8 | Counsel reads sentences 2, 35, 40 and 43 once, **outside the code**; a change from counsel is a new version | no code |
 
+*20 Nov 2026 (18:06):* slice 5, the parent's terms screen: Kameel's six calls decided "All six as recommended"; it is built after the 25 Nov reset.
+
 The version stays `popia-2026-01`: the text above, with Q2 and Q5, is that version. Any later edit is a new version (§4).
 
 ---

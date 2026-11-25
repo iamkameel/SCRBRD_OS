@@ -22,6 +22,10 @@
  *                                 …/guardians/:link/revoke, under
  *                                 user.role.assign or guardian.link.manage:
  *                                 familylinks.jsx (db/109)
+ *   - his own sign-in              GET/POST /api/players/:id/own-signin[/office],
+ *                                 under guardian.link.manage: the form on
+ *                                 file (who signed it, when), a withdrawal,
+ *                                 or opening him now: ownsignin.jsx (db/169)
  *
  * Name, squad number, playing role and the rest have no route, so they have no
  * field here. The first two need player.profile.manage, the third
@@ -42,6 +46,7 @@ import { WhoToRing } from "./family/childfile.jsx";
 import { PublicNameStaff } from "./publicname.jsx";
 import { GuardianLinks } from "./guardianlink.jsx";
 import { FamilyLinks, mayFamilyLinks } from "./familylinks.jsx";
+import { OfficeOwnSignIn } from "./ownsignin.jsx";
 import { holds } from "../lib/family.js";
 
 /** Does this person hold anything Edit Profile could offer? Signed out: nothing. */
@@ -96,6 +101,7 @@ export function EditProfile({ role, player, teams, onMoved }) {
       )}
       {mayFamilyLinks(role) && <FamilyLinks role={role} player={player}/>}
       {holdsCapability(role, "guardian.link.manage") && <GuardianLinks role={role} player={player}/>}
+      {holdsCapability(role, "guardian.link.manage") && <OfficeOwnSignIn player={player}/>}
       {mayPublicName(role) && <PublicNameStaff player={player}/>}
     </div>
   );

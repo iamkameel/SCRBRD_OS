@@ -441,6 +441,8 @@ const HAND_WRITTEN_SINCE_47 = {
   recognition_review: {},
   // db/168: a pupil's claim (what he typed, his roster row once known) is never public as a whole (N4).
   pupil_claim: {},
+  // db/169: the yes and the no for a boy's own sign-in is never public as a whole (N4).
+  pupil_signin_consent: {},
   // db/172: every change to a boy's date of birth is never public as a whole (N1).
   player_born_change: {},
 };

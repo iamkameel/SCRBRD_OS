@@ -145,6 +145,36 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 export const AGREE_KEPT_WORDS = "Your agreement, this version and the time are kept against your name.";
 
 /**
+ * The card a parent sees in place of a child's section while she has not
+ * agreed the terms on her own link (GA-I20 D7): whose terms, at which school,
+ * and what opens when she agrees. The same words for every child whose terms
+ * are not agreed, whatever else is true of him: it never counts what is
+ * waiting, and never says anything about him beyond his name and his school.
+ * @param {{ name: string, school?: string | null, place?: string }} who  his name as the family uses it
+ */
+export function gateWords({ name, school, place = "school" }) {
+  return {
+    head: [name, school].filter(Boolean).join(" · "),
+    ask: `Read and agree to the ${place}'s terms for ${name}.`,
+    opens: `${name}'s fixtures, answers and record open here when you agree.`,
+    button: "Read the terms",
+  };
+}
+
+/**
+ * The sheet's last line, under "I agree" and "Not now": not agreeing is said
+ * to the office, and a written request for what the school holds is still
+ * hers to make (POPIA section 23), whatever she does here.
+ * @param {string} name  @param {string} [place]
+ */
+export function notAgreeingWords(name, place = "school") {
+  return `If you do not want to agree, tell the ${place} office. You may still ask the office in writing for what the ${place} holds about ${name}.`;
+}
+
+/** The agree button when the phone has no signal: an agreement is never queued. */
+export const CONNECT_TO_AGREE = "Connect to agree";
+
+/**
  * The record's own words once the server has answered OK: "Agreed · 5 Nov 2026, 16:02 · popia-2026-01".
  * @param {string | null | undefined} at  consent_at, ISO
  * @param {string | null | undefined} version
