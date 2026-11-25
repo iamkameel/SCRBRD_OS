@@ -37,7 +37,7 @@
  * driver does not hold, so the card says "check with your coordinator".
  */
 import { useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { api } from "../lib/api.js";
 import { profile } from "../lib/session.js";
@@ -257,7 +257,7 @@ function QuickPitchForm({ matchId, role, onSaved }) {
       </label>
       <textarea data-testid="gk-pitch-notes" value={form.notes ?? ""} onChange={(e) => set("notes")(e.target.value)} rows={3}
         style={{ width: "100%", padding: "10px 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md,
-          color: D.textPrimary, fontFamily: D.body, fontSize: "14px", boxSizing: "border-box", resize: "vertical", marginBottom: "12px" }}/>
+          color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, boxSizing: "border-box", resize: "vertical", marginBottom: "12px" }}/>
       {result && result !== "ok" && (
         <div data-testid="gk-pitch-error" style={{ fontFamily: D.body, fontSize: "12px", color: textOn(D.rose), marginBottom: "10px" }}>
           {result === "empty_report" ? "Record at least one thing before saving." : `Could not save (${result}).`}

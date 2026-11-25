@@ -102,7 +102,7 @@ const btn = (/** @type {boolean} */ strong) => ({
 const field = () => ({
   width: "100%", minHeight: "72px", padding: `${T.space.sm} ${T.space.md}`, borderRadius: T.radius.md, resize: "vertical",
   border: `1px solid ${T.line.normal}`, background: T.surface.raised, color: T.content.primary,
-  fontFamily: T.type.body, fontSize: "14px", boxSizing: "border-box",
+  fontFamily: T.type.body, fontSize: T.role.control.fontSize, boxSizing: "border-box",
 });
 
 /**

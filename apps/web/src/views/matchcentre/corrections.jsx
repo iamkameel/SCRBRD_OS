@@ -153,7 +153,7 @@ export function CorrectionsSheet({ match, events, fold, commentary, list, onClos
       A note for the record (optional)
       <textarea data-testid={`corr-note-${k}`} value={notes[k] ?? ""} onChange={(e) => setNotes((n) => ({ ...n, [k]: e.target.value }))}
         style={{ minHeight: "44px", padding: T.space.sm, borderRadius: T.radius.md, border: `1px solid ${T.line.normal}`,
-          background: T.surface.raised, color: T.content.primary, fontFamily: T.type.body, fontSize: "16px", resize: "vertical" }}/>
+          background: T.surface.raised, color: T.content.primary, fontFamily: T.type.body, fontSize:T.role.control.fontSize, resize: "vertical" }}/>
     </label>
   );
   // Each row's effect, folded once per log and list, not once per keystroke.

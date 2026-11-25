@@ -136,7 +136,7 @@ const labelStyle = () => ({ display: "block", fontFamily: D.head, fontSize: "12p
   color: D.textSecondary, letterSpacing: "0.02em", marginBottom: "6px" });
 const fieldStyle = () => ({ width: "100%", minHeight: "44px", boxSizing: "border-box", padding: "10px 12px",
   background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary,
-  fontFamily: D.body, fontSize: "14px" });
+  fontFamily: D.body, fontSize: T.role.control.fontSize });
 
 function TextField({ label, value, onChange, type = "text", placeholder, readOnly, ...rest }) {
   const id = useId();
@@ -412,7 +412,7 @@ export function issuedFrom(out, name) {
 export function FormOnFileFields({ by, on, setBy, setOn, testid }) {
   const idBy = useId(), idOn = useId();
   const field = { width: "100%", minHeight: "44px", padding: "9px 12px", boxSizing: "border-box", borderRadius: D.sm,
-                  border: `1px solid ${D.border}`, background: D.surf2, color: D.textPrimary, fontFamily: D.body, fontSize: "16px" };
+                  border: `1px solid ${D.border}`, background: D.surf2, color: D.textPrimary, fontFamily: D.body, fontSize: T.role.control.fontSize };
   const label = { display: "block", fontFamily: D.body, fontSize: "12px", color: D.textSecondary, margin: "6px 0 4px" };
   const today = new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 10);
   return (

@@ -35,7 +35,7 @@ export function styles() {
     meta: { fontFamily: T.type.body, fontSize: "12px", lineHeight: 1.4, color: T.content.tertiary, margin: 0 },
     label: { display: "block", fontFamily: T.type.body, fontSize: "12px", fontWeight: 600, color: T.content.secondary, marginBottom: T.space.xs },
     input: { width: "100%", minHeight: "44px", padding: "10px 12px", boxSizing: "border-box", background: T.surface.base,
-             border: `1px solid ${T.line.strong}`, borderRadius: T.radius.md, color: T.content.primary, fontFamily: T.type.body, fontSize: "16px" },
+             border: `1px solid ${T.line.strong}`, borderRadius: T.radius.md, color: T.content.primary, fontFamily: T.type.body, fontSize: T.role.control.fontSize },
     primary: { ...btn, border: "none", background: T.content.primary, color: inkOn(T.content.primary) },
     secondary: { ...btn, background: "transparent", color: T.content.primary, border: `1px solid ${T.line.strong}` },
     danger: { ...btn, border: "none", background: T.semantic.critical, color: inkOn(T.semantic.critical) },

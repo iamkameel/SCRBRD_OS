@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { D, textOn } from "../design/tokens.js";
+import { D, T, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { holdsCapability } from "../rbac/index.js";
 import { Btn, Card, EmptyState } from "../ui/primitives.jsx";
@@ -267,7 +267,7 @@ function QuarantinePanel({ matchId, role }) {
                                  onChange={(e) => setNotes((n) => ({ ...n, [r.key]: e.target.value }))}
                                  style={{ display: "block", width: "100%", boxSizing: "border-box", minHeight: "44px", marginTop: "4px",
                                           padding: "8px 10px", borderRadius: "8px", border: `1px solid ${D.border}`, background: D.surf2,
-                                          color: D.textPrimary, fontFamily: D.body, fontSize: "14px" }} />
+                                          color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize }} />
                         </label>
                       )}
                       {said[r.key] && (

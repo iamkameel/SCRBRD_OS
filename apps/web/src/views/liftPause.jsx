@@ -52,7 +52,7 @@ export function LiftPause({ id, post = api }) {
           </p>
           <label htmlFor={`pause-note-${id}`} style={{ fontFamily: D.head, fontSize: "12px", fontWeight: 700, color: D.textSecondary }}>Why (optional)</label>
           <input id={`pause-note-${id}`} data-testid="pause-lift-note" value={note} maxLength={LIFT_NOTE_MAX} onChange={(e) => setNote(e.target.value)} autoComplete="off"
-                 style={{ minHeight: "44px", boxSizing: "border-box", padding: "10px 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize: "14px", width: "100%" }}/>
+                 style={{ minHeight: "44px", boxSizing: "border-box", padding: "10px 12px", background: D.surf2, border: `1px solid ${D.border}`, borderRadius: D.md, color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, width: "100%" }}/>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <button type="button" className="pressBtn" data-testid="pause-lift-confirm" disabled={busy} onClick={lift} style={btn(true)}>{busy ? "Lifting…" : "Lift the pause"}</button>
             <button type="button" className="pressBtn" data-testid="pause-lift-cancel" disabled={busy} onClick={() => { setOpen(false); setProblem(""); }} style={btn(false)}>Keep it paused</button>

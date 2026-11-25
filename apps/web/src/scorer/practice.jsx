@@ -61,12 +61,12 @@ const S = {
   field: () => ({
     width: "100%", minHeight: "48px", boxSizing: "border-box", padding: `0 ${T.space.md}`, borderRadius: T.radius.md,
     border: `1px solid ${T.content.tertiary}`, background: T.surface.interactive, color: T.content.primary,
-    fontFamily: T.type.body, fontSize: "16px",
+    fontFamily: T.type.body, fontSize: T.role.control.fontSize,
   }),
   area: () => ({
     width: "100%", minHeight: "104px", boxSizing: "border-box", padding: T.space.md, borderRadius: T.radius.md, resize: "vertical",
     border: `1px solid ${T.content.tertiary}`, background: T.surface.interactive, color: T.content.primary,
-    fontFamily: T.type.body, fontSize: "16px", lineHeight: 1.4,
+    fontFamily: T.type.body, fontSize: T.role.control.fontSize, lineHeight: 1.4,
   }),
   chip: (on) => ({
     minHeight: "44px", minWidth: "44px", padding: `0 ${T.space.md}`, borderRadius: T.radius.pill, cursor: "pointer",

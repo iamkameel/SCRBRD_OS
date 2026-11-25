@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { D, inkOn, textOn } from "../design/tokens.js";
+import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 
 /**
@@ -151,7 +151,7 @@ function ReasonField({ value, onChange, disabled, placeholder }) {
         onChange={(e) => onChange?.(e.target.value)} placeholder={placeholder}
         style={{ minHeight: "64px", boxSizing: "border-box", width: "100%", padding: "10px 12px", resize: "vertical",
                  background: D.surf1, border: `1px solid ${D.border}`, borderRadius: D.md,
-                 color: D.textPrimary, fontFamily: D.body, fontSize: "16px", lineHeight: 1.4 }}/>
+                 color: D.textPrimary, fontFamily: D.body, fontSize:T.role.control.fontSize, lineHeight: 1.4 }}/>
     </div>
   );
 }

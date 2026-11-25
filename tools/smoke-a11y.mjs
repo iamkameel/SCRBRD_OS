@@ -51,7 +51,7 @@ import { listingApi, MATCH as LISTING_MATCH } from "./a11y-listing-mock.mjs";
 import { selectionApi, OPEN as SEL_OPEN, SHUT as SEL_SHUT, UNION as SEL_UNION } from "./a11y-selection-mock.mjs";
 import { termsApi, CHILD as TERMS_CHILD } from "./a11y-terms-mock.mjs";
 import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
-import { narrowAudit } from "./a11y-narrow.mjs";
+import { narrowAudit, smallFieldType } from "./a11y-narrow.mjs";
 import { T as TOKENS } from "../apps/web/src/design/tokens.js";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
@@ -497,7 +497,7 @@ const signupServer = createServer(async (req, res) => {
 await new Promise((r) => signupServer.listen(SIGNUP_PORT, r));
 
 const browser = await chromium.launch({ ...launchOptions() });
-const measured = { floodlit: { type: {}, contrast: {}, emoji: {}, tap: {} }, daylight: { type: {}, contrast: {}, emoji: {}, tap: {} } };
+const measured = { floodlit: { type: {}, contrast: {}, emoji: {}, tap: {}, field: {} }, daylight: { type: {}, contrast: {}, emoji: {}, tap: {}, field: {} } };
 
 /** Every visible piece of text on the page: its element, size, and whether it reads. */
 const survey = (page, root = null) => page.evaluate((root) => {
@@ -623,8 +623,16 @@ const narrowCheck = async (page, theme, screen, root = null) => {
     ok(`${T_} ${screen} @${NARROW.width}: ${NARROW_WORDS[k]}`, r[k].length === 0, `${r[k].length}: ${r[k].slice(0, 4).join(" · ")}`);
     if (process.env.A11Y_NARROW_DEBUG && r[k].length) for (const x of r[k].slice(0, 14)) console.log(`   [${screen}@${NARROW.width}] ${k}: ${x}`);
   }
+  const fieldType = await smallFieldType(page, { root });
+  ok(`${T_} ${screen} @${NARROW.width}: the type in every field is ${TOKENS.floor.control}px or more`, fieldType.length <= CONTROL_TYPE_CEILING, `${fieldType.length}: ${fieldType.slice(0, 4).join(" · ")}`);
   if (process.env.A11Y_SHOTS) await page.screenshot({ path: join(process.env.A11Y_SHOTS, `${theme}-${screen}-${NARROW.width}.png`) }).catch(() => {});
 };
+
+/**
+ * The type inside a field, per screen, at least T.floor.control (16px; a phone zooms into a smaller one).
+ * Every screen this walk measures is asked, and none is allowed one: the ceiling is 0 everywhere.
+ */
+const CONTROL_TYPE_CEILING = 0;
 
 /** Record the floor, contrast and emoji counts for one screen, and the tap floor where it is ratcheted. */
 const measure = async (page, theme, screen, root = null) => {
@@ -634,6 +642,8 @@ const measure = async (page, theme, screen, root = null) => {
   const weak = items.filter((i) => i.ratio != null && i.ratio < i.need);
   const emoji = await emojiInControls(page, root);
   const tiny = screen in TAP_FLOOR_CEILING ? await smallTargets(page, root) : [];
+  const fieldType = await smallFieldType(page, { root });
+  measured[theme].field[screen] = fieldType.length;
   measured[theme].type[screen] = small.length;
   measured[theme].contrast[screen] = weak.length;
   measured[theme].emoji[screen] = emoji.length;
@@ -641,6 +651,7 @@ const measure = async (page, theme, screen, root = null) => {
   if (process.env.A11Y_DEBUG) {
     console.log(`[debug] ${theme}/${screen}: ${items.length} texts, ${small.length} under 12px, ${weak.length} below AA, ${emoji.length} emoji in controls${screen in TAP_FLOOR_CEILING ? `, ${tiny.length} targets under 44px` : ""}`);
     for (const t of tiny.slice(0, 8)) console.log(`   small target ${t}`);
+    for (const f of fieldType.slice(0, 8)) console.log(`   field type under ${TOKENS.floor.control}px ${f}`);
     for (const w of weak.slice(0, 8)) console.log(`   weak ${w.ratio.toFixed(2)} <${w.tag}> ${w.size}px "${w.text}"`);
     for (const e of emoji.slice(0, 8)) console.log(`   emoji ${e}`);
   }
@@ -2620,6 +2631,13 @@ try {
     for (const [screen, ceiling] of Object.entries(TAP_FLOOR_CEILING)) {
       const n = measured[th].tap[screen];
       ok(`${th} ${screen}: ${n} tapped under 44px (ceiling ${ceiling})`, n != null && n <= ceiling);
+    }
+  }
+
+  group(`The type inside a field (${TOKENS.floor.control}px, so a phone does not zoom) — per screen, none allowed`);
+  for (const th of ["floodlit", "daylight"]) {
+    for (const [screen, n] of Object.entries(measured[th].field)) {
+      ok(`${th} ${screen}: ${n} fields under ${TOKENS.floor.control}px (ceiling ${CONTROL_TYPE_CEILING})`, n <= CONTROL_TYPE_CEILING);
     }
   }
 

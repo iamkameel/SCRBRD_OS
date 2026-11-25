@@ -203,7 +203,7 @@ function OpeningSetupStep({batKey,bowlKey,batOrder,setBatOrder,bowlingSquad,bowl
           <input value={bowlerFilter} onChange={e=>setBowlerFilter(e.target.value)} aria-label="Search bowlers"
             placeholder="Filter bowlers…"
             style={{background:D.surf2,border:`1px solid ${D.textMuted}`,borderRadius:D.md,
-              color:D.textPrimary,fontSize:"16px",fontFamily:D.body,padding:"8px 12px",minHeight:"44px",width:"100%"}}/>
+              color:D.textPrimary,fontSize:T.role.control.fontSize,fontFamily:D.body,padding:"8px 12px",minHeight:"44px",width:"100%"}}/>
           <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"300px",overflowY:"auto",overscrollBehavior:"contain"}}>
             {bowlerCandidates.map(name=>{
               const p=getBowler(name);
