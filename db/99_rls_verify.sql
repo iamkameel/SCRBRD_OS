@@ -17039,7 +17039,11 @@ BEGIN
     v := _v169_ungated();
     PERFORM _assert(v = 'auth_identity_sign_in(text,text,text,text),captain_nominate(uuid,uuid,jsonb),'
          || 'colours_decide(uuid,text,text),colours_nominate(uuid,text,text),colours_nominations(),'
-         || 'dso_contacts(uuid),emergency_contact_stamp(),equipment_issue_fits(),honour_nomination_id(uuid),'
+         -- db/174 (25 Nov): the family list's three join it. Each asks the office's own question
+         -- (pupil_claim_office(), app_can() inside it) or, for the claim, refuses a pupil's account
+         -- as a guardian and a boy who has an account as a pupil (db/99 §149 (pupil), (match)).
+         || 'dso_contacts(uuid),emergency_contact_stamp(),equipment_issue_fits(),'
+         || 'family_register_claim(uuid,date),family_register_redact_due(uuid),family_register_rows(uuid,text),honour_nomination_id(uuid),'
          || 'honour_stamp(),injury_record(uuid,text,text,date,boolean,date,date,boolean,text,uuid),'
          || 'injury_review_record(uuid,text,boolean,date,date,text),injury_writer_is_family(uuid),'
          || 'lift_contacts(uuid),lift_seat_decline(uuid),lift_seat_withdraw(uuid),match_award(uuid,uuid,jsonb),'
