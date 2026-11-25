@@ -65,20 +65,20 @@ flowchart LR
 
 ```mermaid
 erDiagram
-  SCHOOL ||--o{ APP_USER : "home school (nullable)"
+  SCHOOL |o--o{ APP_USER : "home school (none for platform staff and new sign-ups)"
   SCHOOL ||--o{ PLAYER : "roster"
   SCHOOL ||--o{ GROUND : "owns"
   SCHOOL ||--o{ COMPETITION : "runs"
   APP_USER ||--o{ ROLE_ASSIGNMENT : "holds"
-  SCHOOL ||--o{ ROLE_ASSIGNMENT : "scope"
+  SCHOOL |o--o{ ROLE_ASSIGNMENT : "scope (none for platform roles)"
   MATCH |o--o{ ROLE_ASSIGNMENT : "one-fixture scope"
   ROLE_ASSIGNMENT ||--o{ ASSIGNMENT_SUBJECT : "names a child"
   PLAYER ||--o{ ASSIGNMENT_SUBJECT : "is named"
-  PLAYER |o--o| APP_USER : "his own account"
+  PLAYER |o--o{ APP_USER : "his own account (player_id, not unique)"
   PLAYER ||--o{ TEAM_MEMBERSHIP : "side, dated"
   SCHOOL ||--o{ MATCH : "home"
-  SCHOOL ||--o{ MATCH : "away"
-  GROUND ||--o{ MATCH : "played at"
+  SCHOOL |o--o{ MATCH : "away (none for an opponent not on SCRBRD)"
+  GROUND |o--o{ MATCH : "played at (may be unset)"
   COMPETITION |o--o{ MATCH : "played under"
   COMPETITION ||--o{ COMPETITION_ENTRANT : "entrants"
   MATCH ||--o{ MATCH_SQUAD : "team sheet"
@@ -98,6 +98,7 @@ erDiagram
     text role
     uuid school_id
     text team_code
+    text season
     uuid fixture_id
     bool active
     date valid_from
@@ -109,11 +110,14 @@ erDiagram
     text relationship
     text verification_state
     text consent_state
+    date valid_from
     date valid_until
   }
   BALL_EVENT {
     uuid match_id
     int seq
+    int innings
+    text kind
     uuid scorer_user_id
     text device_id
   }
@@ -122,6 +126,7 @@ erDiagram
 **Notes.**
 - **There is no team table.** A side is a school plus a `team_code`, on `role_assignment`, `team_membership` and the match.
 - **A link to a child is an `assignment_subject` row.** Access through it needs that row verified and live. A parent's terms agreement is kept on it (`consent_state`).
+- **Optional keys are drawn as optional:** a person's home school, a role's school (platform roles have none), the away school (an opponent not on SCRBRD), the ground, a match's competition and a notice's child.
 - **The ball log is append-only.** A correction is a new event, never an edit (`packages/scoring`).
 - **Reads of restricted records write `access_log`.** The ball log's own audit is `scoring_audit`.
 
