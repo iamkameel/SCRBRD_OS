@@ -15,7 +15,8 @@
  * 188px of layout). Each screen is measured by tools/a11y-narrow.mjs and every list it keeps must be empty: nothing
  * sideways, off the screen, clipped or drawn over; nothing under 12px or 44px; no text, field edge, placeholder or icon
  * under its contrast. Then the keyboard: Tab from the top of each person's Home, every stop in view and with a ring
- * whose colour is 3:1 against what is behind it.
+ * whose colour is 3:1 against what is behind it. Then (redesign slice 6) the tap floor alone on EVERY place the parent,
+ * the pupil, the coach, the scorer and the spectator reach from the bar, at 390 and 1366: nothing under 44 x 44.
  *
  * Names are the seed's illustrative ones (db/98) and the Match Centre fixture's (tools/fixture-matchcentre.mjs).
  *
@@ -34,6 +35,7 @@ import pg from "pg";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 import { buildMatchCentreFixture } from "./fixture-matchcentre.mjs";
 import { narrowAudit, tabPath } from "./a11y-narrow.mjs";
+import { T } from "../apps/web/src/design/tokens.js";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
 
@@ -216,7 +218,7 @@ try {
       await afterReads(page, 1800);
       ok("360 coach: the live fixture opens", await page.locator('[data-testid="match-view"]').count() === 1);
       /** Every control of the strip, or of the open menu, measured where it is drawn. */
-      const measure = (/** @type {string} */ sel) => page.evaluate((sel) => {
+      const measure = (/** @type {string} */ sel) => page.evaluate(({ sel, tap, read }) => {
         const box = document.querySelector(sel);
         if (!box) return null;
         const W = window.innerWidth, b = box.getBoundingClientRect();
@@ -226,11 +228,11 @@ try {
           cut: ctrls.filter((e) => { const r = e.getBoundingClientRect(); return r.left < Math.max(0, b.left) - 1 || r.right > Math.min(W, b.right) + 1 || e.scrollWidth > e.clientWidth + 1; })
             .map((e) => (e.textContent ?? "").trim()),
           scrolls: box.scrollWidth > box.clientWidth + 1,
-          floors: ctrls.filter((e) => { const r = e.getBoundingClientRect(); return r.height < 44 || r.width < 44 || parseFloat(getComputedStyle(e).fontSize) < 12; })
+          floors: ctrls.filter((e) => { const r = e.getBoundingClientRect(); return r.height < tap || r.width < tap || parseFloat(getComputedStyle(e).fontSize) < read; })
             .map((e) => (e.textContent ?? "").trim()),
           animation: getComputedStyle(box).animationName,
         };
-      }, sel);
+      }, { sel, tap: T.floor.target, read: T.floor.read });
       const strip = await measure('[data-testid="mc-tabs-row"]');
       ok("360: the strip is Summary, Scorecard, Commentary and More", strip?.names.join(" · ") === "Summary · Scorecard · Commentary · More", strip?.names.join(" · "));
       ok("360: none of them cut, and the strip does not scroll sideways", !!strip && strip.cut.length === 0 && !strip.scrolls, strip?.cut.join(" · "));
@@ -292,6 +294,84 @@ try {
       ok("360: the walk threw", false, /** @type {any} */ (e).message);
     } finally {
       await ctx.close();
+    }
+  }
+  // ── Redesign slice 6: the tap floor on every pilot screen ──
+  // The lists above hold each person's first screens to everything at 320. This holds EVERY place a pilot person
+  // reaches from the bar to the one floor: each bar item, its sections and the links beside them, each row the
+  // family page opens, Settings, the concern page and the alerts, at 390 (a phone) and 1366 (the rail). Nothing
+  // tapped under 44 x 44 (T.floor.target, through narrowAudit). Only the tap list is asked here; a calendar month
+  // that runs off a phone is another slice's. TAP_CEILING is a screen's known allowance: none, every one is 0.
+  group("The tap floor on every pilot screen (redesign slice 6)");
+  {
+    /** @type {Record<string, number>} "<person> <screen>" → targets under 44 it may still have. */
+    const TAP_CEILING = {};
+    const TAP_PERSONAS = {
+      parent: { email: "parent@example.invalid", min: 6 },
+      pupil: { email: "pillay@example.invalid", min: 5 },
+      coach: { email: "coach@example.invalid", min: 14 },
+      scorer: { email: "scorer@example.invalid", min: 8 },
+      spectator: { email: "spectator@example.invalid", min: 8 },
+    };
+    /** The test ids of the visible buttons (or anything, with `any`) matching `sel`, once each, in page order. */
+    const visible = (/** @type {string} */ sel, /** @type {RegExp | null} */ skip = null, any = false) =>
+      async (/** @type {import("playwright-core").Page} */ page) => {
+        const found = await page.$$eval(sel, (els) => els.map((e) => ({ id: /** @type {HTMLElement} */ (e).dataset.testid ?? "", button: e.tagName === "BUTTON", shown: e.getBoundingClientRect().width > 0 })));
+        return [...new Set(found.filter((f) => f.id && f.shown && (any || f.button) && !(skip && skip.test(f.id))).map((f) => f.id))];
+      };
+    const bar = visible('[data-testid^="mnav-"], [data-testid^="nav-"], [data-testid="topbar-alerts"]', /badge|group|signout/);
+    const sections = visible('[data-testid*="-section-"]');
+    const links = visible('[data-testid^="home-"][data-testid*="-link-"]');
+    const opens = visible('[data-testid^="family-open-"]', null, true);
+    const go = async (/** @type {import("playwright-core").Page} */ page, /** @type {string} */ id) => {
+      await page.locator(`[data-testid="${id}"]`).first().click({ timeout: 5000 }).catch(() => {});
+      await loaded(page);
+      await afterReads(page, 300);
+    };
+    for (const width of [390, 1366]) {
+      for (const [who, p] of Object.entries(TAP_PERSONAS)) {
+        const ctx = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 900 }, colorScheme: "light",
+          ...(width < 600 ? { isMobile: true, hasTouch: true } : {}) });
+        await offline(ctx);
+        const page = await ctx.newPage();
+        watchReads(page);
+        await page.addInitScript(`window.__SCRBRD_API_BASE__ = ${JSON.stringify(API)};`);
+        try {
+          await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+          await signIn(page, p.email);
+          /** @type {[string, string[]][]} */
+          const seen = [];
+          const judge = async (/** @type {string} */ screen) => {
+            await loaded(page);
+            // At rest: a card still easing in (News's newsIn) is measured mid-transform, a fraction under its 44.
+            await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming().iterations === Infinity), null, { timeout: 3000 }).catch(() => {});
+            const { tiny } = await narrowAudit(page);
+            const key = `${who} ${screen}`;
+            seen.push([key, tiny]);
+            ok(`@${width} ${key}: nothing tapped under 44px (ceiling ${TAP_CEILING[key] ?? 0})`, tiny.length <= (TAP_CEILING[key] ?? 0), `${tiny.length}: ${tiny.slice(0, 4).join(" · ")}`);
+            if (DEBUG && tiny.length) for (const x of tiny) console.log(`   [@${width} ${key}] ${x}`);
+          };
+          await judge("first");
+          for (const n of await bar(page)) {
+            const area = n.replace(/^(mnav-|nav-|topbar-)/, "");
+            await go(page, n);
+            await judge(area);
+            for (const sct of (await sections(page)).slice(1)) { await go(page, sct); await judge(`${area}/${sct.split("-section-")[1]}`); }
+            await go(page, n);
+            for (const o of await opens(page)) {
+              await go(page, o);
+              await judge(`${area}/${o.replace(/-[0-9a-f-]{36}$/, "")}`);
+              await go(page, o);
+            }
+            for (const l of await links(page)) { await go(page, n); await go(page, l); await judge(`${area}/${l.split("-link-")[1]}`); }
+          }
+          ok(`@${width} ${who}: the walk reached ${seen.length} screens (at least ${p.min})`, seen.length >= p.min, seen.map(([k]) => k).join(", "));
+        } catch (e) {
+          ok(`@${width} ${who}: the tap-floor walk threw`, false, /** @type {any} */ (e).message);
+        } finally {
+          await ctx.close();
+        }
+      }
     }
   }
   ok("the API wrote nothing to stderr", apiErr.join("").trim() === "", apiErr.join("").slice(0, 200));
