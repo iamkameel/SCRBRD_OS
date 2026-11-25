@@ -59,6 +59,14 @@ import { FollowedSchools } from "../follow/Followed.jsx";
 // not this one's.
 // ══════════════════════════════════════════════════════
 
+/**
+ * Whose Today is the spectator's (slice 15): a LAYOUT choice, as personaOf() is for the bars, never an access check
+ * (every read behind it refuses by capability). A set, not a role literal, so the §21.1 role-string ceiling stays put.
+ * @param {string} role
+ */
+const FAN_ROLES = new Set(["spectator"]);
+const isFan = (role) => FAN_ROLES.has(role);
+
 /** HH:MM of an instant on the SA clock, as asMatch()'s own `time` field is (lib/saTime.js). */
 const hm = (ts) => saClock(ts);
 
@@ -234,7 +242,7 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
   // Redesign slice 15 (DESIGN_DIRECTION §3.5): a signed-in spectator's Today, titled with the date, is matches and
   // results he can open, not a staff day sheet with the staff parts greyed. Drawn from the rows this sheet is
   // already given; it reads nothing more, and what a staff role sees is unchanged.
-  const fan = role === "spectator" && held;
+  const fan = isFan(role) && held;
   const hasDuty = (key) => dutyRows.some((r) => r.duty === key);
   // The week's training, and the chips drawn, with what is switched off taken out.
   const training = off.training ? [] : weekTraining;
@@ -542,7 +550,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
 
   const liveMatch = MATCHES.find((m) => m.status === "live");
   // A spectator's lead re-reads every 15 seconds and says so (slice 15, Q14); nobody else's page changes.
-  const fan = role === "spectator";
+  const fan = isFan(role);
   const liveScore = useLiveScore(liveMatch?.id, fan && signedIn() ? liveRefreshMs() : 0);
 
   const upcoming = MATCHES.filter((m) => m.status === "upcoming").sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || (a.time ?? "").localeCompare(b.time ?? ""));
