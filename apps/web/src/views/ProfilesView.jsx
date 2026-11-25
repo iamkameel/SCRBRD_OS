@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState, useEffect } from "react";
 import { ROLES } from "../design/roles.js";
-import { D, inkOn, textOn, themed } from "../design/tokens.js";
+import { D, T, inkOn, px, textOn, themed } from "../design/tokens.js";
 import { atLeast, bookNote, fitnessColor, humanDate, stat } from "../lib/format.js";
 import { signedIn } from "../lib/api.js";
 import { can, filterRecord, holdsCapability } from "../rbac/index.js";
@@ -636,8 +636,9 @@ function ProfilesView({ role, profileTarget, onClearTarget, addressed = null, on
           {/* Category tabs */}
           <div style={{display:"flex",gap:"4px",marginBottom:"12px"}}>
             {["players","coaches","staff"].map(c2=>(
-              <button key={c2} onClick={()=>{setCat(c2);setSelId(null);}} className="pressBtn" style={{
-                flex:1,padding:"6px 0",borderRadius:D.md,cursor:"pointer",textTransform:"capitalize",
+              <button key={c2} type="button" onClick={()=>{setCat(c2);setSelId(null);}} className="pressBtn" style={{
+                // §3.5: 44px to tap (T.floor.target); the segment was 30 tall.
+                flex:1,minHeight:px(T.floor.target),padding:"0",borderRadius:D.md,cursor:"pointer",textTransform:"capitalize",
                 border:`1px solid ${cat===c2?D.violet+"55":D.border}`,background:cat===c2?D.violet+"14":"transparent",
                 fontFamily:D.body,fontSize:"12px",fontWeight:cat===c2?600:400,color:cat===c2?D.violet:D.textMuted,
               }}>{c2}</button>

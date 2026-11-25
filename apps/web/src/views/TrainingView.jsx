@@ -4,7 +4,7 @@ import { holdsCapability } from "../rbac/index.js";
 import { holdsAsHeld } from "../lib/held.js";
 import { signedIn } from "../lib/api.js";
 import { PlanList, PlanEditor, RegisterSheet } from "./training/PlanRegister.jsx";
-import { D, T, textOn, themed } from "../design/tokens.js";
+import { D, T, px, textOn, themed } from "../design/tokens.js";
 import { dateStr, today } from "../lib/format.js";
 import { Avatar, Badge, Btn, Card, Input, Modal, Pill, ReadState, SectionHeader, Select } from "../ui/primitives.jsx";
 import { useLive, useRows } from "../lib/live.js";
@@ -89,8 +89,9 @@ function TrainingView({ role }) {
           <div style={{display:"flex",gap:"6px"}}>
             <div style={{display:"flex",background:D.surf2,borderRadius:D.pill,padding:"3px",border:`1px solid ${D.border}`}}>
               {["schedule","drills"].map(v=>(
-                <button key={v} onClick={()=>setView(v)} className="pressBtn" style={{
-                  padding:"5px 14px",borderRadius:D.pill,border:"none",cursor:"pointer",
+                <button key={v} type="button" onClick={()=>setView(v)} className="pressBtn" style={{
+                  // §3.5: 44px to tap (T.floor.target); the two were 36 tall.
+                  minHeight:px(T.floor.target),padding:"0 14px",borderRadius:D.pill,border:"none",cursor:"pointer",
                   background:view===v?D.gradLive:"transparent",
                   color:view===v?T.light.ink:D.textMuted,fontFamily:D.head,fontSize:"12px",fontWeight:700,
                   letterSpacing:"0.06em",textTransform:"capitalize",
@@ -267,7 +268,8 @@ function LoadPanel({ rows }) {
                     aria-expanded={openClause===r.playerId}
                     onClick={()=>setOpenClause(openClause===r.playerId?null:r.playerId)}
                     title={`${r.clause.code} — ${r.clause.title}`}
-                    style={{marginLeft:"6px",padding:"1px 6px",borderRadius:D.pill,cursor:"pointer",
+                    // §3.5: 44px to tap (T.floor.target); the clause was a 20px chip in the row.
+                    style={{marginLeft:"6px",display:"inline-flex",alignItems:"center",minHeight:px(T.floor.target),verticalAlign:"middle",padding:"0 8px",borderRadius:D.pill,cursor:"pointer",
                       border:`1px solid ${D.border}`,background:"transparent",fontFamily:D.mono,fontSize:"12px",color:D.textSecondary}}>
                     {r.clause.code} · {r.clause.title}</button>}</td>
                 <td style={{padding:"6px 8px",fontFamily:D.mono,color:D.textSecondary,whiteSpace:"nowrap"}}>{r.overs7d} · {r.overs28d} · {r.longestSpell7d}</td>

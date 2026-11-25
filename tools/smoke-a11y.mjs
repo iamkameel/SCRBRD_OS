@@ -51,6 +51,7 @@ import { listingApi, MATCH as LISTING_MATCH } from "./a11y-listing-mock.mjs";
 import { selectionApi, OPEN as SEL_OPEN, SHUT as SEL_SHUT, UNION as SEL_UNION } from "./a11y-selection-mock.mjs";
 import { buildWebForWalk, WEB_TEST_ROOT } from "./web-test-build.mjs";
 import { narrowAudit } from "./a11y-narrow.mjs";
+import { T as TOKENS } from "../apps/web/src/design/tokens.js";
 import { shellHtml } from "../services/api/public/public-api.mjs";
 import { inningsStart, batters, bowler, ball, BALL_TYPE } from "@scrbrd/scoring";
 import { moreMenuKeys, pickTab } from "./walk-tabs.mjs";
@@ -589,10 +590,11 @@ const emojiInControls = (page, root = null) => page.evaluate((root) => {
 
 /**
  * Every visible thing a person taps whose box is under 44px either way
- * (§3.5): buttons, links, inputs, and anything with a control's role. What is
- * hidden from everyone (aria-hidden, display:none, a zero box) is not a target.
+ * (§3.5; the number is the tokens' T.floor.target): buttons, links, inputs, and
+ * anything with a control's role. What is hidden from everyone (aria-hidden,
+ * display:none, a zero box) is not a target.
  */
-const smallTargets = (page, root = null) => page.evaluate((root) => {
+const smallTargets = (page, root = null) => page.evaluate(({ root, tap }) => {
   const base = root ? document.querySelector(root) : document;
   if (!base) return [];
   const TAPPED = "button, a[href], input:not([type=hidden]), select, textarea, [role=button], [role=tab], [role=radio], [role=switch], [role=checkbox]";
@@ -601,10 +603,10 @@ const smallTargets = (page, root = null) => page.evaluate((root) => {
     if (el.closest("[aria-hidden=true]")) continue;
     const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
     if (r.width < 1 || r.height < 1 || cs.visibility === "hidden") continue;
-    if (r.width < 44 || r.height < 44) out.push(`${Math.round(r.width)}x${Math.round(r.height)} "${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24)}"`);
+    if (r.width < tap || r.height < tap) out.push(`${Math.round(r.width)}x${Math.round(r.height)} "${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 24)}"`);
   }
   return out;
-}, root);
+}, { root, tap: TOKENS.floor.target });
 
 /** What each of narrowAudit's lists means, for the failure line. */
 const NARROW_WORDS = {
