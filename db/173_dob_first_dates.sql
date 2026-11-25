@@ -138,7 +138,7 @@ DROP TABLE IF EXISTS pg_temp._v173_bodies;
 CREATE TEMP TABLE _v173_bodies (fn text PRIMARY KEY, shipped text, mine text, file text);
 INSERT INTO _v173_bodies VALUES
   ('player_born_checked()',     '4214f377cb5bdeade6c1c13ef06a2955', 'c850e92291bc7f809e52e2630c422c85', 'db/172'),
-  ('player_born_record()',      'd2e91ecba68ca5f7529024903431b250', '2f9744450451c1507969bd0092f28704', 'db/172'),
+  ('player_born_record()',      'd2e91ecba68ca5f7529024903431b250', '9ba26159d30af8fd6d1cdbeb1ebe70aa', 'db/172'),
   ('pupil_signin_carry_over()', '9aa438021d787f69337360a57554b5ff', 'a83fd786dea8ab57e4d9a83d96c11eb3', 'db/169'),
   ('pupil_signin_open(uuid)',   '8fb155c9ca0bcc28ee7d2436f4f69675', '9f48a4d15b197910c45640601d96c889', 'db/169'),
   ('pupil_signin_after_yes(uuid,text)', '605c5b3a4c0139b7089f64973ccf51ba', '9af7035afb366ee70ff3c122e8b0789f', 'db/169'),
@@ -304,7 +304,7 @@ BEGIN
           -- line only under the office's tick (Kameel, 26 Nov 2026, Q1:
           -- app.born_ticked, set by the import for that line alone).
           v_me IS NOT NULL AND coalesce(player_born_office(NEW.school_id), false) AND NOT player_born_own_child(NEW.id)
-          AND (v_how <> 'import' OR current_setting('app.born_ticked', true) = 'on'));
+          AND (v_how <> 'import' OR coalesce(current_setting('app.born_ticked', true), '') = 'on'));
   RETURN NULL;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 REVOKE ALL ON FUNCTION player_born_record() FROM PUBLIC;
