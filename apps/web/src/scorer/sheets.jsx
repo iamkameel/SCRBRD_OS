@@ -334,12 +334,16 @@ function RevisionSheet({overs,target,isChase,onConfirm,onClose}){
 // tab of their own screen.
 const HANDOVER_POLL_MS = 2500;
 
-function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", onHandedOver, onClaimed, onTakenOver, onCancelled, onClose, conditionsHash }) {
-  const [tab, setTab] = useState(startTab);
+// `takeOnly` (redesign slice 13): opened from the other-phone screen, where
+// this phone holds nothing to hand over, the sheet is the code and the check
+// alone, with no Hand over tab.
+function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, ballInFlight, startTab = "hand", takeOnly = false, onHandedOver, onClaimed, onTakenOver, onCancelled, onClose, conditionsHash }) {
+  const [chosen, setTab] = useState(startTab);
+  const tab = takeOnly ? "take" : chosen;
   return (
-    <Sheet title="Handover" accent={D.sky} onClose={onClose}>
+    <Sheet title={takeOnly ? "Enter the handover code" : "Handover"} accent={D.sky} onClose={onClose}>
       <div style={{paddingTop:"14px",display:"flex",flexDirection:"column",gap:"14px"}}>
-        <div style={{display:"flex",gap:"6px"}}>
+        {!takeOnly&&<div style={{display:"flex",gap:"6px"}}>
           {[["hand","Hand over"],["take","Take over"]].map(([id,label])=>(
             <button key={id} data-testid={`handover-tab-${id}`} onClick={()=>setTab(id)} className="pressBtn" style={{
               flex:1,minHeight:"44px",padding:"9px",borderRadius:D.pill,cursor:"pointer",border:"none",
@@ -348,7 +352,7 @@ function HandoverSheet({ matchId, device, epoch, pending, held = 0, onShowHeld, 
               {label}
             </button>
           ))}
-        </div>
+        </div>}
         {tab==="hand"
           ? <HandOverTab matchId={matchId} device={device} epoch={epoch} pending={pending} held={held} onShowHeld={onShowHeld} ballInFlight={ballInFlight}
               onHandedOver={onHandedOver} onCancelled={onCancelled} onClose={onClose}/>

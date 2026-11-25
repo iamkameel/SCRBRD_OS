@@ -218,7 +218,7 @@ A failure: a ball lost after airplane mode; a wrong count of extras; the score d
 ### 6. The handover
 
 1. Phone 1, pill at **Sent**, between overs: **Hand over**, then **Hand over scoring**. Read the six-digit code.
-2. Phone 2: sign out, sign in as `scorer2.wes`. Open the same fixture. Tap **Take over**, type the code, **Claim this match**. Type the score from phone 1's board. Tap **Confirm and take over**.
+2. Phone 2: sign out, sign in as `scorer2.wes`. Open the same fixture: it says who is scoring on another phone. Tap **Enter the handover code**, type the code, **Claim this match**. Type the score from phone 1's board. Tap **Confirm and take over**.
 3. Phone 1 shows **Handed over**. Score the rest of the match on phone 2.
 4. At the end: **Match Complete**. Wait for **Sent**.
 

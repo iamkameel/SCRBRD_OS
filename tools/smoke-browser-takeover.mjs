@@ -189,10 +189,16 @@ const until = async (page, fn, ms = 15000, step = 400) => {
   return !!(await fn());
 };
 const tid = (page, id) => page.locator(`[data-testid="${id}"]`);
-const banner = async (page) => ({
-  reason: (await tid(page, "sync-banner").first().getAttribute("data-reason", { timeout: 800 }).catch(() => null)) ?? null,
-  text: ((await tid(page, "sync-banner").first().innerText({ timeout: 800 }).catch(() => "")) || "").replace(/\s+/g, " ").trim(),
-});
+// The pad's banner, or, on a phone that holds nothing of the match, the other-phone screen in its place
+// (redesign slice 13; Kameel, 25 Nov 2026: a lapsed hold opens there, Take over scoring its primary).
+const banner = async (page) => {
+  const at = (await tid(page, "other-phone").count()) ? "other-phone" : "sync-banner";
+  return {
+    at,
+    reason: ((await tid(page, at).first().getAttribute("data-reason", { timeout: 800 }).catch(() => null)) || null),
+    text: ((await tid(page, at).first().innerText({ timeout: 800 }).catch(() => "")) || "").replace(/\s+/g, " ").trim(),
+  };
+};
 const listItems = async (page) => tid(page, "sync-banner-list").locator("li").allInnerTexts().catch(() => []);
 const pill = async (page) => {
   const l = page.locator('[aria-label^="Sync status:"]').first();
@@ -383,6 +389,14 @@ try {
   const bn1 = await banner(B.page);
   ok("...shown the time of the server's last ball", !!hm1 && bn1.text.includes(hm1), `${hm1} | ${bn1.text}`);
   ok("...and offered Take over scoring, a choice she confirms", (await tid(B.page, "sync-confirm-takeover").count()) === 1, bn1.text);
+  // Redesign slice 13, question 2 (Kameel, 25 Nov 2026): B holds nothing of the match, so she is told on the
+  // other-phone screen, in place of the toss sheet and the keys, with Watch the score and Check again under it.
+  ok("...on the other-phone screen: the other phone has gone quiet",
+     bn1.at === "other-phone" && (await tid(B.page, "other-phone").getAttribute("data-kind", { timeout: 800 }).catch(() => null)) === "lapsed"
+     && (await tid(B.page, "other-phone-who").innerText().catch(() => "")).trim() === "Nobody has scored on the other phone for a while.", bn1.text);
+  ok("...with Watch the score and Check again, and no toss sheet or keys", (await tid(B.page, "other-phone-watch").count()) === 1
+     && (await tid(B.page, "other-phone-check").count()) === 1 && (await tid(B.page, "other-phone-code").count()) === 0
+     && (await B.page.locator('[data-testid="toss-sheet"], [data-testid="basic-pad"]').count()) === 0);
   ok("...not Try again, and not Sent", (await tid(B.page, "sync-retry").count()) === 0 && !/^Sent$/.test(await pill(B.page)), await pill(B.page));
   const deviceB = await B.page.evaluate(() => localStorage.getItem("scrbrd:device-id"));
   ok("B is a different phone", !!deviceB && deviceB !== deviceA);

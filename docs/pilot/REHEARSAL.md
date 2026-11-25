@@ -50,7 +50,7 @@ The coach steps are not rehearsed with a real save. **Pick the side** lists the 
 
 ☐ Phone A, pill at **Sent**, between overs: tap **Hand over**, then **Hand over scoring**. A six-digit code shows.
 
-☐ Phone B, same fixture: tap **Take over**, type the code, tap **Claim this match**. Type the physical scoreboard's runs, wickets, overs and balls. Tap **Confirm and take over**. Score one ball on B.
+☐ Phone B, same fixture: it says who is scoring on another phone. Tap **Enter the handover code**, type the code, tap **Claim this match**. Type the physical scoreboard's runs, wickets, overs and balls. Tap **Confirm and take over**. Score one ball on B.
 
 ☐ Phone A now shows **Handed over** and scores nothing more.
 

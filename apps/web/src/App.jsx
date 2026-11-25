@@ -381,6 +381,9 @@ export default function SCRBRD_OS() {
         // Pro mode (db/170): the fixture's coach asked for the shot and the
         // field, so the first innings is declared full at the toss.
         ...(m.captureProfile ? { captureProfile: m.captureProfile } : {}),
+        // Each side named in full ("Hilton College 1XI"), where the read gives it: the other-phone screen's title (slice 13).
+        ...(m.homeLabel ? { homeLabel: m.homeLabel } : {}),
+        ...(m.awayLabel ? { awayLabel: m.awayLabel } : {}),
         ...(restored ? { restored: true } : {}),
       } });
       setScorerMatchId(m.id);
@@ -657,7 +660,17 @@ export default function SCRBRD_OS() {
             // The way back is the scorer's own: the first key in the pad's
             // title bar (step 2 of the redesign), floating on its setup and
             // result screens. It used to float over the pad's bar from here.
-            onExit={closePad}/>
+            onExit={closePad}
+            // "Watch the score" (redesign slice 13): another phone holds the
+            // match, so the pad gives way to the Match Centre on it, at its
+            // address (/app/matches/:id, which the Match Centre opens on
+            // mounting). A menu with no Match Centre goes back home.
+            onWatch={(id) => {
+              closePad();
+              if (!id || !reaches("matches")) return;
+              window.history.pushState(null, "", `/app/matches/${encodeURIComponent(id)}` + window.location.search);
+              setPage("matches");
+            }}/>
         </Suspense>
       </div>
     </>
