@@ -151,9 +151,12 @@ sequenceDiagram
     A-->>C: 404 unknown_resource
   end
   A->>P: run the read as this person
-  P->>P: verify the signed token (HMAC): user, device, session
+  P->>P: verify the signed token (HMAC): user, device, session and its epoch
   P->>D: BEGIN, then app_session_begin(user, device, session, epoch)
-  Note over D: refused if the session was revoked,<br/>the account is not active,<br/>or a pad credential has ended
+  alt the session was revoked, signed out everywhere (epoch moved),<br/>the account is not active, or a pad credential has ended
+    D-->>P: 28000
+    P-->>C: 401 session_revoked
+  end
   P->>D: set app.user_id, app.device_id (transaction-local,<br/>a pad also gets app.scope and app.match_id)
   opt the read belongs to a module
     A->>D: my_feature_enabled(module)
@@ -161,8 +164,8 @@ sequenceDiagram
     A-->>C: 403 module_disabled
   end
   A->>D: the read's SQL
-  Note over D: Row-level security on every table:<br/>each row passes app_can(capability, school, team, person, fixture)
-  Note over D: app_can: one of the caller's role_assignment rows,<br/>active and in its dates, whose school, team and fixture<br/>scope cover the row, and whose role grants the capability.<br/>A guardian, selfaccess or enquiry role reaches only the<br/>children its assignment_subject rows name, verified and live.<br/>A pupil's own account reads only while his sign-in is open (db/169).
+  Note over D: Row-level security on every table:<br/>each row passes app_can(capability, school, team, person, fixture).<br/>A read that calls a SECURITY DEFINER function instead<br/>gets that function's own check, in the same terms.
+  Note over D: app_can: one of the caller's role_assignment rows that is live<br/>(active, in its dates, not past expires_at (db/23),<br/>not suspended from a duty (db/35)), whose school, team and<br/>fixture scope cover the row, and whose role grants the capability.<br/>A guardian, selfaccess or enquiry role reaches only the<br/>children its assignment_subject rows name, verified and live.<br/>A pupil's own account reads only while his sign-in is open (db/169).
   Note over D: clinical and other restricted detail is read<br/>through *_masked views, tier by tier
   D-->>A: only the rows that passed
   A->>D: access_log rows for a restricted read
@@ -173,7 +176,8 @@ sequenceDiagram
 **Checked against:**
 - `services/api/read/read-api.mjs`: `readResource()` covers the unknown-resource 404, the module gate through `my_feature_enabled` and the `logsItself` / `logsReads` options.
 - `services/api/auth/auth.mjs`: `sessionConfigStatements()` and `runAsPrincipal()`.
-- `db/85` `app_session_begin()`.
+- `db/85` `app_session_begin()`, raising 28000, which `auth.mjs` answers 401 `session_revoked`.
+- `db/23` (`expires_at`) and `db/35` (a suspended duty grants nothing): the generated liveness rule.
 - `db/01` `app_can()`, whose person-scoped arm is unchanged in its rules.
 - db/169's re-emitted `app_can()`, `app_can_but_player()` and `is_family_of()`, which add `pupil_signin_open()`.
 - The generated policies in `db/09`.
