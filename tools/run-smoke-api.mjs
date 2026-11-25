@@ -265,6 +265,11 @@ const WALKS = [
   // granting nothing, the register the office's alone, and a declined parent
   // claim telling the DSO and pausing the asker until the DSO lifts it.
   "staff-register",
+  // The family list (SCRBRD-140 Migration C, db/174): the office's check and
+  // upload, a parent linked at once on her verified address and his date of
+  // birth, a wrong date answered as no match and marked for the office, the
+  // switch off linking nothing, a departed uploader's row linking nobody.
+  "family-register",
   "kit",
   "passport",
   "web",

@@ -239,6 +239,16 @@ export const FEATURES = {
     kind: "feature", label: "Public names by surface",
     reads: [],
   },
+  // SCRBRD-140 honesty model, Q1 (b) (db/174, Kameel 18 Nov 2026): the family
+  // list links a parent at once on a full match. A FEATURE, off, and on for a
+  // school only through the platform's grant FOR THAT SCHOOL, once the school
+  // has said yes (the database ignores the platform default:
+  // family_list_links_on()). Off, the list still marks the office's Requests.
+  // Owns no read: the claim is POST /api/requests's.
+  family_list_links: {
+    kind: "feature", label: "Family list links at once",
+    reads: [],
+  },
 };
 
 /**

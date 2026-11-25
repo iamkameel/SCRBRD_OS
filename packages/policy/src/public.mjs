@@ -359,6 +359,11 @@ export const NEVER_PUBLIC = Object.freeze({
   // terms version: his family's, the office's and the principal's alone.
   // Never on a page; the whole table.
   pupil_signin_consent: "N4",
+  // ── db/174, SCRBRD-140 honesty model: the family list ──
+  // N4. Which address the office listed for which child, as a parent's or
+  // the pupil's own, and what came of its claim: the office's and the
+  // principal's alone (guardian.link.manage). Never on a page; the whole table.
+  family_register: "N4",
   // ── db/172, a date of birth corrected by the office ──
   // N1. Every change to a boy's recorded date of birth: the date before and
   // after, who changed it and how. The office's alone (player_born_changes());

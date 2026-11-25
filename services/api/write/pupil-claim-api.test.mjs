@@ -52,18 +52,20 @@ async function call(/** @type {any} */ handler, /** @type {any} */ body = {}, he
   return out;
 }
 
-group("A. A typed date of birth is dropped, never passed on (until Migration C)");
+group("A. A typed date of birth: a real day goes to the family list (db/174) as one date parameter; anything else is dropped");
 for (const born of ["2012-07-19", "2012-02-30", "not a date", 20120719, null]) {
+  const real = born === "2012-07-19";
   const pool = fakePool();
   const routes = pupilClaimRoutes({ pool: /** @type {any} */ (pool), secret: SECRET });
   const r = await call(routes.claim, { schoolId: HIL, name: "Test Pupil", year: "Grade 9", born }, { authorization: BEARER });
   const sent = pool.asked.find((a) => a.sql.includes("pupil_claim_send("));
   ok(`born ${JSON.stringify(born)}: the claim is sent, the same answer`, r.status === 200 && r.body?.ok === true, r);
-  ok(`...with three parameters, school, name and year, and no date`, !!sent && sent.params.length === 3
-     && JSON.stringify(sent.params) === JSON.stringify([HIL, "Test Pupil", "Grade 9"]) && !/\$4|::date/.test(sent.sql), sent);
-  ok("...and the date is in no statement or parameter", !JSON.stringify(pool.asked).includes("2012") && !JSON.stringify(pool.asked).includes("not a date"));
+  ok(`...with four parameters, the date a real day or null`, !!sent && sent.params.length === 4
+     && JSON.stringify(sent.params) === JSON.stringify([HIL, "Test Pupil", "Grade 9", real ? "2012-07-19" : null]), sent);
+  ok("...and the date in no statement's text, and nothing that is not a real day anywhere",
+     !pool.asked.some((a) => a.sql.includes("2012")) && (real || !JSON.stringify(pool.asked).includes("2012")) && !JSON.stringify(pool.asked).includes("not a date"));
 }
-ok("there is no born_invalid answer any more", !("born_invalid" in PUPIL_CLAIM_STATUS));
+ok("a date that cannot be a pupil's is a 422 with words", PUPIL_CLAIM_STATUS.born_invalid === 422);
 
 group("B. Remove, for an account kept for a safeguarding concern, answers as any non-claim does");
 {

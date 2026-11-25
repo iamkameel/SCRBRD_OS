@@ -247,11 +247,18 @@ try {
   // pupil_signin_office_set(), the terms trigger and the paste's carry-over,
   // read only by db/169's SECURITY DEFINER question and pupil_signin_state(),
   // which decide who reads what of it. No policy, by design (db/81's shape).
+  // family_register (db/174, SCRBRD-140 Migration C) is the family list: a
+  // child, an address and a kind the office listed in advance. RLS on,
+  // nothing granted to scrbrd_app, read and written only through db/174's
+  // SECURITY DEFINER functions (the office's upload, list, withdraw and
+  // clear; the claim from a request), which decide who sees a row. No
+  // policy, by design (school_register's shape).
   const DELIBERATELY_NO_POLICY = new Set(["login_code", "schema_migration", "pad_resume_jti", "dls_resource_table", "dls_resource",
                                           "auth_identity", "pending_claim", "auth_epoch", "auth_session",
                                           "school_register", "request_cooldown", "passport_union_read",
                                           "milestone_family_notice", "recognition_audit", "ball_log_pin",
-                                          "pupil_claim", "pupil_signin_consent", "player_born_change"]);
+                                          "pupil_claim", "pupil_signin_consent", "player_born_change",
+                                          "family_register"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

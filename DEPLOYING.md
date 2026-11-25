@@ -2757,6 +2757,66 @@ To paste, in this order:
 
 Not pasted yet. Hash to check: `sha256 b9c64f6337eddad5a3e9f1ad988d04b10aedb58fe1ae1b77ead655e3ad2993bf`.
 <!-- ── end db/173 ── -->
+<!-- ── db/174: the family list ── -->
+#### The family list: a parent the school listed is linked on her verified address and his date of birth (db/174)
+
+`db/174_family_register.sql` (branch claude/wip-db174-family-list; SCRBRD-140's
+honesty model, Migration C, Kameel 18 Nov 2026: Q1 (b) switched on per school,
+Q2 (a), Q11 (a)). The office lists, in advance, a child from its roster, an
+address and a kind (a parent's or guardian's, or the pupil's own). A parent who
+signs in with Google at that address, asks to be linked and types his date of
+birth is linked at once through the one grant door, her consent pending (she
+agrees to the terms before she reads anything of his), where all six conditions
+hold and the school is switched on; the office is told, with End role beside
+the row. A wrong date uses up every row for her address and reads as no row
+does; the office's Requests line says "On the family list. The details did not
+agree." A boy under 18 whose own address is listed is recognised by his claim,
+and nothing opens. A declined `player` request now tells the DSO, as a declined
+pupil claim does. A link the list made may always be ended by the office, even
+as the boy's only verified link (Kameel, 25 Nov 2026): `role_assignment_end()`
+and the office's revoke, `guardian_link_revoke()`, are re-emitted from their
+bodies in place for that one case, and ending it puts her
+request back in Requests, marked, to be linked by hand. Every other link keeps
+db/08's last-link rule. Its proof is db/99 §149; its walk is
+`smoke-family-register`.
+
+To paste:
+
+- **After db/172.** It needs db/168's pupil claim, db/169's
+  `pupil_signin_after_yes()` and db/92's grant door, and re-emits three
+  functions, each only over the body it expects or its own:
+  `pupil_claim_send()` (db/168's), `role_assignment_end()` and
+  `guardian_link_revoke()` (each as the files before it left it). Anything else fails the paste loudly, changing nothing. It asserts the grant door's callers as
+  they now stand (four, by name), so a function added beside them since fails
+  it too.
+- **As one transaction:** the SQL Editor's single run, or `psql -1 -v
+  ON_ERROR_STOP=1 -f`.
+- **Off everywhere until a school says yes.** `family_list_links` is a
+  feature, off, and the database ignores its platform default: it is on for a
+  school only through a `feature_grant` row for that school, written once the
+  school has said yes in writing. Until then the list only marks Requests.
+- **The date of birth is a bind parameter.** It is never stored or logged by
+  SCRBRD, but a host that logs the application's statements logs their
+  parameters with them. On the managed host, keep `log_statement` at `none` or
+  `ddl` and `log_min_duration_statement` at `-1` for the application's role, so
+  no statement of it, and no parameter, is logged.
+- **Then, on the managed host, check the API roles reach nothing new:**
+  ```sql
+  SELECT * FROM api_role_reach('anon');
+  SELECT * FROM api_role_reach('authenticated');
+  SELECT * FROM api_role_reach('service_role');
+  ```
+  Each answers no rows (db/157).
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  174, and the API refuses to start on a database without it.
+- It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, `ON CONFLICT DO
+  NOTHING` and a `DROP TRIGGER IF EXISTS` before its one trigger. It takes a
+  short lock on `role_request` for that trigger (ten-second `lock_timeout`,
+  reset by its last statement); a paste that timed out on its lock is simply
+  run again.
+
+Not pasted yet. Hash to check: `sha256 16acc4aea6cba63671536d4db1d270df66131d7a6d763faaea771fbaba139e81`.
+<!-- ── end db/174 ── -->
 
 ### 5 · Cloud Run, the first time
 
