@@ -26,6 +26,9 @@
  *      cleared injury not reviewed again.
  *   7. SG-12: a severe injury tells the DSO, naming nobody; the coach is not
  *      told that.
+ *   4b. THE HOME'S READ, `injury_status`: whose, the return date and
+ *      whether he left, for each open injury; no clinical word in it, for
+ *      his family, the physio, his coach or the head; nothing for a pupil.
  *   8. LEFT: the `injuries` read marks a boy who left the school, for the
  *      office, and `injury_reviews` marks the recording; the physio, his
  *      coach and the head read nothing of it once he has gone (READERS Q3,
@@ -206,6 +209,31 @@ try {
   }
   ok("his parent reads nothing of James Whitfield's", (await by(parent)).length === 0);
 
+  // ── 4b. The Home's read ────────────────────────────────────────
+  // "Injured · back Fri 4 Dec" on his Home and his parent's, and the answer
+  // card's suggestion, read `injury_status`: whose, the return date, whether
+  // he has left. His family reads the clinical words in `injuries`; none of
+  // them comes back here, for them or anybody.
+  group("4b. The Home's read carries no clinical word");
+  const HOME_KEYS = "left_school,player_id,rtw_date,school_id";
+  const words = new Set((await q(`select injury_type, notes, physio, severity, phase from injury`))
+    .flatMap((r) => [r.injury_type, r.notes, r.physio, r.severity, r.phase]).filter(Boolean).map(String));
+  for (const [who, token, self] of [["his parent", parent, true], ["the boy himself", pillay, true], ["the physio", physio, false],
+                                    ["his coach", coach, false], ["the principal", principal, false]]) {
+    const clinical = (await rows("injuries", token)).find((r) => r.id === HAMSTRING);
+    const home = await rows("injury_status", token);
+    const his = home.filter((r) => r.player_id === clinical?.player_id);
+    if (self) ok(`${who} reads the injury's name in his Health history`, Boolean(clinical?.injury_type), JSON.stringify(clinical));
+    ok(`${who}: the Home's read has his open injury, with its return date`,
+       his.length >= 1 && his.some((r) => String(r.rtw_date).slice(0, 10) === String(clinical?.rtw_date).slice(0, 10)), JSON.stringify(his));
+    ok(`...and every row is whose, the return date and whether he left, nothing else`,
+       home.length > 0 && home.every((r) => Object.keys(r).sort().join() === HOME_KEYS), JSON.stringify(home[0]));
+    ok(`...and no value in it is a clinical word`, home.every((r) => Object.values(r).every((v) => !words.has(String(v)))));
+  }
+  ok("a pupil who is not his reads none of it (K3)", (await rows("injury_status", pupil)).length === 0);
+  const pillayId = (await rows("injuries", parent)).find((i) => i.id === HAMSTRING)?.player_id;
+  ok("another side's coach reads none of R Pillay's", Boolean(pillayId) && !(await rows("injury_status", coach2)).some((r) => r.player_id === pillayId));
+
   // ── 5. The worklist ────────────────────────────────────────────
   group("5. The worklist is the physio's");
   const list = await rows("injury_worklist", physio);
@@ -232,6 +260,7 @@ try {
   ok("...the row is cleared, unrestricted, with no next review", after?.phase === "cleared" && after?.restricted === false && after?.next_review_on == null);
   ok("...and he is fit again", (await rows("players", coach)).find((p) => p.id === WHITFIELD)?.fitness === "fit");
   ok("...and off the worklist", !(await rows("injury_worklist", physio)).some((r) => r.injury_id === ID));
+  ok("...and off the Home's read: nothing open, no line", !(await rows("injury_status", coach)).some((r) => r.player_id === WHITFIELD));
   const again = await review(physio, ID, { phaseAfter: "rehab", nextReviewOn: day(7) });
   ok("a cleared injury is not reviewed again: 422 injury_cleared", again.status === 422 && again.body?.error === "injury_cleared");
 

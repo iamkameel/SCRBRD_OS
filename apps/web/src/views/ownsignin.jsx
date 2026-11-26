@@ -11,7 +11,8 @@
  * WHAT THIS SCREEN DECIDES: nothing. pupil_signin_state() answers only the
  * office and his family; the doors decide who may and answer a code. Before
  * the withdrawal is sent the office is told, in OFFICE_WITHDRAW's words,
- * that it does not hold against a parent's later yes (E).
+ * that it does not hold against a parent's later yes (E), and to end the
+ * other parent's link too where their yes must not reopen it (D1).
  *
  * Floors: nothing read under 12px, every control 44px tall, no motion.
  */
@@ -85,6 +86,7 @@ export function OfficeOwnSignIn({ player }) {
           {asking && (
             <div role="group" aria-label={OFFICE_WITHDRAW.button} data-testid="office-own-signin-withdraw-ask">
               <p style={{ ...dNote(), color: D.textPrimary }} data-testid="office-own-signin-withdraw-says">{OFFICE_WITHDRAW.says}</p>
+              <p style={{ ...dNote(), color: D.textPrimary }} data-testid="office-own-signin-withdraw-other">{OFFICE_WITHDRAW.otherParent}</p>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <DBtn disabled={busy} onClick={() => send({ withdrawn: true }, OFFICE_WITHDRAW.done)} testid="office-own-signin-withdraw-confirm">{OFFICE_WITHDRAW.button}</DBtn>
                 <DBtn quiet disabled={busy} onClick={() => setAsking(false)}>Keep it</DBtn>

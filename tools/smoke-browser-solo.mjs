@@ -379,7 +379,8 @@ try {
      await inner(page, "edit-dob-correct-said"));
   ok("...and nothing changed or was recorded",
      (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [BEKKER]))[0].b === bek.b
-     && (await q(`select count(*)::int n from player_born_change where player_id = $1`, [BEKKER]))[0].n === 0);
+     // Since db/173 his first date (the seed's, the owner's) is a row too: no change after it.
+     && (await q(`select count(*)::int n from player_born_change where player_id = $1 and was is not null`, [BEKKER]))[0].n === 0);
   await tid(page, "edit-dob-correct-born").fill(bek.b);
   await tid(page, "edit-dob-correct-reason").fill("Birth certificate seen");
   await tid(page, "edit-dob-correct-save").click();

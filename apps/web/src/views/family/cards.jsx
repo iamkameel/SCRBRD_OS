@@ -261,13 +261,13 @@ export function TrainingCard({ child, role, now }) {
  * the role reviews' direction §3.2 Flow A step 3, Kameel's question 6 (a)):
  * "Injured · back Fri 4 Dec", no diagnosis, opening his Health history (his
  * parent's: his card on Family; his own: Me), where the injury's name stays.
- * The same `injuries` read that history makes, cut to whose, open and the
- * return date and narrowed to him (lib/injury.js injuredLine): nothing a
- * team-mate's. Not drawn with nothing open, with the module off, or while
- * the read has not answered.
+ * The `injury_status` read, not the history's `injuries`: the server sends
+ * whose, open and the return date, nothing clinical, and the line narrows it
+ * to him (lib/injury.js injuredLine): nothing a team-mate's. Not drawn with
+ * nothing open, with the module off, or while the read has not answered.
  */
 export function InjuryLine({ child, role, onOpen }) {
-  const { rows, loading, error, disabled } = useLive("injuries", role);
+  const { rows, loading, error, disabled } = useLive("injury_status", role);
   if (disabled || loading || error) return null;
   const line = injuredLine(rows, child, humanDate);
   if (!line) return null;

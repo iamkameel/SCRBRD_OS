@@ -317,6 +317,13 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
        && !formReady({ signedBy: "N", signedOn: "" }) && !formReady({ signedBy: "", signedOn: "2 Nov" }));
     ok("...and the office is told when neither was recorded", /were not recorded/.test(officeSigninWords({ ...base, inForce: true, yesHow: "office", yesBy: "N Office" }, "Sipho")));
     ok("E: the office is told its withdrawal does not hold against a later yes", /does not hold against a yes given afterwards/.test(OFFICE_WITHDRAW.says) && /end his roles or disable his account/.test(OFFICE_WITHDRAW.says));
+    {
+      const view = readFileSync(new URL("../src/views/ownsignin.jsx", import.meta.url), "utf8");
+      const ask = view.slice(view.indexOf('data-testid="office-own-signin-withdraw-ask"'), view.indexOf('data-testid="office-own-signin-withdraw-confirm"'));
+      ok("D1: and, in a line of its own before the tap, to end the other parent's link too",
+         OFFICE_WITHDRAW.otherParent === "Also end the other parent's link, or their yes reopens it."
+         && /data-testid="office-own-signin-withdraw-other">\{OFFICE_WITHDRAW\.otherParent\}/.test(ask));
+    }
     ok("the office reads who signed the form, and when", officeSigninWords({ ...base, inForce: true, yesHow: "office", yesBy: "N Office", formSignedBy: "N Mother", formSignedOn: "2026-11-02" }, "Sipho")
        === "A consent form signed by N Mother on 2 November 2026 is on file, recorded by N Office.");
     ok("...no date of birth: closed, and the office records it", /no date of birth/.test(ownSigninWords({ ...base, bornKnown: false }, "Sipho")));

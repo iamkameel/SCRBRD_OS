@@ -202,6 +202,38 @@ export const reachOneMate = (n) => REACH_ONE_MATE.replaceAll("$2::uuid", `$${n}:
 const OFFICIALS_ON = (matchCol) =>
   `(feature_enabled('officials', match_school(${matchCol}), null::uuid) and my_feature_enabled('officials'))`;
 
+/**
+ * WHO HOLDS THE SCORING, AS A NAME (match_duties' scoring row; the pad's
+ * other-phone screen and Today's line, redesign slice 13). A scorer can be a
+ * pupil, and fixture.read on a shared fixture reaches the other school and
+ * spectators, so the name is decided here and not by the screen:
+ *
+ *   - the holder reading his own row: his own name;
+ *   - a reader who may not read the holder's account at the holder's school
+ *     (user.read there: the other school, a spectator, anybody else): no
+ *     name, and the screen says "Someone else". Asked explicitly, not left to
+ *     app_user's row security, so a wider app_user read later widens nothing
+ *     here;
+ *   - a pupil, for a reader at his school: initial and surname
+ *     (docs/policy/PUBLIC_DATA.md rule 4; the audit log's own rule for a
+ *     pupil, db/79), never his full name. A pupil is an account that is a
+ *     player, or one the reader can see holds a player or selfaccess role;
+ *   - an adult, for a reader at his school: his name, as before (an adult
+ *     doing a public job is outside the public rule).
+ *
+ * Over `s` (scoring_session) and `u` (app_user, left-joined on the holder).
+ */
+const SCORER_NAME = `case when u.id is null then null
+                        when u.id = app_user_id() then u.name
+                        when not app_can('user.read', u.school_id, null::text, u.id,
+                                         '00000000-0000-0000-0000-000000000000'::uuid) then null
+                        when u.player_id is not null or u.role in ('player', 'selfaccess')
+                          or exists (select 1 from role_assignment ra
+                                      where ra.person_id = u.id and ra.role in ('player', 'selfaccess'))
+                          then case when position(' ' in btrim(u.name)) = 0 then upper(left(btrim(u.name), 1))
+                                    else broadcast_name(btrim(u.name), 'initials') end
+                        else u.name end`;
+
 // The dismissals that are not the bowler's, as a SQL list, from the one set
 // the reducer reads — so a query cannot restate the law differently.
 const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
@@ -228,6 +260,26 @@ const DISCIPLINE_NAMES = Object.freeze(/** @type {(keyof typeof DISCIPLINES)[]} 
 /** The directive's bands youngest first, then Open, then a boy with no date of birth. */
 const BAND_ORDER = (/** @type {string} */ col) =>
   `case ${col} when 'U13' then 1 when 'U14' then 2 when 'U15' then 3 when 'U16' then 4 when 'open' then 5 else 6 end`;
+
+/**
+ * AN ANSWER'S OWN WORDS ARE ITS WRITER'S AND THE STAFF'S (Kameel, 25 Nov).
+ * A family's answer about a Saturday carries a reason and a note "for the
+ * coach". Whoever may read the answer reads its status and who gave it; the
+ * reason and the note come back only to the person who wrote them
+ * (declared_by) and to a staff reader of that fixture's answers: one who
+ * holds `availability.read` there on an assignment that names nobody, which
+ * a guardian's and a pupil's own assignments never are (app_can() refuses a
+ * person-scoped role when no person is given). So the boy does not read his
+ * mother's note, the other guardian does not read it, and neither screen can
+ * send it again under another name. Null otherwise, as for an answer with no
+ * note.
+ * @param {string} row      the alias of the answer's row (declared_by)
+ * @param {string} school   SQL for the fixture's school
+ * @param {string} team     SQL for the fixture's team
+ * @param {string} fixture  SQL for the fixture's id
+ */
+const ANSWER_WORDS_SEEN = (row, school, team, fixture) =>
+  `(${row}.declared_by = app_user_id() or app_can('availability.read', ${school}, ${team}, null::uuid, ${fixture}))`;
 
 /**
  * One governed read.
@@ -399,6 +451,29 @@ export const READ_QUERIES = {
                   (injury_left_on(player_id, school_id) is not null) as left_school
              from injury_masked
             order by date_injured desc`,
+  },
+  /**
+   * HIS OPEN INJURIES AS THE HOME SAYS THEM: "Injured · back Fri 4 Dec"
+   * (redesign slices 8 and 9; Kameel's question 6 (a), 19 Nov: never the
+   * injury's name on Home). Whose, and the return date, for each injury still
+   * open, and nothing else: no name, severity, phase, note or physio comes
+   * back, whatever the reader's tier, so the clinical words never reach the
+   * Home or the availability answer. The full `injuries` read stays behind
+   * his Health history.
+   *
+   * Open is judged as the Injuries screen judges it (lib/injury.js
+   * isOpenInjury): not cleared where the reader reads the phase, still
+   * restricted where he reads the status tier alone. Both come from
+   * injury_masked under the caller's own row security, so the read widens
+   * nothing and no row comes back that `injuries` would not give him.
+   */
+  injury_status: {
+    masked: true,
+    text: `select player_id, school_id, rtw_date,
+                  (injury_left_on(player_id, school_id) is not null) as left_school
+             from injury_masked
+            where coalesce(phase <> 'cleared', restricted, false)
+            order by player_id, rtw_date`,
   },
   /**
    * ONE INJURY'S REVIEWS, as a dated history (GA-I19 D3, db/111). Each row
@@ -1624,7 +1699,7 @@ export const READ_QUERIES = {
             where o.match_id = $1 and not o.withdrawn
               and ${OFFICIALS_ON("o.match_id")}
             union all
-           select 'scoring', coalesce(u.name, ''),
+           select 'scoring', coalesce(${SCORER_NAME}, ''),
                   s.state::text,
                   case when s.lease_until is not null then 'lease held' else '' end,
                   s.updated_at, null::text,
@@ -1891,8 +1966,9 @@ export const READ_QUERIES = {
                   -- The fixture as it stands, in the same words, so a screen
                   -- sets "now" beside "was" on one clock.
                   availability_fixture_words(m.starts_at, m.ground_id, m.format, m.overs) as fixture_words,
-                  a.reason_kind,
-                  a.note,
+                  -- Its writer's and the staff's only (ANSWER_WORDS_SEEN).
+                  (case when ${ANSWER_WORDS_SEEN("a", "m.school_id", "m.team_code", "m.id")} then a.reason_kind end) as reason_kind,
+                  (case when ${ANSWER_WORDS_SEEN("a", "m.school_id", "m.team_code", "m.id")} then a.note end)        as note,
                   a.declared_at,
                   -- Who said it. A selector reading "declared by the coach"
                   -- knows to check on a Friday; "declared by the player" they
@@ -1950,7 +2026,10 @@ export const READ_QUERIES = {
    * `was_stale` says the fixture had moved from under it by then.
    */
   availability_history: {
-    text: `select h.player_id, p.full_name, h.status, h.reason_kind, h.note,
+    text: `select h.player_id, p.full_name, h.status,
+                  -- Its writer's and the staff's only, as the live answer's (ANSWER_WORDS_SEEN).
+                  (case when ${ANSWER_WORDS_SEEN("h", "match_school(h.match_id)", "match_team(h.match_id)", "h.match_id")} then h.reason_kind end) as reason_kind,
+                  (case when ${ANSWER_WORDS_SEEN("h", "match_school(h.match_id)", "match_team(h.match_id)", "h.match_id")} then h.note end)        as note,
                   h.declared_at, d.name as declared_by_name, coalesce(d.is_self, false) as self_declared,
                   availability_fixture_words(h.fixture_starts_at, h.fixture_ground_id,
                                              h.fixture_format, h.fixture_overs) as fixture_words,
@@ -2682,7 +2761,8 @@ export const READ_QUERIES = {
                   e.status                    as declared_status,
                   a.status                    as said_status,
                   e.moved                     as needs_reconfirming,
-                  a.reason_kind,
+                  -- Its writer's and the staff's only, as the availability read's (ANSWER_WORDS_SEEN).
+                  (case when ${ANSWER_WORDS_SEEN("a", "m.school_id", "m.team_code", "m.id")} then a.reason_kind end) as reason_kind,
                   coalesce(d.is_self, false)  as self_declared,
                   d.name                      as declared_by_name,
                   -- THE PHYSIO'S HALF. True is restricted, false is clear —

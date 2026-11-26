@@ -35,6 +35,7 @@ try {
   const coach = await login("coach@example.invalid");         // coach, Hilton 1XI
   const wesHead = await login("registrar.wes@example.invalid"); // schooladmin, Westville
   const watcher = await login("watcher@example.invalid");
+  const office = await login("registrar@example.invalid");    // schooladmin, Hilton: the school office
 
   group("A boy joins the roster, once — the office's job, not the coach's");
   {
@@ -70,8 +71,13 @@ try {
     ok("...and nothing landed",
        (await q(`select count(*)::int c from player where full_name = 'No Birthday'`))[0].c === 0);
     {
+      // An ID number, first or not, is the office's to write (db/173; Kameel,
+      // 25 Nov 2026): the director of sport is refused one, and the office adds him.
+      const byDirector = await add(head, { schoolId: HIL, fullName: "Id Only", teamCode: "U15A", idNumber: "1104075800085" });
+      ok("the director of sport may not record an ID number", byDirector.status === 403 && byDirector.body?.error === "id_number_needs_the_office",
+         JSON.stringify(byDirector.body));
       // The ID number carries the birthday, so it is enough on its own.
-      const byId = await add(head, { schoolId: HIL, fullName: "Id Only", teamCode: "U15A",
+      const byId = await add(office, { schoolId: HIL, fullName: "Id Only", teamCode: "U15A",
                                      idNumber: "1104075800085" });
       ok("an ID number alone is enough", byId.status === 200);
       ok("...the birthday is read out of it, and the office is told where it came from",
@@ -92,7 +98,7 @@ try {
     {
       // Not a refusal: older and naturalised numbers fail the checksum, and the
       // birthday does not depend on it. Accepted, and flagged.
-      const warned = await add(head, { schoolId: HIL, fullName: "Check Digit", teamCode: "U15A",
+      const warned = await add(office, { schoolId: HIL, fullName: "Check Digit", teamCode: "U15A",
                                        idNumber: "1104075800089" });
       ok("a failed check digit is a warning, not a refusal",
          warned.status === 200 && warned.body?.warning === "id_number_check_digit_failed");
