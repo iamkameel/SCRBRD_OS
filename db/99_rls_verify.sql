@@ -37831,9 +37831,8 @@ $v49$;
 
     -- (literal): the build is §2.5's text, for everyone, everywhere staged or scored
     --
-    -- fixture_reach('fixture.read', f), some 16 ms a call, is asked here and
-    -- again at (shape) of the same person and fixtures, with nothing written
-    -- between. So it is asked once a person of every fixture either label
+    -- fixture_reach('fixture.read', f) is asked here and again at (shape) of
+    -- the same person and fixtures, with nothing written between. So it is asked once a person of every fixture either label
     -- asks it of (FRD: the staged and seed fixtures, the scored ones, every
     -- trip's and every toss's), and his set kept for (shape) (FRM). It is an
     -- EXISTS, never NULL, so "f is in his set" is its answer exactly.
@@ -39794,8 +39793,8 @@ $v49$;
     -- whose rows disagree are the ones earlier sections staged that way (an
     -- account handed a side its boy is not on, a stage's shortcut), and no
     -- more.
-    -- (Each player_assignment_disagreements() is some 17 s by here: a
-    -- message's own facts are asked only when its check fails.)
+    -- (Each player_assignment_disagreements() reads every boy the file has
+    -- staged, so a message's own facts are asked only when its check fails.)
     got := _v112_fact('disagree_boys');
     PERFORM _assert(got = v_base,
       CASE WHEN got = v_base THEN '' ELSE
