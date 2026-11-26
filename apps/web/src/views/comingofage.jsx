@@ -22,27 +22,34 @@ const sub = () => ({ fontFamily: D.body, fontSize: "13px", lineHeight: 1.5, colo
 
 function SchoolComingOfAge({ school }) {
   const [rows, setRows] = useState(/** @type {any[] | null} */ (null));
-  const [nonce, setNonce] = useState(0);
   const [busy, setBusy] = useState(/** @type {string | null} */ (null));
   const [note, setNote] = useState(/** @type {{ bad: boolean, text: string } | null} */ (null));
+  const read = () => api(`/api/schools/${encodeURIComponent(school.id)}/coming-of-age`).then((r) => r?.rows ?? []);
   useEffect(() => {
     let off = false;
-    api(`/api/schools/${encodeURIComponent(school.id)}/coming-of-age`)
-      .then((r) => { if (!off) setRows(r?.rows ?? []); })
+    read()
+      .then((rs) => { if (!off) setRows(rs); })
       // Refused (not this school's office): nothing is drawn for it.
       .catch(() => { if (!off) setRows(/** @type {any} */ ("refused")); });
     return () => { off = true; };
-  }, [school.id, nonce]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [school.id]);
   const confirm = async (/** @type {any} */ r) => {
     setBusy(r.playerId); setNote(null);
+    /** @type {{ bad: boolean, text: string }} */
+    let said;
     try {
       await api(`/api/players/${encodeURIComponent(r.playerId)}/date-of-birth/confirm`, { method: "POST", body: {} });
-      setNote({ bad: false, text: `Confirmed ${r.fullName}'s date of birth.` });
+      said = { bad: false, text: `Confirmed ${r.fullName}'s date of birth.` };
     } catch (e) {
       const code = /** @type {any} */ (e)?.code;
-      setNote({ bad: true, text: BIRTH_DATE_MESSAGE[code] ?? "The date could not be confirmed. Try again." });
+      said = { bad: true, text: BIRTH_DATE_MESSAGE[code] ?? "The date could not be confirmed. Try again." };
     }
-    setBusy(null); setNonce((n) => n + 1);
+    // The list is read again before anything is said, so the words and the
+    // list agree: a confirmed boy is gone by the time "Confirmed" shows.
+    try { setRows(await read()); }
+    catch { if (!said.bad) setRows((rs) => (Array.isArray(rs) ? rs.filter((x) => x.playerId !== r.playerId) : rs)); }
+    setNote(said); setBusy(null);
   };
   if (rows === /** @type {any} */ ("refused")) return null;
   const list = rows ?? [];
