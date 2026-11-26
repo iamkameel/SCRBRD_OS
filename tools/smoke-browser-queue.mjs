@@ -471,18 +471,22 @@ try {
     await signIn(t.page, "coach@example.invalid");
     await queue(t.page);
     const groupIds = await t.page.$$eval('[data-testid="queue-group"]', (els) => els.map((e) => e.getAttribute("data-match")));
-    const theirs = new Map(), theOffice = new Map();
+    const theirs = new Map(), theOffice = new Map(), theOrganiser = new Map();
+    const whose = (r) => r.owner.split(" · ")[0];
     for (const id of groupIds) {
       const open_ = (await rowsOf(t.page, id)).filter((r) => r.state === "open");
-      theOffice.set(id, open_.filter((r) => r.owner.split(" · ")[0] === "the office"));
-      theirs.set(id, open_.filter((r) => r.owner.split(" · ")[0] !== "the office"));
+      theOffice.set(id, open_.filter((r) => whose(r) === "the office"));
+      // Kameel, 25 Nov: no playing conditions is the organiser's, off his Needs you like the office's.
+      theOrganiser.set(id, open_.filter((r) => whose(r) === "the competition's organiser"));
+      theirs.set(id, open_.filter((r) => whose(r) !== "the office" && whose(r) !== "the competition's organiser"));
     }
     const elsewhere = await t.page.locator('[data-testid="queue-results"] [data-testid="queue-row"][data-state="open"], [data-testid="queue-potm"] [data-testid="queue-row"][data-state="open"]').count();
-    // One difference, as built before this slice: the coach may count lifts, so To resolve does not tell him A's bus
-    // is short until the lifts are read on the match day (ruleS1); Today reads no lifts on opening (useQueue's no-tap
-    // mode, review S2), so its bus row says "lifts not counted". A has the four-seater (above), so Today has it.
-    ok("(To resolve holds no bus row for him the day before; Today has one, 'lifts not counted')", !(theirs.get(A) ?? []).some((r) => r.rule === "S1"));
-    theirs.get(A)?.push({ rule: "S1", state: "open", owner: "", fact: "", count: 1, source: "", door: "" });
+    // Kameel, 25 Nov: the bus is one fact on his Today and his To resolve before the match day, "lifts not counted"
+    // in both, though he may count lifts (they are read on the match day only).
+    const busA = (theirs.get(A) ?? []).find((r) => r.rule === "S1");
+    ok("the coach's To resolve has A's bus row the day before, 'lifts not counted', as his Today does", /^Bus seats 4 · \d+ named \(lifts not counted\)$/.test(busA?.fact ?? ""), JSON.stringify(busA));
+    const s7A = (theirs.get(A) ?? []).find((r) => r.rule === "S7");
+    ok("(the stage: A's conditions are the organiser's on To resolve)", theOrganiser.get(A)?.some((r) => r.rule === "S10"), JSON.stringify(theOrganiser.get(A)));
     const want = [...theirs.values()].reduce((n, rs) => n + rs.length, 0) + elsewhere;
     ok("(the stage: on To resolve, A has a duty nobody holds and the called-off fixture its leftovers, both the office's; A and B have rows of his)",
        theOffice.get(A)?.some((r) => r.rule === "O4") && theOffice.get(OFF)?.some((r) => r.rule === "O5") && theirs.get(A)?.length > 0 && theirs.get(B)?.length > 0,
@@ -509,6 +513,27 @@ try {
         door: (e.querySelector('[data-testid="needs-you-door"]')?.textContent ?? "").replace("›", "").trim() })));
       console.log(`  Needs you: ${shown.map((r) => `${r.rule} "${r.fact}" | ${r.line} | ${r.door}`).join("\n             ")}`);
       ok("nothing only the office can clear is on his Needs you: no duty nobody holds, no called-off leftovers", shown.every((r) => r.rule !== "O4" && !(r.rule === "O5" && r.match === OFF)), shown.map((r) => r.rule).join());
+      ok("...nor the organiser's: no 'no playing conditions' row", shown.every((r) => r.rule !== "S10"), shown.map((r) => r.rule).join());
+      // His own side by name (Kameel, 25 Nov), from the readiness read the queue made: the names, then the same count.
+      const s7named = shown.find((r) => r.rule === "S7" && r.match === A);
+      const n7 = s7A?.count ?? 0;
+      ok(`his own side's unanswered row names the boys (${n7} of them), never a count alone: '${s7named?.fact}'`,
+         n7 > 0 && (await s.page.locator(`[data-testid="needs-you-row"][data-rule="S7"][data-match="${A}"]`).getAttribute("data-named")) === "true"
+         && new RegExp(`^[A-Z][^,]+(, [^,]+)? (and ${n7 > 2 ? `${n7 - 2} more ` : "[^,]+ "})?ha(s|ve) not answered$`).test(s7named?.fact ?? "") && !/^\d/.test(s7named?.fact ?? ""), s7named?.fact);
+      // A restricted boy is a health fact: a count on Today for every reader, his own side's coach too (Kameel, 25 Nov,
+      // red-team Q1); the name is on the side the row opens. "Marked unavailable" is the family's answer, and named.
+      const s3A = (theirs.get(A) ?? []).filter((r) => r.rule === "S3");
+      const restrictedA = s3A.find((r) => /restricted/.test(r.fact));
+      ok("(the stage: A has a restricted boy on the sheet on his To resolve, as a count)", /^\d+ restricted boys? on the sheet$/.test(restrictedA?.fact ?? ""), JSON.stringify(s3A));
+      const s3rows = await s.page.$$eval(`[data-testid="needs-you-row"][data-rule="S3"][data-match="${A}"]`, (els) => els.map((e) => ({
+        named: e.getAttribute("data-named"), fact: e.querySelector('[data-testid="needs-you-fact"]')?.textContent ?? "" })));
+      const restrictedRow = s3rows.find((r) => /restricted/.test(r.fact));
+      ok(`his own side's restricted row on Needs you stays a count, never a name: '${restrictedRow?.fact ?? "(not among the first rows)"}'`,
+         s3rows.length > 0 && s3rows.every((r) => !/ (is|are) restricted$/.test(r.fact))
+         && (!restrictedRow || (restrictedRow.fact === restrictedA?.fact && restrictedRow.named !== "true")), JSON.stringify(s3rows));
+      const outRow = s3rows.find((r) => /marked unavailable/.test(r.fact));
+      ok(`...and his own side's 'marked unavailable' row names the boy: '${outRow?.fact ?? "(not among the first rows)"}'`,
+         !outRow || (outRow.named === "true" && /^[A-Z][^\d]* (is|are) marked unavailable$/.test(outRow.fact)), JSON.stringify(outRow));
       const s7 = shown.find((r) => r.rule === "S7" && r.match === A);
       ok("each row names its fixture: A's unanswered row says 'QA Kearsney XI'", !!s7 && /QA Kearsney XI/.test(s7.line), JSON.stringify(s7));
       ok("...and its deadline, already past, as 'before the toss (…)', never 'was due' or 'overdue'", /before the toss \((\w{3} )?\d\d:\d\d\)/.test(s7?.line ?? "") && !/was due|overdue/i.test(await inner(s.page, "needs-you")), s7?.line);
@@ -524,6 +549,10 @@ try {
       const words = (n) => (n === 0 ? "Nothing needs you" : `${n} ${n === 1 ? "needs" : "need"} you`);
       ok(`A's card says A's count: '${words(theirs.get(A).length)}', the same rows as Needs you`, cardA?.count === words(theirs.get(A).length), JSON.stringify(cardA));
       ok(`...and B's, the second squad's: '${words(theirs.get(B).length)}'`, cardB?.count === words(theirs.get(B).length), JSON.stringify(cardB));
+      const organiserA = await s.page.locator(`[data-testid="day-matchday"][data-match="${A}"] [data-testid="matchday-organiser"]`).allInnerTexts();
+      ok("A's card says the conditions as the organiser's: 'The organiser's: no playing conditions set'", organiserA.join("|") === "The organiser's: no playing conditions set", organiserA);
+      const footA = await s.page.locator(`[data-testid="day-matchday"][data-match="${A}"] [data-testid="matchday-side"]`).innerText().catch(() => "");
+      ok(`one set to chase: A's foot says '${n7} to chase', the number S7 counts on To resolve`, new RegExp(`· ${n7} to chase( ·|$)`).test(footA), footA);
       ok("A's card says the duty nobody holds as the office's", (cardA?.office ?? []).some((x) => /^The office's: No scorer on record for /.test(x)), JSON.stringify(cardA?.office));
       ok(`...and B's card the office's ${theOffice.get(B).length}, as To resolve has them`, (cardB?.office ?? []).length === theOffice.get(B).length
          && (cardB?.office ?? []).every((x) => /^The office's: No (scorer|umpire) on record for /.test(x)), JSON.stringify(cardB?.office));
@@ -534,9 +563,13 @@ try {
          && (cardA?.office ?? []).some((x) => x.startsWith("The office's: No scorer on record")), await offChip.innerText().catch(() => ""));
       ok("the cards' counts and the office's rows add up to Needs you's one count",
          cards.reduce((n, c) => n + (Number(c.count?.match(/^\d+/)?.[0]) || 0), 0) + elsewhere === want, cards.map((c) => c.count).join());
+      // A name only on his own side's named rows; never a reason, an injury's note or a return date anywhere.
+      const unnamed = (await s.page.locator('[data-testid="needs-you-row"]:not([data-named="true"]), [data-testid="needs-you-header"], [data-testid="day-matchday"]').allInnerTexts()).join("\n");
       const all = (await s.page.locator('[data-testid="needs-you"], [data-testid="day-matchday"]').allInnerTexts()).join("\n");
-      ok("Needs you and the cards name no child, no reason, no return date", !shouldNeverSee.some((n) => all.includes(n)) && leaks(await inner(s.page, "needs-you")).length === 0,
-         shouldNeverSee.filter((n) => all.includes(n)).join(", ") || leaks(await inner(s.page, "needs-you")).join());
+      const secrets = shouldNeverSee.filter((n) => !childNames.includes(n));
+      ok("a child's name only on his own side's named rows; no reason, no injury note anywhere on Needs you or a card",
+         !childNames.some((n) => unnamed.includes(n)) && !secrets.some((n) => all.includes(n)) && leaks(all).length === 0,
+         [...childNames.filter((n) => unnamed.includes(n)), ...secrets.filter((n) => all.includes(n)), ...leaks(all)].join(", "));
       const fl = await floors(s.page, '[data-testid="needs-you"], [data-testid="day-matchday"]');
       ok(`at 390: nothing under 12px (${fl.small.length}), every row and button at least 44px (${fl.tiny.length})`, fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].slice(0, 4).join(" · "));
       ok("...no horizontal scroll", await s.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));

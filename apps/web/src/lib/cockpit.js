@@ -249,14 +249,37 @@ export const STATE_WORDS = Object.freeze({
   unanswered: "no answer", needs_reconfirming: "asked again", restricted: "restricted",
 });
 
-/** "11 named · 1 to chase · 1 restricted" for the sheet's foot. @param {ReturnType<typeof sideRows>} rows */
-export function sideFoot(rows) {
-  const chase = rows.filter((r) => r.state === "unanswered" || r.state === "needs_reconfirming").length;
+/**
+ * "11 named · 1 to chase · 1 restricted" for the sheet's foot. With `chase` (redesign slice 11 follow-up, Kameel
+ * 25 Nov: "he chases everyone asked who hasn't answered"), the number to chase is that one, from `unanswered()`,
+ * the set the queue's S7 counts, and a boy on the sheet asked again is said as "asked again".
+ * @param {ReturnType<typeof sideRows>} rows  @param {{chase?: number}} [o]
+ */
+export function sideFoot(rows, { chase: asked } = {}) {
+  const chase = asked ?? rows.filter((r) => r.state === "unanswered" || r.state === "needs_reconfirming").length;
+  const again = asked == null ? 0 : rows.filter((r) => r.state === "needs_reconfirming").length;
   const restricted = rows.filter((r) => r.state === "restricted").length;
   const out = rows.filter((r) => r.state === "unavailable").length;
-  return [`${rows.length} named`, chase ? `${chase} to chase` : null, out ? `${out} unavailable` : null, restricted ? `${restricted} restricted` : null]
+  return [`${rows.length} named`, chase ? `${chase} to chase` : null, again ? `${again} asked again` : null, out ? `${out} unavailable` : null, restricted ? `${restricted} restricted` : null]
     .filter(Boolean).join(" · ");
 }
+
+/**
+ * Everyone asked about this fixture for our side who has not answered: the readiness read's rows of our team, on
+ * the sheet or not, restricted or not, with no answer. The ONE set the queue's S7 counts, the match-day card's foot
+ * says "to chase", and the coach's own Needs you row names. Pure. @param {any[] | null | undefined} readiness
+ * @param {string | null} team  our side's team code; null takes every row
+ */
+export const unanswered = (readiness, team) => (readiness ?? [])
+  .filter((r) => (r.team == null || team == null || r.team === team) && r.declaredStatus == null);
+
+/**
+ * The boys on the sheet for our end in one state ("restricted", "unavailable"), by stateOf: the set the queue's S3
+ * counts and the coach's own row names. Pure. @param {any[] | null | undefined} readiness @param {"home" | "away"} end
+ * @param {{status: boolean}} may @param {string} state
+ */
+export const onSheetAs = (readiness, end, may, state) => (readiness ?? [])
+  .filter((r) => r.selected && (r.side == null || r.side === end) && stateOf(r, may) === state);
 
 // ── Load, as a word and one sentence (D7) ──────────────
 

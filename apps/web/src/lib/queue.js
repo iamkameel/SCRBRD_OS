@@ -33,12 +33,18 @@
  * What it never says (design §5): no child's name, no medical, safeguarding or
  * disciplinary detail, and no "done", "ready" or percentage. Counts and the
  * names of reads only; apps/web/test/queue.test.mjs holds the source to it.
+ * One reader hears two rows again by name, and not from this file (Kameel,
+ * 25 Nov): on Today, a coach, assistant coach or team manager of that side is
+ * told who has not answered (S7) and who is marked unavailable (S3), by
+ * lib/queueNames.js, from the readiness read this queue already made. A
+ * restricted boy is a health fact and stays a count for every reader; his
+ * name is on the side the row opens. No other row names anybody.
  *
  * Pure, so it is proved under plain node: no DOM, no database, no clock (the
  * caller passes `now`).
  */
 import { SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES, roleGrants } from "@scrbrd/policy/roles";
-import { busOf, cockpitGate, endCovered, entersAs, isMatchDay, isSoon, isWithin, liftCounts, panelsOf, saDay, shortDate, startMs, stateOf } from "./cockpit.js";
+import { busOf, cockpitGate, endCovered, entersAs, isMatchDay, isSoon, isWithin, liftCounts, onSheetAs, panelsOf, saDay, shortDate, startMs, unanswered } from "./cockpit.js";
 import { sidesOf } from "./matchCentre.js";
 import { couldNotRead, readsFailed } from "./readState.js";
 import { RULES, SIDE, ruleS1, ruleS4b, ruleS8, ruleS9, ruleS10 } from "./signals.js";
@@ -439,12 +445,12 @@ function unreadRow(id, key, label, error = null, school) {
  * cockpit's own and `null` is a read that failed (I08).
  *
  * @param {{match: any, gate: Gate, reads: Record<string, any> | null | undefined, now: number, errors?: Record<string, string | null>}} o
- * @returns {{id: string, label: string, start: number | null, team: string | null, school: string | null, calledOff: boolean, loading: boolean,
+ * @returns {{id: string, label: string, start: number | null, team: string | null, school: string | null, end: "home" | "away", mayStatus: boolean, calledOff: boolean, loading: boolean,
  *   dutyKeys: string[] | null, rows: Row[], unread: Row[], open: number, failed: number, clear: boolean, line: string}}
  */
 export function fixtureRows({ match, gate, reads, now, errors = {} }) {
   const id = String(match.id);
-  const base = { id, label: fixtureLabel(match, gate), start: startMs(match), team: gate.teamCode ?? null, school: gate.school ?? null, calledOff: match.calledOff === true,
+  const base = { id, label: fixtureLabel(match, gate), start: startMs(match), team: gate.teamCode ?? null, school: gate.school ?? null, end: gate.end, mayStatus: !!gate.panels.status, calledOff: match.calledOff === true,
     // Which duties have somebody on record (the duties read, as the fixture's own roster counts them), or null if it was not read or did not answer.
     dutyKeys: /** @type {string[] | null} */ (reads?.duties ? [...new Set(reads.duties.map((/** @type {any} */ r) => String(r.duty)))] : null) };
   if (!reads) return { ...base, loading: true, rows: [], unread: [], open: 0, failed: 0, clear: false, line: "Reading…" };
@@ -471,15 +477,15 @@ export function fixtureRows({ match, gate, reads, now, errors = {} }) {
   } else {
     // S7 · answers: the count of those who have not answered, never a name.
     if (p.side && mine && isSoon(match, now)) {
-      const none = mine.filter((/** @type {any} */ r) => r.declaredStatus == null).length;
+      // The one set (cockpit.js unanswered): the card's foot says the same number "to chase".
+      const none = unanswered(readiness, team).length;
       if (none) rows.push(mk({ id: `${id}:S7`, rule: "S7", count: none, fact: `${none} ${none === 1 ? "has" : "have"} not answered`,
         source: SOURCE.readiness, owner: sideOwner("S7", team), deadline: deadlineOf(deadlineAt("answers", match), now, base.start), action: go("side", "Open the side") }));
     }
     // S3 · on the sheet but may not play: counted by state (the physio's tier only for a reader who holds it).
     if (p.select && p.side && readiness) {
-      const states = readiness.filter((/** @type {any} */ r) => r.selected && (r.side == null || r.side === gate.end)).map((/** @type {any} */ r) => stateOf(r, { status: p.status }));
-      const restricted = states.filter((s) => s === "restricted").length;
-      const out = states.filter((s) => s === "unavailable").length;
+      const restricted = onSheetAs(readiness, gate.end, { status: p.status }, "restricted").length;
+      const out = onSheetAs(readiness, gate.end, { status: p.status }, "unavailable").length;
       const when = deadlineOf(deadlineAt("answers", match), now, base.start);
       if (restricted) rows.push(mk({ id: `${id}:S3:restricted`, rule: "S3", count: restricted, fact: `${restricted} restricted ${plural(restricted, "boy")} on the sheet`,
         source: SOURCE.readiness, owner: sideOwner("S3", team), deadline: when, action: go("side", "Open the side") }));
@@ -494,7 +500,11 @@ export function fixtureRows({ match, gate, reads, now, errors = {} }) {
     }
     // The signals' own rules run over the same reads for S1, S8, S9 and S10: their words, their gates.
     const weather = reads.weatherRows ? reads.weatherRows.find((/** @type {any} */ w) => w.matchId === match.id) ?? null : null;
-    const ctx = /** @type {any} */ ({ now, match, gate, squad: reads.squad ?? null, readiness, workload: null, spells: null, trips: reads.trips ?? null,
+    // The bus (Kameel, 25 Nov: one fact on Today and To resolve before the match day): the lifts are read only on
+    // the match day, so before it the bus row says "lifts not counted" to everyone, a lift holder included, rather
+    // than staying silent for him until a read nobody made.
+    const s1Gate = lifts ? gate : { ...gate, panels: { ...p, lifts: false } };
+    const ctx = /** @type {any} */ ({ now, match, gate: s1Gate, squad: reads.squad ?? null, readiness, workload: null, spells: null, trips: reads.trips ?? null,
       lifts: reads.lifts != null ? liftCounts(reads.lifts, now) : null, liftExceptions: null, weather, duties: reads.duties ?? null,
       conditions: reads.conditions ?? { state: "failed", cap: null, freeHit: null }, notices: null, matchups: null, fielding: [], capFor: null });
     for (const c of ruleS1(ctx)) rows.push(mk({ id: `${id}:S1`, rule: "S1", count: c.count, fact: c.lines[0], source: SOURCE.trips, owner: sideOwner("S1", team),
@@ -709,16 +719,33 @@ export function officeAt(assignments, school) {
     && (a.subjects?.length ?? 0) === 0 && !SUBJECT_SCOPED_ROLES.includes(a.role) && CLEARS_OFFICE_ROWS.some((c) => roleGrants(a.role, c)));
 }
 
+/** A row whose owner is the competition's organiser: no playing conditions set (S10). @param {Row} row */
+export const organiserOnly = (row) => row.owner === ORGANISER;
+
 /**
- * One fixture's open rows split for this reader: `mine`, on his "Needs you", and `office`, the rows only the office
- * can clear, which he is shown on the fixture as the office's (none for a reader who is the office there).
+ * Does this reader hold the organiser's right: ONE assignment, naming no person or single fixture, in a role that
+ * sets a competition's playing conditions, at this school or at none (a league's organiser). Layout, not authority:
+ * the conditions' own write asks competition_conditions_manager() again.
+ * @param {Parameters<typeof cockpitGate>[0]} assignments  @param {string | null | undefined} school
+ */
+export function organiserAt(assignments, school) {
+  return (assignments ?? []).some((/** @type {any} */ a) => !!a?.role && !a.fixture && (a.subjects?.length ?? 0) === 0
+    && (a.school == null || a.school === school) && roleGrants(a.role, "competition.conditions.manage"));
+}
+
+/**
+ * One fixture's open rows split for this reader: `mine`, on his "Needs you"; `office`, the rows only the office can
+ * clear (question 8, 19 Nov); and `organiser`, the rows only the competition's organiser can (S10; Kameel, 25 Nov).
+ * The last two are shown to him on the fixture as the office's and the organiser's, and are his own where he holds
+ * that right there.
  * @param {Pick<FixtureGroup, "rows" | "school">} group  @param {Parameters<typeof cockpitGate>[0]} assignments
- * @returns {{mine: Row[], office: Row[]}}
+ * @returns {{mine: Row[], office: Row[], organiser: Row[]}}
  */
 export function splitForReader(group, assignments) {
   const open = (group.rows ?? []).filter((r) => r.state === "open");
-  if (officeAt(assignments, group.school)) return { mine: open, office: [] };
-  return { mine: open.filter((r) => !officeOnly(r)), office: open.filter(officeOnly) };
+  const office = officeAt(assignments, group.school) ? [] : open.filter(officeOnly);
+  const organiser = organiserAt(assignments, group.school) ? [] : open.filter(organiserOnly);
+  return { mine: open.filter((r) => !office.includes(r) && !organiser.includes(r)), office, organiser };
 }
 
 /**

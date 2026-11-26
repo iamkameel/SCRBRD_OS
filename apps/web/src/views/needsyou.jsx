@@ -3,6 +3,7 @@ import { T } from "../design/tokens.js";
 import { signedIn } from "../lib/api.js";
 import { useNav } from "../lib/features.js";
 import { needsYouWords, splitForReader, verbOf } from "../lib/queue.js";
+import { namedFact, ownSide } from "../lib/queueNames.js";
 import { profile } from "../lib/session.js";
 import { BentoCard } from "../ui/surfaces.jsx";
 import { useQueue } from "./cockpit/useQueue.js";
@@ -24,7 +25,12 @@ export const NEEDS_YOU_SHOWN = 3;
  * the office can clear (nobody on record for a duty, a called-off fixture's
  * leftovers) are left out for a reader who is not the office at that school;
  * the match-day card says them as the office's. Each fixture row carries the
- * fixture it is about (`where`), so two squads' rows never read alike.
+ * fixture it is about (`where`), so two squads' rows never read alike. The
+ * organiser's rows (S10) are left out the same way for a reader who does not
+ * hold the organiser's right (Kameel, 25 Nov). On his own side, a row names
+ * the boy who has not answered or is marked unavailable (lib/queueNames.js),
+ * never a reason; a restricted boy stays a count ("1 restricted boy on the
+ * sheet"), named on the side the row opens; every other row stays a count.
  * @param {ReturnType<typeof useQueue>} q
  * @param {any[] | null} [assignments]  the session's own, to tell who is the office where
  * @returns {(import("../lib/queue.js").Row & {where?: string})[]}
@@ -35,7 +41,17 @@ export function needsYouRows(q, assignments = null) {
     ...q.offices.flatMap((o) => open(o.rows)),
     ...(q.results ? open(q.results.rows) : []),
     ...(q.potm ? open(q.potm.rows) : []),
-    ...q.groups.flatMap((g) => splitForReader(g, assignments).mine.map((r) => ({ ...r, where: g.label }))),
+    ...q.groups.flatMap((g) => {
+      // His own side's rows name the boy who has not answered or is marked unavailable (Kameel, 25 Nov), from the
+      // readiness read the queue made for it; a restricted boy, any other reader's rows, and any row the names cannot
+      // account for, stay counts.
+      const own = ownSide(assignments, g);
+      const readiness = own ? q.readsOf?.(g.id)?.readiness ?? null : null;
+      return splitForReader(g, assignments).mine.map((r) => {
+        const named = own ? namedFact(r, readiness, { team: g.team, end: g.end, status: g.mayStatus }) : null;
+        return { ...r, where: g.label, ...(named ? { fact: named, named: true } : {}) };
+      });
+    }),
   ];
 }
 
@@ -48,7 +64,8 @@ export function needsYouRows(q, assignments = null) {
  * Drawn only for a reader who is offered To resolve (Q17: someone who can act
  * on a row), and only when a row is open or a read failed: nothing waiting
  * draws nothing, and the day sheet below says the day. A school-wide row is a
- * count, never a child's name (GA-I09 §5); the names are a tap deeper.
+ * count, never a child's name (GA-I09 §5), and so is a restricted boy on his
+ * own side; the names are a tap deeper.
  *
  * The set-up list (EXPERIENCE_PASS §1.9, §2.7; Slice 6) leads it for a school with no fixtures yet: drawn from the
  * same queue rows and the rows Today already reads (`matchesAnswered`, `players`), with no read of its own.
@@ -151,7 +168,7 @@ function NeedsYouRead({ role, reach, matches, onNav, matchesAnswered, players })
               </span>
             );
             return (
-              <li key={r.id} data-testid="needs-you-row" data-rule={r.rule} data-kind={r.action?.kind ?? ""} data-match={r.action?.matchId ?? undefined} style={{ listStyle: "none" }}>
+              <li key={r.id} data-testid="needs-you-row" data-rule={r.rule} data-kind={r.action?.kind ?? ""} data-match={r.action?.matchId ?? undefined} data-named={r.named ? "true" : undefined} style={{ listStyle: "none" }}>
                 {door
                   ? <button type="button" className="os-state" data-testid={`needs-you-open-${r.id}`} onClick={door.go}
                       style={{ display: "block", width: "100%", minHeight: `${T.floor.target}px`, padding: `${T.space.sm} ${T.space.md}`, margin: 0, textAlign: "left", cursor: "pointer",

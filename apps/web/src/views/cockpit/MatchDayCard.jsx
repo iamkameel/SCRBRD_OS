@@ -3,7 +3,7 @@ import { T } from "../../design/tokens.js";
 import { signedIn } from "../../lib/api.js";
 import { profile } from "../../lib/session.js";
 import { requestCoach } from "../../lib/cockpitNav.js";
-import { busOf, isMatchDay, sideFoot, sideRows, withSwitches } from "../../lib/cockpit.js";
+import { busOf, isMatchDay, sideFoot, sideRows, unanswered, withSwitches } from "../../lib/cockpit.js";
 import { useFeatures } from "../../lib/features.js";
 import { humanDate } from "../../lib/format.js";
 import { sidesOf } from "../../lib/matchCentre.js";
@@ -134,7 +134,8 @@ function Card({ match, gate, onNav, now, title, named, folded = false }) {
         {loading ? <p style={line}>Reading the day…</p> : (
           <>
             <p data-testid="matchday-side" style={line}>
-              {rows ? (rows.length ? sideFoot(rows) : "No sheet published yet") : `${named11} named`}
+              {/* "To chase" is everyone asked who has not answered, the set S7 counts (Kameel, 25 Nov), not the sheet alone. */}
+              {rows ? (rows.length ? sideFoot(rows, { chase: unanswered(reads.readiness, gate.teamCode ?? null).length }) : "No sheet published yet") : `${named11} named`}
               {bus ? ` · bus ${bus.capacity} seats` : ""}
             </p>
             {mine && (
@@ -146,6 +147,10 @@ function Card({ match, gate, onNav, now, title, named, folded = false }) {
                 here, on the fixture, as the office's. */}
             {mine?.office.map((r) => (
               <p key={r.id} data-testid="matchday-office" data-rule={r.rule} style={line}>The office's: {r.fact}</p>
+            ))}
+            {/* S10 is the competition's organiser's (Kameel, 25 Nov): off his "Needs you", said here as the organiser's. */}
+            {mine?.organiser.map((r) => (
+              <p key={r.id} data-testid="matchday-organiser" data-rule={r.rule} style={line}>The organiser's: no playing conditions set</p>
             ))}
             {/* A read that failed is said, one line each: it is never "nothing needs you". */}
             {count.unread.map((r) => (
