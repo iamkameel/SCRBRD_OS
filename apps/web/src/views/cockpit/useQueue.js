@@ -131,29 +131,36 @@ export function useQueue({ matches, assignments, now, onOpen = false }) {
   const retry = useCallback((matchId) => { weatherRead.current = null; setAgain((a) => ({ ...a, [matchId]: (a[matchId] ?? 0) + 1 })); }, []);
 
   // ── The office's three reads ──
-  const [office, setOffice] = useState(/** @type {{loaded: boolean, requests?: any[] | null, claims?: any[] | null, register: Record<string, any[] | null>, errors: Record<string, string | null>}} */ ({ loaded: false, register: {}, errors: {} }));
+  const [office, setOffice] = useState(/** @type {{loaded: boolean, requests?: any[] | null, claims?: any[] | null, register: Record<string, any[] | null>, pupils?: Record<string, number | null>, errors: Record<string, string | null>}} */ ({ loaded: false, register: {}, errors: {} }));
   const [officeAgain, setOfficeAgain] = useState(0);
   const needRequests = offices.some((o) => o.may.requests);
   const needClaims = offices.some((o) => o.may.claims);
   const registerKey = offices.filter((o) => o.may.register).map((o) => o.school).join(",");
+  const pupilsKey = offices.filter((o) => o.may.pupils).map((o) => o.school).join(",");
   useEffect(() => {
     if (!signedIn() || !offices.length) return undefined;
     let cancelled = false;
     (async () => {
-      const [requests, claims, ...registers] = await Promise.all([
+      const regSchools = offices.filter((o) => o.may.register).map((o) => o.school);
+      const pupilSchools = offices.filter((o) => o.may.pupils).map((o) => o.school);
+      const [requests, claims, ...more] = await Promise.all([
         needRequests ? ask("role_requests") : NOT_ASKED,
         needClaims ? ask("sign_in_claims") : NOT_ASKED,
-        ...offices.filter((o) => o.may.register).map((o) => ask("clearance_register", { schoolId: o.school })),
+        ...regSchools.map((s) => ask("clearance_register", { schoolId: s })),
+        // db/176: a count per school, no name (pupil_accounts_waiting()).
+        ...pupilSchools.map((s) => ask("pupil_accounts_waiting", { schoolId: s })),
       ]);
       if (cancelled) return;
-      const schools = offices.filter((o) => o.may.register).map((o) => o.school);
+      const registers = more.slice(0, regSchools.length), waits = more.slice(regSchools.length);
       setOffice({ loaded: true, requests: requests.rows, claims: claims.rows,
-        register: Object.fromEntries(schools.map((s, i) => [s, registers[i].rows])),
-        errors: { requests: requests.error, claims: claims.error, ...Object.fromEntries(schools.map((s, i) => [`register:${s}`, registers[i].error])) } });
+        register: Object.fromEntries(regSchools.map((s, i) => [s, registers[i].rows])),
+        pupils: Object.fromEntries(pupilSchools.map((s, i) => [s, waits[i].rows == null ? null : Number(waits[i].rows[0]?.n ?? 0)])),
+        errors: { requests: requests.error, claims: claims.error, ...Object.fromEntries(regSchools.map((s, i) => [`register:${s}`, registers[i].error])),
+                  ...Object.fromEntries(pupilSchools.map((s, i) => [`pupils:${s}`, waits[i].error])) } });
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needRequests, needClaims, registerKey, officeAgain]);
+  }, [needRequests, needClaims, registerKey, pupilsKey, officeAgain]);
 
   // ── OFFICIAL_RESULT (db/114): the results this reader may confirm or settle ──
   const wantsResults = resultsReader(assignments);
@@ -221,8 +228,10 @@ export function useQueue({ matches, assignments, now, onOpen = false }) {
     ...o,
     ...(office.loaded
       ? { loading: false, ...officeRows({ school: o.school, may: o.may, requests: o.may.requests ? office.requests ?? null : [], claims: o.may.claims ? office.claims ?? null : [],
-          register: o.may.register ? office.register[o.school] ?? null : [], now,
-          errors: { requests: office.errors.requests ?? null, claims: office.errors.claims ?? null, register: office.errors[`register:${o.school}`] ?? null } }) }
+          register: o.may.register ? office.register[o.school] ?? null : [],
+          pupils: o.may.pupils ? office.pupils?.[o.school] ?? null : 0, now,
+          errors: { requests: office.errors.requests ?? null, claims: office.errors.claims ?? null, register: office.errors[`register:${o.school}`] ?? null,
+                    pupils: office.errors[`pupils:${o.school}`] ?? null } }) }
       : { loading: true, rows: [], unread: [], open: 0, failed: 0 }),
   })), [offices, office, now]);
 

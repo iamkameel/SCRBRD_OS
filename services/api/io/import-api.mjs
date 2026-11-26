@@ -105,6 +105,10 @@ const ENROL_REFUSAL_COLUMN = {
   name_required: "guardian_name",
 };
 
+/** enrol_person()'s refusals about the boy or the guardian's name, not the address: their own words to anyone. */
+const ABOUT_THE_LINE = new Set(["player_is_an_adult", "player_date_of_birth_required", "player_not_at_that_school",
+                                "no_such_player", "player_required", "name_required"]);
+
 /**
  * The guardians import's one sentence, to anyone but the office, for an
  * address it cannot use (R4, Kameel, 28 Oct 2026): it says nothing of whose.
@@ -465,7 +469,9 @@ export const IMPORTS = {
         [email, v.guardian_name, school, child, "guardians import"])).rows[0];
       if (!r?.ok) {
         const reason = r?.reason || "refused";
-        if (!office && reason === "email_belongs_to_another_school") {
+        // To anyone but the office, every refusal that is not about the boy or
+        // the name is about the address, and reads the one sentence (R4).
+        if (!office && !ABOUT_THE_LINE.has(reason)) {
           return { ok: false, column: "guardian_email", message: unusableAddress(email) };
         }
         return { ok: false, column: ENROL_REFUSAL_COLUMN[reason] ?? null,

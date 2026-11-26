@@ -46,7 +46,9 @@
 --       boy already.
 --   + role_request.asked_by  who asked for a request on another's behalf:
 --       the guardian whose yes opened his own sign-in, or the office person
---       whose tick or retry did. NULL where the person asked himself.
+--       whose tick or retry did. NULL where the person asked himself, or where
+--       it is not recorded (filed before this file; the asker since erased):
+--       the request's note says it was his own sign-in either way.
 --   ~ pupil_signin_after_yes() (db/169, as db/173 left it), replaced whole,
 --       guarded: the request it files names the caller as asked_by; the
 --       decider is the office person acting now, or else the office person
@@ -168,11 +170,17 @@ BEGIN
       RAISE EXCEPTION 'db/176: % is neither %''s nor this file''s (md5 % of its folded body); look before replacing it',
         r.fn, r.file, v;
     END IF;
-    IF v = r.mine THEN n_mine := n_mine + 1; ELSE n_was := n_was + 1; END IF;
+    -- The terms gate's nine bodies (§5b) move together, or not at all: a mix
+    -- is a hand edit. Each other body moves alone, over its own file's body or
+    -- this file's: tools/terms-gate-rollback.sql puts the nine back and leaves
+    -- the rest of this file's work in place, and a paste after it (db/175,
+    -- then this file) moves the nine again.
+    IF r.file = 'db/175' AND r.fn NOT IN ('my_terms_due()', 'guardian_terms_record_append_only()') THEN
+      IF v = r.mine THEN n_mine := n_mine + 1; ELSE n_was := n_was + 1; END IF;
+    END IF;
   END LOOP;
-  -- The gate and the grant door move together, or not at all.
   IF n_mine > 0 AND n_was > 0 THEN
-    RAISE EXCEPTION 'db/176: a partial paste is in place (% of its % bodies are this file''s); restore them, or see the paste card',
+    RAISE EXCEPTION 'db/176: a partial terms gate is in place (% of its % bodies are this file''s); restore them, or see the paste card',
       n_mine, n_mine + n_was;
   END IF;
 END $bodies$;
@@ -263,7 +271,7 @@ END $door$;
 -- ── 3 · Who asked, and on whose recognition (the map's rule 7) ───────
 ALTER TABLE role_request ADD COLUMN IF NOT EXISTS asked_by uuid REFERENCES app_user(id) ON DELETE SET NULL;
 COMMENT ON COLUMN role_request.asked_by IS
-  'db/176: who asked for this request on another''s behalf: the guardian whose yes opened his own sign-in, or the office person whose tick or retry did. NULL when the person asked himself. For such a request decided_by is the office person on whose authority it was granted: the one acting then, or the one who recognised his account (his claim''s known_by), still holding that right.';
+  'db/176: who asked for this request on another''s behalf: the guardian whose yes opened his own sign-in, or the office person whose tick or retry did. NULL means he asked himself, or it is not recorded: a request filed before db/176, or one whose asker''s account has since been erased. A request for his own sign-in says so in its note either way (''His own sign-in: a yes on record''), and audit_log() reads that note. For such a request decided_by is the office person on whose authority it was granted: the one acting then, or the one who recognised his account (his claim''s known_by, or for a claim the family list recognised its uploader), still holding that right.';
 
 -- db/169's, as db/173 left it, with the grant's record made whole (the map,
 -- §0 rule 7: the record answers for each act). The caller is the one who

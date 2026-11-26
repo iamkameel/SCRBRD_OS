@@ -2,7 +2,8 @@ import { useEffect, useId, useState } from "react";
 import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { api } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
-import { NOT_HIM, OFFICE_INTRO, OFFICE_STATE_WORDS, clearWords, dayWords, officeWords, rosterMatches } from "../lib/pupilClaim.js";
+import { NOT_HIM, OFFICE_INTRO, OFFICE_STATE_WORDS, OPEN_WAITING, clearWords, dayWords, officeWords, rosterMatches } from "../lib/pupilClaim.js";
+import { heldWords } from "../lib/ownSignin.js";
 
 // ══════════════════════════════════════════════════════
 //  PUPIL CLAIMS  (Settings → People; SCRBRD-140 honesty model, Migration A; db/168)
@@ -42,13 +43,13 @@ const todayIso = () => {
 };
 
 /** One claim, with the office's two answers. */
-export function PupilClaimRow({ c, players, school, busy, onRecognise, onDecline, onNotHim }) {
+export function PupilClaimRow({ c, players, school, busy, onRecognise, onDecline, onNotHim, onOpen }) {
   const [q, setQ] = useState("");
   const [pick, setPick] = useState("");
   const [declining, setDeclining] = useState(false);
   const [notHim, setNotHim] = useState(false);
   // db/169 (S10): a claim matched to a boy (recognised, opened, or closed again) can be taken back.
-  const matched = ["recognised", "open", "closed"].includes(c.state) && !!c.playerId;
+  const matched = ["recognised", "yes_waits", "open", "closed"].includes(c.state) && !!c.playerId;
   const searchId = useId(), pickId = useId();
   const matches = rosterMatches(players, school, q);
   const waiting = c.state === "with_office";
@@ -88,6 +89,9 @@ export function PupilClaimRow({ c, players, school, busy, onRecognise, onDecline
             <Act quiet disabled={busy} onClick={() => setDeclining(false)}>Keep it</Act>
           </div>
         </div>
+      )}
+      {c.state === "yes_waits" && !declining && !notHim && onOpen && (
+        <div style={{ marginTop: "10px" }}><Act disabled={busy} onClick={onOpen} data-testid="pupil-claim-open">{busy ? "Working…" : OPEN_WAITING.button}</Act></div>
       )}
       {c.state === "recognised" && !declining && !notHim && (
         <div style={{ marginTop: "10px" }}><Act quiet disabled={busy} onClick={() => setDeclining(true)} data-testid="pupil-claim-decline">Decline after all</Act></div>
@@ -130,6 +134,16 @@ function SchoolClaims({ school, players }) {
     } catch (e) { setNote({ tone: "error", text: officeWords(e) }); }
     setBusy(null); setNonce((n) => n + 1);
   };
+  // db/176: a yes is in force and his account waits: the office's retry opens him as its own act.
+  const open = async (/** @type {any} */ c) => {
+    setBusy(c.id); setNote(null);
+    try {
+      const r = await api(`/api/players/${encodeURIComponent(c.playerId)}/own-signin/office`, { method: "POST", body: { retry: true } });
+      const held = heldWords(r?.held, c.playerName ?? c.name);
+      setNote(held ? { tone: "error", text: held } : { tone: "ok", text: OPEN_WAITING.done(c.playerName ?? c.name) });
+    } catch (e) { setNote({ tone: "error", text: officeWords(e) }); }
+    setBusy(null); setNonce((n) => n + 1);
+  };
   const due = (rows ?? []).filter((r) => r.keepUntil && r.keepUntil < todayIso() && r.state !== "open").length;
   const clear = async () => {
     setBusy("clear"); setNote(null);
@@ -153,7 +167,7 @@ function SchoolClaims({ school, players }) {
             {list.map((c) => (
               <PupilClaimRow key={c.id} c={c} players={players} school={school.id} busy={busy === c.id}
                 onRecognise={(playerId) => act(c, "recognise", { playerId })} onDecline={() => act(c, "decline")}
-                onNotHim={() => act(c, "not-him")}/>
+                onNotHim={() => act(c, "not-him")} onOpen={() => open(c)}/>
             ))}
           </ul>
         </>

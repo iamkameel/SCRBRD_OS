@@ -187,7 +187,9 @@ export async function sessionProfile(pool, secret, bearer) {
                          and g.verification_state = 'verified'
                          and g.valid_from <= sa_today()
                          and (g.valid_until is null or g.valid_until > sa_today())
-                         and (a.role <> 'guardian' or g.consent_state <> 'pending'
+                         -- db/176 (Q1): agreed, or agreed and since withdrawn.
+                         and (a.role <> 'guardian' or g.consent_state = 'granted'
+                              or (g.consent_state = 'withdrawn' and g.consent_at is not null)
                               or g.relationship in ('self', 'enquiry'))), '{}') as live_subjects
          from role_assignment a
          left join school s on s.id = a.school_id

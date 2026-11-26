@@ -19732,13 +19732,16 @@ BEGIN
     PERFORM _as(P2);
     PERFORM _assert(_v175_reads(ARRAY[n2]) = 1, '§150 (notices): P2, agreed, does not read the notice about him');
     -- db/176: a notice of kind 'system' about him, addressed to her, is held
-    -- as every other kind is (none the design opens names a child); agreed,
-    -- his other guardian reads hers.
+    -- as every other kind is (none the design opens names a child), by the
+    -- notice's own policy, with the route added later on; agreed, his other
+    -- guardian reads hers.
     n3 := _v175_notice(B, P1, 'system'); n4 := _v175_notice(B, P2, 'system');
+    PERFORM _v175_route_added_later(true);
     PERFORM _as(P1);
-    PERFORM _assert(_v175_reads(ARRAY[n3]) = 0, '§150 (notices): P1 reads a system notice about him before she agrees');
+    PERFORM _assert(_v175_reads(ARRAY[n3]) = 0, '§150 (notices): with the route added later, P1 reads a system notice about him before she agrees');
     PERFORM _as(P2);
     PERFORM _assert(_v175_reads(ARRAY[n4]) = 1, '§150 (notices): P2, agreed, does not read the system notice about him');
+    PERFORM _v175_route_added_later(false);
 
   ELSIF p_case = 'coach' THEN
     -- (coach) §5.4 case 10: P6 coaches his side and is his parent, not
@@ -19886,7 +19889,8 @@ CREATE OR REPLACE FUNCTION _v176_withdrawn_unagreed(p_link uuid) RETURNS void AS
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- An owner's write on the record of agreements, or its foreign keys' (owner):
 -- 'erase' deletes the guardian's account, 'boy' deletes his roster row,
--- 'tamper' edits a row, 'remove' deletes one. 'ok' or the refusal.
+-- 'tamper' edits a row, 'unlink' empties its guardian by hand, 'remove'
+-- deletes one. 'ok' or the refusal.
 CREATE OR REPLACE FUNCTION _v176_record_write(p_what text, p_id uuid) RETURNS text AS $$
 DECLARE was text := current_setting('app.user_id', true);
 BEGIN
@@ -19895,6 +19899,7 @@ BEGIN
     IF p_what = 'erase' THEN DELETE FROM app_user WHERE id = p_id;
     ELSIF p_what = 'boy' THEN DELETE FROM player WHERE id = p_id;
     ELSIF p_what = 'tamper' THEN UPDATE guardian_terms_record SET guardian_name = 'Verify 176 Tamper' WHERE player_id = p_id;
+    ELSIF p_what = 'unlink' THEN UPDATE guardian_terms_record SET guardian_id = NULL WHERE player_id = p_id;
     ELSE DELETE FROM guardian_terms_record WHERE player_id = p_id; END IF;
   EXCEPTION WHEN OTHERS THEN
     PERFORM set_config('app.user_id', coalesce(was, ''), true);
@@ -20265,6 +20270,8 @@ BEGIN
     PERFORM _assert(v LIKE '%append-only%', format('§151 (record): a row was edited: %s', v));
     v := _v176_record_write('remove', B);
     PERFORM _assert(v LIKE '%append-only%', format('§151 (record): a row was removed: %s', v));
+    v := _v176_record_write('unlink', B);
+    PERFORM _assert(v LIKE '%append-only%', format('§151 (record): a row''s guardian was emptied by hand: %s', v));
     v := _v176_record_write('erase', G);
     PERFORM _assert(v = 'ok' AND _v176_record_rows(B) = '1|0|1', format('§151 (record): her erasure: %s, the record %s', v, _v176_record_rows(B)));
     v := _v176_record_write('boy', B);
@@ -53279,25 +53286,38 @@ $m130$;
   -- ── 151. A pupil's sign-in and his date of birth, followed up (db/176; Kameel, 18 Nov 2026 Q5, 20 Nov A; the map's rule 7 and class A2; the re-dating design §3.2, §3.5, Q4) ──
   -- Each case stages its own people (as the owner) and runs as scrbrd_app
   -- under each person's session (_v176_case, an invoker). Labels:
-  --   (gate)    an account with a claim not yet opened by a yes (with the
-  --             office, recognised, declined) and no roster boy is closed; a
-  --             scorer's role it holds counts for nothing; the claim removed,
-  --             it opens (the control); a guardian's yes still opens a
+  --   (gate)    an account whose claim waits (with the office, recognised,
+  --             held for a concern) and no roster boy is closed; a scorer's
+  --             role it holds counts for nothing; the claim removed, it opens
+  --             (the control); declined, or taken back as "not him", it is
+  --             open and its role counts; a guardian's yes still opens a
   --             recognised claim, and her no closes it
   --   (door)    the grant door refuses a scorer's or a side's role to a
-  --             claimant and to an account naming no boy, writing nothing; an
-  --             adult and a roster boy's own account are granted (the controls)
-  --   (asked)   her yes's request names her as asked_by and the recogniser as
-  --             decider; a recogniser whose right has lapsed, or who is gone,
-  --             grants nothing (recogniser_lapsed), her retry neither; the
-  --             office's retry opens him as its own act
+  --             claimant and to an account naming no boy, writing nothing; a
+  --             declined claimant, an adult and a roster boy's own account are
+  --             granted (the controls)
+  --   (asked)   on a claim the office recognised by hand, the family list
+  --             off: her yes's request names her as asked_by and the
+  --             recogniser as decider, and the audit log says so; a recogniser
+  --             whose right has lapsed, or who is gone, grants nothing
+  --             (recogniser_lapsed), her retry neither; the office's list
+  --             reads the claim as a yes waiting and its queue counts it
+  --             (nobody else reads the count); the office's retry opens him
   --   (links)   after a correction the links the old date dated are listed
-  --             (his 18th birthday; the day he left as an adult), none
-  --             changed; not a link dated otherwise, a revoked one or one at
-  --             school; the office's alone
+  --             (his 18th birthday, ahead or already passed; the day he left
+  --             as an adult), none changed; not a link dated otherwise, a
+  --             revoked one or one at school; the office's alone
   --   (log)     the log's dates of a change while he is at that school; moved,
   --             the event without the dates
+  --   (agreed)  Q1: a link withdrawn and never agreed reaches nothing, is due,
+  --             its notices held, "Allow" answers nothing; agreed, or agreed
+  --             and withdrawn, reads
+  --   (record)  the record of agreements: her erasure and his roster row's
+  --             deletion go through; a row edited, emptied or removed by hand
+  --             is refused
   --   (grants)  ACLs
+  -- And §150 (notices): a system notice about him is held from a parent who
+  -- has not agreed, by the notice's own policy.
   -- Broken by hand (26 Nov 2026), each went red for its own reason:
   --   the gate without its claim arm              → (gate) red: a claim with_office left the account open
   --   the claim arm reading only 'with_office'    → (gate) red: a claim recognised left the account open
@@ -53308,6 +53328,17 @@ $m130$;
   --   the list without the old date's test        → (links) red: a link dated otherwise is listed
   --   the list without the office's test          → (links) red: a coach reads it
   --   the log's school test out                   → (log) red: moved, the director still reads his dates
+  -- And on the red-team of db/175 and db/176 (26 Nov 2026), ten more:
+  --   the gate's claim arm as `<> 'open'`          → (gate) red: a declined claim closed the account
+  --   the grant door asking person_is_pupil()     → (door) red: a declined claimant refused a side's role
+  --   app_can() back to "not pending"             → (agreed) red: a link never agreed reaches 21 capabilities
+  --   my_terms_due() back to "pending"            → (agreed) red: not due for her agreement
+  --   the record's trigger as db/175 wrote it     → (record) red: her erasure refused
+  --   the record's trigger without its depth test → (record) red: emptied by hand
+  --   the notice policy's system arm put back     → §150 (notices) red: with the route added later, read
+  --   the claims list without yes_waits           → (asked) red: the office reads recognised
+  --   the count without the office's test         → (asked) red: a coach reads the count
+  --   the audit log without the yes's request     → (asked) red: the grant is not said to come on her yes
   PERFORM _v176_case('gate');
   PERFORM _v176_case('door');
   PERFORM _v176_case('asked');

@@ -356,7 +356,9 @@ group("I. Guardians: each row is enrolment, and the import refuses rather than g
       boys: { "fake pupil one": ["p1"] },
       accounts: { "coach@example.invalid": { id: "u1", name: "C Coach" },
                   "pupil@example.invalid": { id: "u2", name: "A Pupil", player_id: "p9" } },
-      enrol: (/** @type {unknown[]} */ p) => (p[0] === "west@example.invalid" ? { ok: false, reason: "email_belongs_to_another_school" } : { ok: true }),
+      enrol: (/** @type {unknown[]} */ p) => (p[0] === "west@example.invalid" ? { ok: false, reason: "email_belongs_to_another_school" }
+        : p[0] === "odd@example.invalid" ? { ok: false, reason: "a_reason_with_no_words" }
+        : p[0] === "adult@example.invalid" ? { ok: false, reason: "player_is_an_adult" } : { ok: true }),
     };
     const { client } = fake(world);
     const notOffice = async (/** @type {Record<string, any>} */ r) => apply(client, HIL, r, new Map(), 3, false);
@@ -370,6 +372,11 @@ group("I. Guardians: each row is enrolment, and the import refuses rather than g
     ok("...which names no pupil, no person and no school",
        !outs.some((o, i) => /pupil|Coach|another school|one email is one person/i.test(String(o.message).replace(emails[i], ""))));
     ok("...while a new address still goes in", (await notOffice(row("Fake Pupil One", "Fake New", "new@example.invalid"))).ok === true);
+    /** @type {any} */ const odd = await notOffice(row("Fake Pupil One", "Fake Odd", "odd@example.invalid"));
+    ok("...and any other refusal of enrolment's reads the same sentence, never its own code",
+       odd.ok === false && odd.column === "guardian_email" && odd.message === unusableAddress("odd@example.invalid"));
+    /** @type {any} */ const adult = await notOffice(row("Fake Pupil One", "Fake Adult", "adult@example.invalid"));
+    ok("...while a refusal about the boy keeps its own words", adult.ok === false && /eighteen/.test(adult.message));
   }
 }
 

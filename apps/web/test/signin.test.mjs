@@ -313,6 +313,10 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
          && !/has .*form on file/.test(carried), carried);
     ok("...not hers until she has agreed the terms (N11)", /Agree to the school's terms first/.test(ownSigninWords({ ...base, agreed: false }, "Sipho")));
     ok("S5: a yes that could not open him says why", /no side for him/.test(heldWords("team_required", "Sipho")) && /not been opened yet/.test(heldWords("weird", "Sipho")) && heldWords(null, "Sipho") === null);
+    // db/176: the recogniser no longer holds the right; the office finishes it.
+    ok("db/176: a yes the office must finish says her answer is kept, naming nobody at the office",
+       /Your answer is kept/.test(heldWords("recogniser_lapsed", "Sipho")) && /school office must finish/.test(heldWords("recogniser_lapsed", "Sipho"))
+         && !/recogniser|lapsed/.test(heldWords("recogniser_lapsed", "Sipho")));
     ok("D: who signed the form and its day are optional, and checked when given", formReady({ signedBy: "N Mother", signedOn: "2026-11-02" }) && formReady({}) && formReady({ signedBy: "", signedOn: "" })
        && !formReady({ signedBy: "N", signedOn: "" }) && !formReady({ signedBy: "", signedOn: "2 Nov" }));
     ok("...and the office is told when neither was recorded", /were not recorded/.test(officeSigninWords({ ...base, inForce: true, yesHow: "office", yesBy: "N Office" }, "Sipho")));
@@ -357,7 +361,7 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
   ok("the office is told recognising opens nothing, and a decline tells the DSOs without his name",
      /opens nothing/.test(OFFICE_INTRO) && /without his name/.test(OFFICE_INTRO));
   ok("every office refusal has words", Object.keys(OFFICE_WORDS).every((k) => officeWords(apiError(409, k)) === OFFICE_WORDS[k]));
-  ok("each state is named", ["with_office", "recognised", "declined", "open"].every((k) => typeof OFFICE_STATE_WORDS[k] === "string"));
+  ok("each state is named", ["with_office", "recognised", "declined", "open", "yes_waits"].every((k) => typeof OFFICE_STATE_WORDS[k] === "string"));
   ok("the clear button counts", clearWords(1) === "Remove 1 account past its 30 days" && clearWords(3) === "Remove 3 accounts past their 30 days");
   const roster = [{ id: "p2", name: "Zed Boy", school: S }, { id: "p1", name: "Abe Boy", school: S }, { id: "p3", name: "Abe Other", school: "other" }];
   ok("the picker is the office's own school's roster, searched, in name order",

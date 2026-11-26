@@ -158,6 +158,14 @@ export const OFFICE_STATE_WORDS = Object.freeze({
   declined: "Declined",
   open: "Opened",
   closed: "Closed: the yes for his own sign-in was taken back",
+  // db/176: a parent's yes is in force and his account waits for the office to open it.
+  yes_waits: "A parent's yes is in: his account waits for you to open it",
+});
+
+/** db/176: the office's button on a claim whose yes is in force, and what it says after. */
+export const OPEN_WAITING = Object.freeze({
+  button: "Open his account",
+  done: (/** @type {string} */ name) => `${name}'s account is open.`,
 });
 
 /** What the office is told before it decides. */

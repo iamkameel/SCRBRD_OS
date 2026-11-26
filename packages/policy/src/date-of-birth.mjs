@@ -198,3 +198,25 @@ export function majorityOn(born) {
 export function isEighteenOn(born, today) {
   return majorityOn(born) <= today;
 }
+
+/**
+ * After the office corrects a date of birth (db/176; the re-dating design
+ * §3.2, Kameel, 25 Nov 2026, Q4): each guardian link whose end date the old
+ * date set, in the office's words. Nothing about the link is changed by the
+ * correction; the office acts on it. `today` is the school's day, yyyy-mm-dd.
+ * @param {{ guardianName?: string | null, endsOn: string, why: string, ofAgeOn: string }} l
+ * @param {string} today
+ * @param {(d: string) => string} [fmt]  how a day is written (the screen's own)
+ */
+export function bornLinkWords(l, today, fmt = (d) => d) {
+  const who = l.guardianName ? `${l.guardianName}'s link` : "A guardian's link";
+  const ended = String(l.endsOn) <= String(today);
+  const from = l.why === "left_school"
+    ? `the day he left school, when the old date made him 18 already`
+    : `his 18th birthday by the old date`;
+  return `${who} ${ended ? "ended" : "ends"} on ${fmt(l.endsOn)}: ${from}. By the corrected date he is 18 on ${fmt(l.ofAgeOn)}.`;
+}
+
+/** What the office is told under the list, once (db/176). */
+export const BORN_LINKS_NOTE =
+  "Nothing here changes a link. To give a parent back a link that ended, link her again on People: she agrees the terms again, and any yes for his own sign-in is asked of her again.";

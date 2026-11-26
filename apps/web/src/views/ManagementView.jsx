@@ -292,7 +292,7 @@ function AuditLog() {
                   <span style={{fontWeight:600}}>{auditActor(r)}</span> · {r.action}
                 </div>
                 <div style={{fontFamily:D.body,fontSize:"13px",color:D.textMuted,marginTop:"2px"}}>
-                  {r.subject}{r.detail?.resource&&r.subjectKind!=="records"?` · ${r.detail.resource.replace(/_/g," ")}`:""}{r.detail?.fields?.length?` · ${r.detail.fields.join(", ")}`:""}{r.detail?.fixture?` · ${r.detail.fixture}`:""}{r.detail?.support?" · under a support session":""}{r.detail?.platformWide?" · from the platform":""}
+                  {r.subject}{r.detail?.resource&&r.subjectKind!=="records"?` · ${r.detail.resource.replace(/_/g," ")}`:""}{r.detail?.fields?.length?` · ${r.detail.fields.join(", ")}`:""}{r.detail?.fixture?` · ${r.detail.fixture}`:""}{r.detail?.support?" · under a support session":""}{r.detail?.platformWide?" · from the platform":""}{r.detail?.recognisedBy?` · recognised by ${r.detail.recognisedBy}`:""}
                 </div>
               </div>
               <time dateTime={r.at} style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted,alignSelf:"center"}}>{auditWhen(r.at)}</time>

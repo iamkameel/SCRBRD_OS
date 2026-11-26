@@ -40,7 +40,7 @@ import { D, T, inkOn, textOn } from "../design/tokens.js";
 import { api, signedIn } from "../lib/api.js";
 import { useRows } from "../lib/live.js";
 import { holdsCapability } from "../rbac/index.js";
-import { resolveBirthDate, BIRTH_DATE_MESSAGE } from "@scrbrd/policy/date-of-birth";
+import { resolveBirthDate, BIRTH_DATE_MESSAGE, BORN_LINKS_NOTE, bornLinkWords } from "@scrbrd/policy/date-of-birth";
 import { compareTeams, teamLabel, teamsForLevel } from "@scrbrd/policy/teams";
 import { WhoToRing } from "./family/childfile.jsx";
 import { PublicNameStaff } from "./publicname.jsx";
@@ -189,6 +189,9 @@ export function mayCorrectBirthday(role) {
     .every((c) => holdsCapability(role, c));
 }
 
+/** The school's day (Johannesburg), yyyy-mm-dd. */
+const todayIso = () => new Date(Date.now() + 2 * 3600 * 1000).toISOString().slice(0, 10);
+
 /** How a change came about, in the office's words. */
 const HOW = { capture: "recorded", correction: "corrected", import: "from a roster import", owner: "by SCRBRD" };
 const day = (iso) => {
@@ -215,6 +218,8 @@ function CorrectBirthday({ player }) {
   const [born, setBorn] = useState("");
   const [why, setWhy] = useState("");
   const [said, setSaid] = useState({ text: "", bad: false });
+  // db/176: the guardian links the old date set, as the correction answered them.
+  const [links, setLinks] = useState(/** @type {any[]} */ ([]));
   const [busy, setBusy] = useState(false);
   const idBorn = useId(), idWhy = useId(), idHint = useId();
   useEffect(() => {
@@ -228,10 +233,11 @@ function CorrectBirthday({ player }) {
   const check = born ? resolveBirthDate({ born }) : null;
   const reason = /[\p{L}\p{N}]/u.test(why) ? why.trim() : "";
   const save = async () => {
-    setBusy(true); setSaid({ text: "", bad: false });
+    setBusy(true); setSaid({ text: "", bad: false }); setLinks([]);
     try {
       const r = await api(`/api/players/${player.id}/date-of-birth/correction`, { method: "POST", body: { born, reason } });
       setBorn(""); setWhy(""); setNonce((n) => n + 1);
+      setLinks(Array.isArray(r?.links) ? r.links : []);
       setSaid({ text: r?.unchanged ? "That is the date already on record." : "Date of birth corrected.", bad: false });
     } catch (e) { setSaid({ text: words(e), bad: true }); }
     finally { setBusy(false); }
@@ -250,6 +256,15 @@ function CorrectBirthday({ player }) {
       <p id={idHint} style={note(false)}>For example: birth certificate seen. Kept with the change.</p>
       <Go disabled={busy || !check?.ok || !reason} onClick={save} testid="edit-dob-correct-save">Correct it</Go>
       {said.text && <p role={said.bad ? "alert" : "status"} style={note(said.bad)} data-testid="edit-dob-correct-said">{said.text}</p>}
+      {links.length > 0 && (
+        <div data-testid="edit-dob-links">
+          <p style={{ ...note(false), fontWeight: 700 }}>Guardian links the old date set</p>
+          <ul style={{ listStyle: "none", padding: 0, margin: "4px 0", display: "grid", gap: "4px" }}>
+            {links.map((l) => <li key={l.linkId} style={note(false)} data-testid="edit-dob-link">{bornLinkWords(l, todayIso(), day)}</li>)}
+          </ul>
+          <p style={note(false)}>{BORN_LINKS_NOTE}</p>
+        </div>
+      )}
       {state.changes.length > 0 && (
         <ul data-testid="edit-dob-changes" style={{ listStyle: "none", padding: 0, margin: "10px 0 0", display: "grid", gap: "4px" }}>
           {state.changes.map((c, i) => (

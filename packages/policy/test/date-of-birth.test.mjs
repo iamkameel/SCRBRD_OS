@@ -129,5 +129,15 @@ console.log("\n" + "─".repeat(52));
   ok("19 is", isEighteenOn("2007-01-01", "2026-11-25"));
 }
 
+group("After a correction: the links the old date set, in the office's words (db/176)");
+{
+  const { bornLinkWords, BORN_LINKS_NOTE } = await import("../src/date-of-birth.mjs");
+  const ahead = bornLinkWords({ guardianName: "Fake Mum", endsOn: "2027-03-02", why: "eighteenth_birthday", ofAgeOn: "2026-03-02" }, "2026-11-26");
+  ok("a link ending ahead on the old 18th birthday", ahead === "Fake Mum's link ends on 2027-03-02: his 18th birthday by the old date. By the corrected date he is 18 on 2026-03-02.", ahead);
+  const left = bornLinkWords({ guardianName: null, endsOn: "2026-11-16", why: "left_school", ofAgeOn: "2028-05-26" }, "2026-11-26");
+  ok("a link that ended when he left school, unnamed", left.startsWith("A guardian's link ended on 2026-11-16: the day he left school") && /18 on 2028-05-26\.$/.test(left), left);
+  ok("the note says nothing is changed, and how she gets a link back", /Nothing here changes a link/.test(BORN_LINKS_NOTE) && /agrees the terms again/.test(BORN_LINKS_NOTE));
+}
+
 console.log(`DATE OF BIRTH: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
