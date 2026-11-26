@@ -2571,6 +2571,17 @@ export const READ_QUERIES = {
    * caller may issue a code to (user.invite at the account's school), the
    * account as enrolled beside the address Google verified, never the uid.
    */
+  /*
+   * db/176: how many pupils' accounts wait for the office to open them (a
+   * guardian's yes is in force; the recogniser no longer may, or the door
+   * refused), for the office's queue. A count, no name; NULL to anyone but
+   * the office of that school (pupil_claim_office(), R4's readers).
+   */
+  pupil_accounts_waiting: {
+    text: `select pupil_accounts_waiting($1::uuid) as n`,
+    params: q => [q?.schoolId || null],
+  },
+
   sign_in_claims: {
     text: `select id, user_id, account_name, account_email, account_active, school_id,
                   presented_email, provider, requested_at, last_requested_at
@@ -3931,7 +3942,9 @@ export const READ_QUERIES = {
               and s.verification_state = 'verified'
               and s.valid_from <= sa_today()
               and (s.valid_until is null or s.valid_until > sa_today())
-              and s.consent_state <> 'pending'
+              -- db/176 (Kameel, 20 Nov 2026, Q1): agreed, or agreed and since
+              -- withdrawn, as the database's own gate reads her link.
+              and (s.consent_state = 'granted' or (s.consent_state = 'withdrawn' and s.consent_at is not null))
            union all
            select t.player_id, t.full_name, null, null,
                   t.school_id, t.school_name, null,

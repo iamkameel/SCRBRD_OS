@@ -106,6 +106,10 @@ group("Every refusal has words the office can read");
   reasons.add("id_number_check_digit_failed");
   const missing = [...reasons].filter((x) => !BIRTH_DATE_MESSAGE[x]);
   ok(`all ${reasons.size} outcomes are spelled out`, missing.length === 0, missing.join(", "));
+  // db/176 (Kameel, 26 Nov 2026, Q2): "Record it" after three refused tries
+  // today; the same sentence whatever was typed, and no date in it.
+  ok("three refused tries a day: said once, with no date and nothing of what is on file",
+     /^Three dates of birth for him were refused today\. Try again tomorrow, or ask the school office\.$/.test(BIRTH_DATE_MESSAGE.born_tries_used ?? ""));
 }
 
 console.log("\n" + "─".repeat(52));
@@ -127,6 +131,21 @@ console.log("\n" + "─".repeat(52));
   ok("18 today is 18", isEighteenOn("2008-11-25", "2026-11-25"));
   ok("18 tomorrow is not", !isEighteenOn("2008-11-26", "2026-11-25"));
   ok("19 is", isEighteenOn("2007-01-01", "2026-11-25"));
+}
+
+group("After a correction: the links the old date set, in the office's words (db/176)");
+{
+  const { bornLinkWords, BORN_LINKS_NOTE } = await import("../src/date-of-birth.mjs");
+  const ahead = bornLinkWords({ guardianName: "Fake Mum", endsOn: "2027-03-02", why: "eighteenth_birthday", ofAgeOn: "2026-03-02" }, "2026-11-26");
+  ok("a link ending ahead on the old 18th birthday", ahead === "Fake Mum's link ends on 2027-03-02: his 18th birthday by the old date. By the corrected date he is 18 on 2026-03-02.", ahead);
+  const left = bornLinkWords({ guardianName: null, endsOn: "2026-11-16", why: "left_school", ofAgeOn: "2028-05-26" }, "2026-11-26");
+  ok("a link that ended when he left school, unnamed", left.startsWith("A guardian's link ended on 2026-11-16: the day he left school") && /18 on 2028-05-26\.$/.test(left), left);
+  ok("the note says nothing is changed, and how she gets a link back", /Nothing here changes a link/.test(BORN_LINKS_NOTE) && /agrees the terms again/.test(BORN_LINKS_NOTE));
+  // Kameel, 26 Nov 2026 (Q3): until the list can reopen a link, the ordinary
+  // door, the terms again, and her yes for his sign-in given again.
+  ok("...until a link can be reopened from the list: the ordinary door, and her yes for his sign-in again",
+     /^Nothing here changes a link\. Until a link can be reopened from this list, /.test(BORN_LINKS_NOTE)
+     && /linking her again on People/.test(BORN_LINKS_NOTE) && /gives her yes for his own sign-in again\.$/.test(BORN_LINKS_NOTE));
 }
 
 console.log(`DATE OF BIRTH: ${pass} passed, ${fail} failed`);

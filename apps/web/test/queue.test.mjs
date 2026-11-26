@@ -336,8 +336,8 @@ group("The office list: who holds which row, and O1, O2, O3 (§2.3, §3.3)");
   const school = (role, team = null, o = {}) => officeReader([A(role, HIL, team, o)])[0]?.may ?? null;
   const caps = (c) => c ? Object.entries(c).filter(([, v]) => v).map(([k]) => k).join() : "none";
   ok("the director: requests, claims, the register; no lifts (he holds neither lift capability)", caps(school("directorofsport")) === "requests,claims,register", caps(school("directorofsport")));
-  ok("the principal: requests and the register; no claims (no user.invite)", caps(school("principal")) === "requests,register", caps(school("principal")));
-  ok("the school admin: all four, lifts included", caps(school("schooladmin")) === "requests,claims,register,lifts", caps(school("schooladmin")));
+  ok("the principal: requests, the register and the pupils waiting; no claims (no user.invite)", caps(school("principal")) === "requests,register,pupils", caps(school("principal")));
+  ok("the school admin: all five, lifts and the pupils waiting included", caps(school("schooladmin")) === "requests,claims,register,lifts,pupils", caps(school("schooladmin")));
   ok("the sports admin: O3 and O6 and not O1 or O2 (no user.role.assign, no user.invite)", caps(school("sportsadmin")) === "register,lifts", caps(school("sportsadmin")));
   ok("the transport coordinator: the register and the lifts only", caps(school("transportcoordinator")) === "register,lifts", caps(school("transportcoordinator")));
   ok("a coach, a team's coach, a parent, a pupil and a scorer have no office list",
@@ -369,6 +369,16 @@ group("The office list: who holds which row, and O1, O2, O3 (§2.3, §3.3)");
   const o2 = officeRows({ school: HIL, may, claims: [claim({}), claim({ requested_at: new Date(NOW - 3 * day).toISOString() }), claim({ school_id: KES })], now: NOW });
   ok("O2: '2 Google sign-ins match an enrolled account', oldest 3 days, door Confirm", o2.rows[0]?.fact === "2 Google sign-ins match an enrolled account" && o2.rows[0].age === "oldest 3 days" && o2.rows[0].action.label === "Confirm", o2.rows[0]);
   ok("...one is '1 Google sign-in matches an enrolled account'", officeRows({ school: HIL, may, claims: [claim({})], now: NOW }).rows[0]?.fact === "1 Google sign-in matches an enrolled account");
+  // db/176: a pupil's account waiting for the office, a count with no name, its door Open.
+  const ow = officeRows({ school: HIL, may: { ...may, pupils: true }, pupils: 2, now: NOW });
+  ok("O2: '2 pupils' accounts wait for you to open them', from the pupil claims read, door Open",
+     ow.rows[0]?.fact === "2 pupils' accounts wait for you to open them" && ow.rows[0].source === "the pupil claims read"
+       && ow.rows[0].action.kind === "pupils" && ow.rows[0].action.label === "Open", ow.rows[0]);
+  ok("...one is 'A pupil's account waits for you to open it'; none is no row; a failed read is said",
+     officeRows({ school: HIL, may: { ...may, pupils: true }, pupils: 1, now: NOW }).rows[0]?.fact === "A pupil's account waits for you to open it"
+       && officeRows({ school: HIL, may: { ...may, pupils: true }, pupils: 0, now: NOW }).rows.length === 0
+       && officeRows({ school: HIL, may: { ...may, pupils: true }, pupils: null, now: NOW }).unread.length === 1);
+  ok("...and a reader who may not read the claims is not asked", officeRows({ school: HIL, may, pupils: 3, now: NOW }).rows.length === 0);
   const reg = (o) => ({ personId: "p", name: "Mr Khoza", role: "official", school: HIL, kindLabel: "Police clearance", status: "current", expiresOn: null, ...o });
   const o3 = officeRows({ school: HIL, may, register: [reg({ personId: "p1", status: "expired", expiresOn: "2026-10-03" }), reg({ personId: "p2", name: "Ms Dube", status: "expiring", expiresOn: "2026-10-20" }),
     reg({ personId: "p3", status: "current", expiresOn: "2027-01-01" }), reg({ personId: "p1", status: "missing", kindLabel: "Child protection" }), reg({ personId: "p4", name: "Mr Pillay", status: "missing" }),

@@ -156,8 +156,12 @@ const fail = (res, e) => {
   // Two imports of the same row at once: the second meets the open-row index.
   if (e.code === "23505") return res.status(409).json({ error: "already_listed", detail: "Somebody listed the same row a moment ago. Check again." });
   const status = e.code === "42501" ? 403 : (e.status || 500);
+  // A `detail` only from this module's own errors (err()): a Postgres error's
+  // detail can carry the row it failed on, so it is never passed on, as the
+  // roster import never passes one (services/api/io/import-api.mjs).
+  const own = typeof e.status === "number" && !e.severity;
   res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error"),
-                            ...(e.detail ? { detail: e.detail } : {}) });
+                            ...(own && e.detail ? { detail: e.detail } : {}) });
 };
 
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */

@@ -54,6 +54,10 @@ export function heldWords(held, name) {
   if (!held) return null;
   if (held === "team_required") return `The yes is recorded, but ${name}'s account could not be opened yet: the school has no side for him on its list. Ask the school office to put him in a side, then try again.`;
   if (held === "player_has_an_account") return `The yes is recorded, but another account is already ${name}'s. Ask the school office.`;
+  // db/176: the person who recognised his account at the office may no longer act for it; the office finishes it.
+  if (held === "recogniser_lapsed") return `Your answer is kept. The school office must finish this: it opens ${name}'s account from its list.`;
+  // db/176 (Kameel, 26 Nov 2026, Q7): an office person who is his own guardian does not open his account.
+  if (held === "own_child") return `He is your own child: another person at the school office opens ${name}'s account from its list. The yes is kept.`;
   return `The yes is recorded, but ${name}'s account has not been opened yet. Try again, or ask the school office.`;
 }
 

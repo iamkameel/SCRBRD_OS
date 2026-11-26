@@ -150,7 +150,11 @@ export function scorebookRoutes({ pool, secret, store, reader = defaultReader })
       if (e.code === "22P02") return res.status(400).json({ error: "malformed" });
       const status = e.status || 500;
       if (status >= 500) console.error("scorebook →", safeErr(e));
-      res.status(status).json({ error: status >= 500 && !e.status ? "internal_error" : e.message, ...(e.detail !== undefined ? { detail: e.detail } : {}) });
+      // A `detail` only from this module's own refusals (err(), which sets a
+      // status): a Postgres error's detail can carry the row it failed on, and
+      // is never passed on, as the roster import never passes one.
+      res.status(status).json({ error: status >= 500 && !e.status ? "internal_error" : e.message,
+                                ...(e.detail !== undefined && e.status ? { detail: e.detail } : {}) });
     }
   };
   /** @param {string | undefined} bearer @param {(client: any) => Promise<any>} fn */

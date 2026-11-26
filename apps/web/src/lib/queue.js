@@ -274,6 +274,7 @@ export const SOURCE = Object.freeze({
   readiness: "the side read", squad: "the sheet read", trips: "the bus read", duties: "the duties read",
   conditions: "the playing-conditions read", weather: "the weather read",
   requests: "the requests read", claims: "the sign-ins read", register: "the clearance register",
+  pupils: "the pupil claims read",
 });
 
 // ── Who enters (§1.1) ───────────────────────────────────────────────────
@@ -559,19 +560,22 @@ export function groupByDay(groups) {
  * rows each may read. Each row checks its own capability (§1.1); layout, not
  * authority: the reads decide again.
  * @param {Parameters<typeof cockpitGate>[0]} assignments
- * @returns {{school: string, schoolName: string | null, may: {requests: boolean, claims: boolean, register: boolean, lifts: boolean}}[]}
+ * @returns {{school: string, schoolName: string | null, may: {requests: boolean, claims: boolean, register: boolean, lifts: boolean, pupils: boolean}}[]}
  */
 export function officeReader(assignments) {
-  /** @type {Map<string, {school: string, schoolName: string | null, may: {requests: boolean, claims: boolean, register: boolean, lifts: boolean}}>} */
+  /** @type {Map<string, {school: string, schoolName: string | null, may: {requests: boolean, claims: boolean, register: boolean, lifts: boolean, pupils: boolean}}>} */
   const bySchool = new Map();
   for (const a of /** @type {any[]} */ (assignments ?? [])) {
     if (!a?.role || !a.school || a.team != null || a.fixture || (a.subjects?.length ?? 0) > 0 || SUBJECT_SCOPED_ROLES.includes(a.role)) continue;
     const may = { requests: roleGrants(a.role, "user.role.assign"), claims: roleGrants(a.role, "user.invite"),
-      register: roleGrants(a.role, "clearance.read"), lifts: roleGrants(a.role, "transport.lift.oversee") };
+      register: roleGrants(a.role, "clearance.read"), lifts: roleGrants(a.role, "transport.lift.oversee"),
+      // db/176: a pupil's account waiting for the office to open it (the claims' readers, R4).
+      pupils: roleGrants(a.role, "guardian.link.manage") };
     if (!Object.values(may).some(Boolean)) continue;
     const had = bySchool.get(a.school);
     bySchool.set(a.school, { school: a.school, schoolName: a.schoolName ?? had?.schoolName ?? null,
-      may: { requests: !!had?.may.requests || may.requests, claims: !!had?.may.claims || may.claims, register: !!had?.may.register || may.register, lifts: !!had?.may.lifts || may.lifts } });
+      may: { requests: !!had?.may.requests || may.requests, claims: !!had?.may.claims || may.claims, register: !!had?.may.register || may.register,
+             lifts: !!had?.may.lifts || may.lifts, pupils: !!had?.may.pupils || may.pupils } });
   }
   return [...bySchool.values()];
 }
@@ -591,10 +595,14 @@ const GAPS = Object.freeze(["missing", "expired", "revoked", "expiring"]);
  * row carries the adults' own rows (`items`): the register names adults, never
  * children; nothing here reads a name.
  *
- * @param {{school: string, may: {requests: boolean, claims: boolean, register: boolean}, requests?: any[] | null, claims?: any[] | null, register?: any[] | null, now: number, errors?: Record<string, string | null>}} o
+ * `pupils` is pupil_accounts_waiting()'s count for the school (db/176): the
+ * pupils whose guardian's yes is in force and whose account waits for the
+ * office to open it. A count; the claims list names them, a tap deeper.
+ *
+ * @param {{school: string, may: {requests: boolean, claims: boolean, register: boolean, pupils?: boolean}, requests?: any[] | null, claims?: any[] | null, register?: any[] | null, pupils?: number | null, now: number, errors?: Record<string, string | null>}} o
  * @returns {{rows: Row[], unread: Row[], open: number, failed: number}}
  */
-export function officeRows({ school, may, requests = [], claims = [], register = [], now, errors = {} }) {
+export function officeRows({ school, may, requests = [], claims = [], register = [], pupils = 0, now, errors = {} }) {
   /** @type {Row[]} */ const rows = [];
   /** @type {Row[]} */ const unread = [];
   const here = (/** @type {any} */ r) => r.school == null || r.school === school;
@@ -630,6 +638,12 @@ export function officeRows({ school, may, requests = [], claims = [], register =
         source: SOURCE.claims, owner: OFFICE, age: `oldest ${ageWords(oldestOf(waiting.map((c) => c.requested_at)) ?? now, now)}`,
         action: { kind: "claims", label: "Confirm", school } }));
     }
+  }
+  if (may.pupils) {
+    if (pupils == null) unread.push(unreadRow(`office:${school}:read:pupils`, "pupils", "the pupil claims", errors.pupils ?? null, school));
+    else if (pupils > 0) rows.push(mk({ id: `office:${school}:O2Y`, rule: "O2", count: pupils,
+      fact: pupils === 1 ? "A pupil's account waits for you to open it" : `${pupils} pupils' accounts wait for you to open them`,
+      source: SOURCE.pupils, owner: OFFICE, action: { kind: "pupils", label: "Open", school } }));
   }
   if (may.register) {
     if (register == null) unread.push(unreadRow(`office:${school}:read:register`, "register", "the clearance register", errors.register ?? null, school));

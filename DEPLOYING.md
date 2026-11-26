@@ -2900,11 +2900,141 @@ chases, then Kameel's word):
   the nine bodies back to the ones db/175 replaced (each held to its md5, all
   or none) and drops the two notice policies; it keeps the agreement record,
   its trigger and `my_terms_due()` (the API asks it), so the API keeps running.
-  Safe twice; a later paste of db/175 puts the gate back on.
+  Safe twice; a later paste of db/175 puts the gate back on. It lifts the
+  server's gate, not the app's, and after db/176 it undoes db/176's test too:
+  see db/176's paste card.
 
 Pasted on the demo and production, 26 Nov 2026, from 954e80a2. Hash-checked:
 `sha256 84de5b81cf952f2a11e18e446cab9c1688e6371cb813ffe6234c5ab81c699e5c`.
 <!-- ── end db/175 ── -->
+<!-- ── db/176: a pupil's sign-in and his date of birth, followed up ── -->
+#### A pupil's sign-in and his date of birth, followed up; the terms gate's test said plainly (db/176)
+
+`db/176_signin_and_dob_followups.sql` (branch claude/wip-db176-redteam-leftovers,
+on db/175, which is live). Each change rests on a rule Kameel has decided
+(named in the file):
+
+- **The sign-in gate reads a claim that waits** (Kameel, 18 Nov 2026, Q5; 20
+  Nov, A): an account whose pupil claim is with the office or recognised (held
+  for a safeguarding concern too), and that is not yet a roster boy's, is
+  closed, whatever role it holds. A guardian's yes opens it through the claim,
+  as before. A claim the office declined, or took back as "not him", closes
+  nothing.
+- **The grant door names the boy:** a scorer's or a side's role (coach,
+  assistant coach, team manager, or any role named for a side) for such an
+  account is granted only once it is a roster boy's own; otherwise
+  `pupil_needs_his_roster_row`, nothing written. People and Requests say it in
+  words.
+- **Who asked** (the map's rule 7; the family list's condition 4):
+  `role_request.asked_by`, a new empty column, names the one whose yes opened
+  his own sign-in; the decider is the office person acting then, or the one
+  who recognised his account while that person still holds the right
+  (`family_may_link_for()`). Otherwise nothing is granted (`recogniser_lapsed`):
+  her yes stands, she is told the office will finish it, the office's claims
+  list reads "a parent's yes is in" with Open his account, and its queue counts
+  the accounts waiting (`pupil_accounts_waiting()`, no name). The audit log says
+  such a grant came on a yes, and who recognised him.
+- **His own guardian at the office** (Kameel, 26 Nov 2026, Q7): an office
+  person who is the boy's guardian gives her yes as a guardian's, by Allow. It
+  opens his account only on another person's decision: the one who recognised
+  him, if that is someone else and still holds the right, or another office
+  person's Open from the claims list (`own_child` until then; she is told
+  another person at the office opens him). She may still record "The signed
+  consent form is on file" for her own son; it opens him only on another
+  person's decision, the same way.
+- **The terms gate's test said plainly** (Kameel, 20 Nov 2026, Q1): db/175's
+  nine gate bodies and `my_terms_due()` read a guardian's link as agreed when
+  it is `granted`, or `withdrawn` with the time she agreed; never "not pending".
+  The API's `my_children` and the session's `live_subjects` ask the same.
+  The record of agreements (`guardian_terms_record`) lets its own foreign keys
+  cascade and empty a name's id, and nothing else. The notice policy holds
+  every notice about a child she waits to read, the system's own included.
+- **The links a correction dated** (the re-dating design §3.2, Q4):
+  `born_links_to_review(school, player)` lists each guardian link whose end
+  date a since-corrected date of birth set, ended links included; nothing is
+  changed. Edit Profile draws the boy's under the correction, and
+  `GET /api/schools/:id/date-of-birth/links` gives the school's (the office
+  alone).
+- **The log's dates stay at his school** (§3.5; the map, A2; Kameel, 26 Nov
+  2026, Q4): `audit_log()` shows a change's dates only while the boy is still
+  at the school of the change and has not left it (`player_departed_from()`,
+  db/116). After he leaves, moved or not, the event and who made it stay.
+- **"Record it": three refused tries a day** (Kameel, 26 Nov 2026, Q2): each
+  try at a missing date of birth that the database refuses is recorded in the
+  new `player_born_refusal` (who, which boy, whether his school's office,
+  when; never the date). After three in the school's day from anyone but his
+  school's office, no try is taken for him until the next (`born_tries_used`,
+  429). The office's own are recorded and not counted. RLS on, no policy, no
+  privilege; `player_born_tries_left()` and `player_born_refused()` are the
+  route's doors, each asking `player.profile.manage` of the caller.
+
+The API, with it: the roster import answers anyone but the office in one
+sentence for a date on a boy already on the roster, whatever is on his record,
+except a line carrying the date on his record as the caller may read it, which
+passes and writes nothing (Q2: a roster file can be sent again);
+the guardians import answers anyone but the office in one sentence for every
+address it cannot use (R4); no import route passes a Postgres `detail` on.
+The links list says how a parent gets a link back until the list can reopen
+one (Q3). Its proof is db/99 §151 (and §150's notices case); its walks are
+`smoke-csv`, `smoke-guardian-import` and `smoke-dob-gaps` (the three tries).
+
+To paste:
+
+- **Count first, on that database, as the owner** (counts only, no names).
+  Expected: no rows, and 0.
+  ```sql
+  -- Who the sign-in gate closes that holds a role today.
+  SELECT c.school_id, count(DISTINCT c.user_id) AS would_close
+    FROM pupil_claim c
+    JOIN role_assignment a ON a.person_id = c.user_id AND a.active
+                          AND (a.valid_until IS NULL OR a.valid_until > sa_today())
+   WHERE c.state IN ('with_office', 'recognised')
+     AND NOT EXISTS (SELECT 1 FROM app_user u WHERE u.id = c.user_id AND u.player_id IS NOT NULL)
+     AND NOT EXISTS (SELECT 1 FROM role_assignment s JOIN assignment_subject g ON g.assignment_id = s.id
+                      WHERE s.person_id = c.user_id AND s.active AND g.relationship = 'self')
+   GROUP BY c.school_id;
+  -- Guardian links the terms gate's plain test closes: withdrawn, never agreed.
+  SELECT count(*) AS withdrawn_never_agreed FROM assignment_subject
+   WHERE consent_state = 'withdrawn' AND consent_at IS NULL
+     AND relationship IS DISTINCT FROM 'self' AND relationship IS DISTINCT FROM 'enquiry';
+  ```
+  A row of the first, or a count above 0 of the second, is a person who loses
+  reach at the paste: read it with the school's office first.
+- **After db/175** (and db/174, db/173, db/169). It replaces
+  `pupil_signin_open()`, `pupil_signin_after_yes()` and
+  `guardian_terms_record_append_only()` whole; patches `role_request_grant_as()`,
+  `audit_log()` and `pupil_claims()` by needle;
+  creates `player_born_refusal` and its two doors; re-emits db/175's nine gate
+  bodies and `my_terms_due()` from the catalog; and replaces the notice policy
+  `notification_terms_gate`. Each only over the body the file before it left,
+  or its own on a second paste; the nine move together or not at all.
+  Anything else fails the paste loudly, changing nothing. Run it as the schema
+  owner; it refuses any other role. A later paste of db/169, db/173 or db/175
+  then stops at its own guard, changing nothing.
+- **As one transaction, outside a match:** the SQL Editor's single run, or
+  `psql -1 -v ON_ERROR_STOP=1 -f`. Re-emitting `app_can()` waits on every
+  statement reading through it; the new column's foreign key takes a short
+  lock on `role_request` and `app_user`, the new record's on `player`; the
+  policy, on `notification`
+  (ten-second `lock_timeout`, reset by its last statement). A paste that timed
+  out on its lock is simply run again. No existing row is changed.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  176, and the API refuses to start on a database without it.
+- It can be pasted again: CREATE OR REPLACE, `ADD COLUMN IF NOT EXISTS`,
+  `CREATE TABLE IF NOT EXISTS`, and each needle and the policy skipped where
+  this file's text is already in place.
+- **The terms gate's way back, after this file:** `tools/terms-gate-rollback.sql`
+  undoes this file's test on the nine first, then db/175's, so they end as the
+  bodies db/175 replaced; it drops `notification_terms_gate` and the DSO's
+  policy and keeps the rest of this file. To put the gate back: paste db/175,
+  then db/176. **It does not undo the app's half:** the API from db/175 on
+  draws a waiting child's card from `my_terms_due()` and leaves him out of
+  `my_children` and `live_subjects`. To give parents their screens back as well,
+  deploy the API from before db/175's (PR #404); an older API runs on a database
+  ahead of it (`services/api/schema-guard.mjs`).
+
+Not pasted yet. Hash to check: `sha256 518725205d9070b3985a59a004d330c0b5dd7fb258bb6969e44a72f1930343b8`.
+<!-- ── end db/176 ── -->
 
 ### 5 · Cloud Run, the first time
 

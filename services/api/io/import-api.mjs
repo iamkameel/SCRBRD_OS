@@ -58,6 +58,9 @@ import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } f
  * @property {string} [idOnFile]   SQL for a boy already on the books ($1 his id, $2 the file's
  *                                 ID number): `differs`, whether one on file is another number.
  *                                 Never returned to the caller.
+ * @property {string} [bornOnRecord] SQL for a boy already on the books ($1 his id): `born`, his
+ *                                 date as the caller may read it (YYYY-MM-DD, or NULL), for a
+ *                                 line that carries the same one (db/176, Kameel 26 Nov, Q2).
  * @property {boolean} [adults]    db/173: a line whose first date makes him 18 today is the
  *                                 office's; anyone else's is left out, with the one sentence.
  *                                 The office's lines that make him 18 today or within 60 days
@@ -66,8 +69,9 @@ import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } f
  *                                 only a ticked line counts as the office's checked date
  *                                 (Kameel, 26 Nov 2026, Q1).
  * @property {(client: Db, school: string | undefined, v: Record<string, any>,
- *             file: Map<string, any>, line: number) => Promise<RowOutcome>} [apply]
+ *             file: Map<string, any>, line: number, office: boolean) => Promise<RowOutcome>} [apply]
  *                                 One row, written its own way. Used instead of find/insert/update.
+ *                                 `office`: the kind's own `office` answer for the file.
  */
 
 /**
@@ -103,6 +107,25 @@ const ENROL_REFUSAL_COLUMN = {
   email_belongs_to_another_school: "guardian_email", email_invalid: "guardian_email",
   name_required: "guardian_name",
 };
+
+/** enrol_person()'s refusals about the boy or the guardian's name, not the address: their own words to anyone. */
+const ABOUT_THE_LINE = new Set(["player_is_an_adult", "player_date_of_birth_required", "player_not_at_that_school",
+                                "no_such_player", "player_required", "name_required"]);
+
+/**
+ * The guardians import's one sentence, to anyone but the office, for an
+ * address it cannot use (R4, Kameel, 28 Oct 2026): it says nothing of whose.
+ * @param {string} email
+ */
+export const unusableAddress = (email) =>
+  `${email} cannot be used for this guardian. Leave this line out, or ask the school office.`;
+
+/**
+ * A date of birth in the players import for a boy already on the roster,
+ * from anyone but the school office: one sentence whatever is on his record.
+ */
+export const BORN_ON_ROSTER_IS_THE_OFFICE =
+  "A date of birth for a boy already on the roster is the school office's to record. Leave born blank on this line.";
 
 /**
  * What may be imported, and how each column is read.
@@ -256,6 +279,10 @@ export const IMPORTS = {
     // whole file's transaction; a label, never an authority.
     setup: `select set_config('app.born_how', 'import', true)`,
     office: `select player_born_office($1::uuid) as office`,
+    // His date on record as this caller may read it (player_masked: his age
+    // to a reader of it, NULL to anyone else), for a line that carries the
+    // same one (Kameel, 26 Nov 2026, Q2).
+    bornOnRecord: `select to_char(m.born, 'YYYY-MM-DD') as born from player_masked m where m.id = $1`,
     idOnFile: `select p.id_number is not null and p.id_number is distinct from $2 as differs
                  from player p where p.id = $1`,
     refusals: {
@@ -367,7 +394,14 @@ export const IMPORTS = {
                                 '00000000-0000-0000-0000-000000000000'::uuid,
                                 '00000000-0000-0000-0000-000000000000'::uuid)
                         and app_may_grant('guardian')) as ok`,
-    apply: async (client, school, v, file, line) => {
+    // Who reads a pupil's login address (Kameel, 28 Oct 2026, R4): the office
+    // and the principal, guardian.link.manage at his school, as
+    // app_user_email_seen() (db/118) asks it. To anyone else the import says
+    // one thing for every address it cannot use.
+    office: `select app_can('guardian.link.manage', $1::uuid, '*',
+                            '00000000-0000-0000-0000-000000000000'::uuid,
+                            '00000000-0000-0000-0000-000000000000'::uuid) as office`,
+    apply: async (client, school, v, file, line, office) => {
       if (v.relationship !== "parent") {
         return { ok: false, column: "relationship",
           message: `enrolment records a parent link only, so a ${v.relationship} cannot be imported yet. ` +
@@ -408,13 +442,17 @@ export const IMPORTS = {
       // refusal below.
       const acct = (await client.query(
         `select id, name, player_id from app_user where lower(email) = $1`, [email])).rows[0];
+      // R4 (Kameel, 28 Oct 2026): whose an address is, a pupil's above all, is
+      // the office's to be told. Anyone else reads one sentence for every
+      // address the import cannot use: a pupil's own, another person's, or an
+      // account at another school.
       if (acct?.player_id) {
         return { ok: false, column: "guardian_email",
-          message: `${email} is a pupil's own account, not a guardian's` };
+          message: office ? `${email} is a pupil's own account, not a guardian's` : unusableAddress(email) };
       }
       if (acct && norm(acct.name) !== name) {
         return { ok: false, column: "guardian_email",
-          message: `${email} is already ${acct.name}'s account; one email is one person` };
+          message: office ? `${email} is already ${acct.name}'s account; one email is one person` : unusableAddress(email) };
       }
       if (acct) {
         // A link already in place is left as it is, so the file can be sent
@@ -438,6 +476,11 @@ export const IMPORTS = {
         [email, v.guardian_name, school, child, "guardians import"])).rows[0];
       if (!r?.ok) {
         const reason = r?.reason || "refused";
+        // To anyone but the office, every refusal that is not about the boy or
+        // the name is about the address, and reads the one sentence (R4).
+        if (!office && !ABOUT_THE_LINE.has(reason)) {
+          return { ok: false, column: "guardian_email", message: unusableAddress(email) };
+        }
         return { ok: false, column: ENROL_REFUSAL_COLUMN[reason] ?? null,
                  message: ENROL_REFUSAL[reason] ?? reason };
       }
@@ -513,7 +556,7 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
     for (const { line, values } of rows) {
       try {
         if (def.apply) {
-          const out = await def.apply(client, schoolId, values, file, line);
+          const out = await def.apply(client, schoolId, values, file, line, office);
           if (!out.ok) refused.push({ line, column: out.column, message: out.message });
           else {
             if (out.warning) warnings.push(out.warning);
@@ -557,6 +600,25 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
           refused.push({ line, column: "id_number",
             message: "An ID number is the school office's to record. Leave id_number blank on this line." });
           continue;
+        }
+        // A date of birth for a boy already on the roster, from anyone but
+        // the office: refused on its line before the database is asked, in one
+        // sentence whatever is on his record (a date or none, an ID number or
+        // none). The ID number on file is the office's alone to read (the map,
+        // A3; Kameel, 25 Nov 2026: an ID number is the office's to write), and
+        // a recorded date is the office's to change (Kameel, 20 Nov 2026), so
+        // the answer to anyone else may depend on neither. Except (Kameel,
+        // 26 Nov 2026, Q2) a line whose date is the one on his record, as this
+        // caller may read it, so a roster file can be sent again: it passes,
+        // and writes nothing to his date. To one who may not read his age the
+        // record reads no date, and every line is refused alike.
+        if (def.adults && def.bornOnRecord && found.rowCount === 1 && values.born && !office) {
+          const onRecord = (await client.query(def.bornOnRecord, [found.rows[0].id])).rows[0]?.born ?? null;
+          if (onRecord === null || onRecord !== String(values.born)) {
+            refused.push({ line, column: "born", message: BORN_ON_ROSTER_IS_THE_OFFICE });
+            continue;
+          }
+          values.born = null;
         }
         if (def.idOnFile && found.rowCount === 1 && values.id_number) {
           if (!office) {

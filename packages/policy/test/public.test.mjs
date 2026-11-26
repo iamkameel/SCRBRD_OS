@@ -451,6 +451,8 @@ const HAND_WRITTEN_SINCE_47 = {
   guardian_terms_record: {},
   // db/173: who wrote a boy's ID number, and when, is never public as a whole (N1).
   player_id_number_change: {},
+  // db/176: who tried to record a boy's date of birth and was refused, and when, is never public as a whole.
+  player_born_refusal: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */

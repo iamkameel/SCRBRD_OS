@@ -831,6 +831,8 @@ const PLAYER_ROUTES = [
   // "Coming of age" and the office's "Confirm his date" (db/173).
   [/^\/api\/players\/([^/]+)\/date-of-birth\/confirm$/,    "POST", dobCapture.confirm],
   [/^\/api\/schools\/([0-9a-f-]{36})\/coming-of-age$/,       "GET",  dobCapture.comingOfAge],
+  // The guardian links a corrected date of birth dated, for the office (db/176).
+  [/^\/api\/schools\/([0-9a-f-]{36})\/date-of-birth\/links$/, "GET",  dobCapture.linksToReview],
   // SCRBRD-012. One role at one school for an hour, on the record — see
   // support-access-api.mjs. In this table rather than the fixed one so a
   // retried "begin" with an Idempotency-Key answers from its receipt.
@@ -1565,6 +1567,8 @@ const NOT_PLATFORM_LOGGED = new Set([
   dobCapture.changes,
   // "Coming of age" (db/173): the same office, the same refusal of the key.
   dobCapture.comingOfAge,
+  // The links a correction dated (db/176): the same office, the same refusal.
+  dobCapture.linksToReview,
 ]);
 // Decided, not forgotten: a GET route in neither stops the server at boot,
 // so the first walk that starts it says which. Neither set may hold

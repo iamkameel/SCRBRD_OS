@@ -28,6 +28,13 @@
  * disagrees with the ID number on file, whoever writes it, so the capture
  * below meets that rule too: the date it is given is compared with the
  * number already on his record, not only with one typed beside it.
+ *
+ * THREE REFUSED TRIES A DAY (Kameel, 26 Nov 2026, Q2). "Record it" stays open
+ * to a caller who may manage the boy. Each try the database refuses is
+ * recorded (db/176's player_born_refused(): who, when, which boy, never the
+ * date), and from anyone but his school's office, after three in the school's
+ * day no try is taken for him until the next (born_tries_used, 429), whatever
+ * the date. The office is not counted: it reads the ID number on file.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resolveBirthDate, BORN_REFUSED_BY_DB } from "@scrbrd/policy/date-of-birth";
@@ -51,12 +58,33 @@ export function bornRefusal(e) {
            error: e.message };
 }
 
+/**
+ * born_links_to_review()'s columns (db/176), the days as the database writes
+ * them (YYYY-MM-DD), never a Date: pg would read a date at local midnight.
+ */
+const LINK_COLS = `l.player_id, l.full_name, l.team_code, l.link_id, l.guardian_name,
+                   to_char(l.ends_on, 'YYYY-MM-DD') as ends_on, l.why,
+                   to_char(l.old_of_age_on, 'YYYY-MM-DD') as old_of_age_on,
+                   to_char(l.of_age_on, 'YYYY-MM-DD') as of_age_on, l.corrected_at`;
+
+/**
+ * One row of born_links_to_review() (db/176), in the route's words.
+ * @param {any} r
+ */
+export const linkRow = (r) => ({
+  playerId: r.player_id, fullName: r.full_name, teamCode: r.team_code ?? null,
+  linkId: r.link_id, guardianName: r.guardian_name ?? null,
+  endsOn: r.ends_on ?? null, why: r.why, oldOfAgeOn: r.old_of_age_on ?? null, ofAgeOn: r.of_age_on ?? null,
+  correctedAt: r.corrected_at ?? null,
+});
+
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function dobCaptureRoutes({ pool, secret }) {
   return {
     // POST /api/players/:id/date-of-birth { born?, idNumber? }
     capture: async (req, res) => {
       let office = false;
+      /** @type {any} */ let refused = null;
       try {
         const b = req.body || {};
         const dob = resolveBirthDate({ born: b.born, idNumber: b.idNumber });
@@ -74,11 +102,31 @@ export function dobCaptureRoutes({ pool, secret }) {
           // Kameel, 25 Nov 2026). Refused before the write, so the answer is
           // the same whether or not one is already on his record.
           if (idNumber && !office) throw err("id_number_needs_the_office", 403);
-          const { rows } = await client.query(
-            `update player set born = $2, id_number = coalesce(id_number, $3)
-              where id = $1 and born is null
-              returning id, school_id, team_code, full_name`,
-            [req.params.id, born, idNumber]);
+          // Q2: no try once three are refused today, from anyone but the
+          // office. NULL (one who may not manage him) goes on to the write,
+          // which his row's policy refuses as before.
+          if (!office) {
+            const left = (await client.query(`select player_born_tries_left($1) as n`, [req.params.id])).rows[0]?.n;
+            if (left === 0) throw err("born_tries_used", 429);
+          }
+          // The write under a savepoint, so a refusal of the database's is
+          // recorded in this same transaction and the record commits.
+          await client.query("SAVEPOINT born_try");
+          /** @type {any[]} */ let rows;
+          try {
+            ({ rows } = await client.query(
+              `update player set born = $2, id_number = coalesce(id_number, $3)
+                where id = $1 and born is null
+                returning id, school_id, team_code, full_name`,
+              [req.params.id, born, idNumber]));
+          } catch (/** @type {any} */ e) {
+            if (!bornRefusal(e)) throw e;
+            await client.query("ROLLBACK TO SAVEPOINT born_try");
+            await client.query(`select player_born_refused($1)`, [req.params.id]);
+            refused = e;
+            return;
+          }
+          await client.query("RELEASE SAVEPOINT born_try");
           if (!rows.length) throw err("not_permitted", 403);
           const p = rows[0];
           // `born`, not p.born: the DATE column comes back through pg as a
@@ -88,6 +136,7 @@ export function dobCaptureRoutes({ pool, secret }) {
           res.json({ id: p.id, schoolId: p.school_id, teamCode: p.team_code, fullName: p.full_name,
                      born, bornFrom: dob.source, ...(dob.warning ? { warning: dob.warning } : {}) });
         });
+        if (refused) throw refused;
       } catch (/** @type {any} */ e) {
         const named = bornRefusal(e);
         if (named?.error === "id_number_disagrees_with_date_of_birth" && !office) {
@@ -123,13 +172,24 @@ export function dobCaptureRoutes({ pool, secret }) {
           const { rows } = await client.query(
             `select ok, reason, to_char(was, 'YYYY-MM-DD') as was, to_char(born, 'YYYY-MM-DD') as born
                from player_born_correct($1::uuid, $2::date, $3::text)`, [id, dob.born, why]);
-          return rows[0];
+          const r = rows[0];
+          // db/176 (the re-dating design §3.2, Q4; Kameel, 25 Nov 2026): the
+          // guardian links whose end date the old date set, listed for the
+          // office to act on, in the same transaction as the change. Nothing
+          // about them is changed here.
+          if (r?.ok && r.reason !== "unchanged") {
+            const links = (await client.query(
+              `select ${LINK_COLS} from player_masked p cross join lateral born_links_to_review(p.school_id, p.id) l where p.id = $1::uuid`,
+              [id])).rows;
+            return { ...r, links: links.map(linkRow) };
+          }
+          return r;
         });
         if (!out?.ok) {
           const reason = out?.reason || "refused";
           throw err(reason, reason === "not_permitted" ? 403 : 422);
         }
-        res.json({ id, born: out.born, was: out.was, unchanged: out.reason === "unchanged" });
+        res.json({ id, born: out.born, was: out.was, unchanged: out.reason === "unchanged", links: out.links ?? [] });
       } catch (/** @type {any} */ e) {
         const named = bornRefusal(e);
         if (named) return res.status(named.status).json({ error: named.error });
@@ -154,6 +214,29 @@ export function dobCaptureRoutes({ pool, secret }) {
                     how, written_at from born_unconfirmed($1::uuid)`, [school]);
           return rows.map((r) => ({ playerId: r.player_id, fullName: r.full_name, teamCode: r.team_code, born: r.born,
                                     ofAgeOn: r.of_age_on, how: r.how ?? null, writtenAt: r.written_at ?? null }));
+        });
+        if (!out) throw err("not_permitted", 403);
+        res.json({ rows: out });
+      } catch (/** @type {any} */ e) {
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+
+    // GET /api/schools/:id/date-of-birth/links
+    // db/176 (the re-dating design §3.2, Q4; Kameel, 25 Nov 2026): every
+    // guardian link at the school whose end date a since-corrected date of
+    // birth set, for the office to reopen or end by its own act. The school's
+    // office alone; anyone else is refused.
+    linksToReview: async (req, res) => {
+      try {
+        const school = String(req.params.id ?? "");
+        if (!UUID.test(school)) throw err("not_found", 404);
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          const [o] = (await client.query(`select player_born_office($1::uuid) as office`, [school])).rows;
+          if (o?.office !== true) return null;
+          const { rows } = await client.query(`select ${LINK_COLS} from born_links_to_review($1::uuid) l`, [school]);
+          return rows.map(linkRow);
         });
         if (!out) throw err("not_permitted", 403);
         res.json({ rows: out });

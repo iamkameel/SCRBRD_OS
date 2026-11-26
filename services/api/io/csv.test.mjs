@@ -229,7 +229,7 @@ group("H. The template a school downloads is a file the importer accepts");
 
 group("I. Guardians: each row is enrolment, and the import refuses rather than guesses");
 {
-  const { IMPORTS, GUARDIAN_RELATIONSHIPS } = await import("./import-api.mjs");
+  const { IMPORTS, GUARDIAN_RELATIONSHIPS, unusableAddress } = await import("./import-api.mjs");
   const def = IMPORTS.guardians;
   const apply = /** @type {NonNullable<typeof def.apply>} */ (def.apply);
 
@@ -282,8 +282,8 @@ group("I. Guardians: each row is enrolment, and the import refuses rather than g
   {
     const { client, enrolled } = fake({ boys: { "fake pupil one": ["p1"], "fake pupil two": ["p2"] } });
     const file = new Map();
-    const a = await apply(client, HIL, row("Fake Pupil One", "Fake Parent", "fp@example.invalid"), file, 2);
-    const b = await apply(client, HIL, row("Fake Pupil Two", "Fake Parent", "fp@example.invalid"), file, 3);
+    const a = await apply(client, HIL, row("Fake Pupil One", "Fake Parent", "fp@example.invalid"), file, 2, true);
+    const b = await apply(client, HIL, row("Fake Pupil Two", "Fake Parent", "fp@example.invalid"), file, 3, true);
     ok("one email for two children: both lines are links", a.ok && a.did === "insert" && b.ok && b.did === "insert");
     ok("...two enrolments of the one address, one per boy",
        enrolled.length === 2 && enrolled.every((c) => c.params[0] === "fp@example.invalid")
@@ -291,7 +291,7 @@ group("I. Guardians: each row is enrolment, and the import refuses rather than g
     ok("nothing beyond guardian: the role is written into the call, never read from the file",
        enrolled.every((c) => /enrol_person\(\$1, \$2, 'guardian', \$3, null, \$4, \$5\)/.test(c.sql)
                             && !c.params.includes("schooladmin")));
-    const c = await apply(client, HIL, { ...row("Fake Pupil One", "Fake Parent X", "x@example.invalid"), role: "schooladmin" }, new Map(), 2);
+    const c = await apply(client, HIL, { ...row("Fake Pupil One", "Fake Parent X", "x@example.invalid"), role: "schooladmin" }, new Map(), 2, true);
     ok("...even when a row carries a role", c.ok && enrolled.length === 3 && /'guardian'/.test(enrolled[2].sql)
        && !enrolled[2].params.includes("schooladmin"));
   }
@@ -309,7 +309,8 @@ group("I. Guardians: each row is enrolment, and the import refuses rather than g
       links: { "u3|p1": "verified", "u4|p1": "pending" },
     };
     const { client, enrolled } = fake(world);
-    const one = async (/** @type {Record<string, any>} */ r, file = new Map()) => apply(client, HIL, r, file, 3);
+    // As the office (guardian.link.manage): whose an address is, in its words.
+    const one = async (/** @type {Record<string, any>} */ r, file = new Map()) => apply(client, HIL, r, file, 3, true);
     ok("a relationship enrolment cannot record is refused, not written as parent",
        refused(await one(row("Fake Pupil One", "Fake Gran", "g@example.invalid", "grandparent")), "relationship", /parent link only/));
     ok("a boy not found is an error on the line",
@@ -345,7 +346,37 @@ group("I. Guardians: each row is enrolment, and the import refuses rather than g
   ])) {
     const { client } = fake({ boys: { "fake pupil one": ["p1"] }, enrol: () => ({ ok: false, reason }) });
     ok(`enrolment's ${reason} is that line's error`,
-       refused(await apply(client, HIL, row("Fake Pupil One", "Fake Parent", "fp@example.invalid"), new Map(), 2), column, re));
+       refused(await apply(client, HIL, row("Fake Pupil One", "Fake Parent", "fp@example.invalid"), new Map(), 2, true), column, re));
+  }
+
+  // R4 (Kameel, 28 Oct 2026; db/176): anyone but the office reads one
+  // sentence for every address the import cannot use, whose it is unsaid.
+  {
+    const world = {
+      boys: { "fake pupil one": ["p1"] },
+      accounts: { "coach@example.invalid": { id: "u1", name: "C Coach" },
+                  "pupil@example.invalid": { id: "u2", name: "A Pupil", player_id: "p9" } },
+      enrol: (/** @type {unknown[]} */ p) => (p[0] === "west@example.invalid" ? { ok: false, reason: "email_belongs_to_another_school" }
+        : p[0] === "odd@example.invalid" ? { ok: false, reason: "a_reason_with_no_words" }
+        : p[0] === "adult@example.invalid" ? { ok: false, reason: "player_is_an_adult" } : { ok: true }),
+    };
+    const { client } = fake(world);
+    const notOffice = async (/** @type {Record<string, any>} */ r) => apply(client, HIL, r, new Map(), 3, false);
+    const emails = ["pupil@example.invalid", "coach@example.invalid", "west@example.invalid"];
+    /** @type {any[]} */
+    const outs = [await notOffice(row("Fake Pupil One", "A Pupil", emails[0])),
+                  await notOffice(row("Fake Pupil One", "Fake Parent", emails[1])),
+                  await notOffice(row("Fake Pupil One", "Fake Parent", emails[2]))];
+    ok("not the office: a pupil's own, another person's and another school's address read one sentence",
+       outs.every((o, i) => o.ok === false && o.column === "guardian_email" && o.message === unusableAddress(emails[i])));
+    ok("...which names no pupil, no person and no school",
+       !outs.some((o, i) => /pupil|Coach|another school|one email is one person/i.test(String(o.message).replace(emails[i], ""))));
+    ok("...while a new address still goes in", (await notOffice(row("Fake Pupil One", "Fake New", "new@example.invalid"))).ok === true);
+    /** @type {any} */ const odd = await notOffice(row("Fake Pupil One", "Fake Odd", "odd@example.invalid"));
+    ok("...and any other refusal of enrolment's reads the same sentence, never its own code",
+       odd.ok === false && odd.column === "guardian_email" && odd.message === unusableAddress("odd@example.invalid"));
+    /** @type {any} */ const adult = await notOffice(row("Fake Pupil One", "Fake Adult", "adult@example.invalid"));
+    ok("...while a refusal about the boy keeps its own words", adult.ok === false && /eighteen/.test(adult.message));
   }
 }
 

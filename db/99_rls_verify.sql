@@ -6651,24 +6651,45 @@ CREATE OR REPLACE FUNCTION _v112_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
     -- db/128 moved its day to sa_today(); read back on db/92's clock. db/169
     -- stamps his own link by pupil_signin_stamp(), under pupil_signin_terms_version(),
     -- and (20 Nov, A) asks `player` for a boy too; read back as db/92 wrote it.
-    WHEN 'grant_md5' THEN (SELECT md5(replace(replace(replace(replace(prosrc, 'sa_today()', 'current_date'),
+    -- db/176 adds one refusal after that (pupil_needs_his_roster_row), taken
+    -- out again here, exactly as db/176 writes it, on db/92's clock. Answered
+    -- only while db/108's block is in the body, so the md5 says both.
+    WHEN 'grant_md5' THEN (SELECT CASE WHEN position(k.b108 IN p.prosrc) > 0 THEN
+          md5(replace(replace(replace(replace(replace(p.prosrc, 'sa_today()', 'current_date'),
           'IF r.role IN (''guardian'', ''selfaccess'', ''enquiry'', ''player'') AND v_player IS NULL THEN',
           'IF r.role IN (''guardian'', ''selfaccess'', ''enquiry'') AND v_player IS NULL THEN'),
           '''self'', ''verified'', p_decider, now(), pupil_signin_stamp(v_player), '
        || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN pupil_signin_terms_version() END, '
        || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN now() END, p_decider);',
           '''self'', ''verified'', p_decider, now(), ''granted'', ''popia-2026-01'', now(), p_decider);'),
-          '  -- db/108: a pupil is a pupil OF A SIDE (role_assignment_player_team_scoped).' || chr(10)
-       || '  -- No side named by the request or the decider: his own side on the roster,' || chr(10)
-       || '  -- at this school. None there either: refused by name, before anything is' || chr(10)
-       || '  -- written, as a coach with no side is.' || chr(10)
-       || '  IF r.role = ''player'' AND v_team IS NULL THEN' || chr(10)
-       || '    SELECT p.team_code INTO v_team FROM player p WHERE p.id = v_player AND p.school_id = r.school_id;' || chr(10)
-       || '    IF v_team IS NULL THEN' || chr(10)
-       || '      RETURN QUERY SELECT false, ''team_required'', NULL::uuid; RETURN;' || chr(10)
-       || '    END IF;' || chr(10)
-       || '  END IF;' || chr(10), ''))
-       FROM pg_proc WHERE oid = to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'))
+          k.b108, ''), k.p176, '')) END
+       FROM pg_proc p,
+            (SELECT '  -- db/108: a pupil is a pupil OF A SIDE (role_assignment_player_team_scoped).' || chr(10)
+                 || '  -- No side named by the request or the decider: his own side on the roster,' || chr(10)
+                 || '  -- at this school. None there either: refused by name, before anything is' || chr(10)
+                 || '  -- written, as a coach with no side is.' || chr(10)
+                 || '  IF r.role = ''player'' AND v_team IS NULL THEN' || chr(10)
+                 || '    SELECT p.team_code INTO v_team FROM player p WHERE p.id = v_player AND p.school_id = r.school_id;' || chr(10)
+                 || '    IF v_team IS NULL THEN' || chr(10)
+                 || '      RETURN QUERY SELECT false, ''team_required'', NULL::uuid; RETURN;' || chr(10)
+                 || '    END IF;' || chr(10)
+                 || '  END IF;' || chr(10) AS b108,
+                    '  -- db/176 (Kameel, 18 Nov 2026, Q5: an under-18 pupil signs in only on a' || chr(10)
+                 || '  -- guardian''s yes or the office''s form; 20 Nov, A): a scorer''s or a side''s' || chr(10)
+                 || '  -- role, for an account the gate would close as a pupil''s with no boy (a' || chr(10)
+                 || '  -- claim that waits, or a pupil''s role naming none), only once the account' || chr(10)
+                 || '  -- is a roster boy''s own, so the sign-in gate reads that boy''s yes.' || chr(10)
+                 || '  IF (r.role IN (''scorer'', ''coach'', ''assistantcoach'', ''teammanager'')' || chr(10)
+                 || '      OR (v_team IS NOT NULL AND r.role NOT IN (''player'', ''selfaccess'', ''guardian'', ''enquiry'')))' || chr(10)
+                 || '     AND (EXISTS (SELECT 1 FROM pupil_claim pc WHERE pc.user_id = r.person_id AND pc.state IN (''with_office'', ''recognised''))' || chr(10)
+                 || '          OR EXISTS (SELECT 1 FROM role_assignment pr WHERE pr.person_id = r.person_id AND pr.active' || chr(10)
+                 || '                      AND pr.role IN (''player'', ''selfaccess'') AND (pr.valid_until IS NULL OR pr.valid_until > current_date)))' || chr(10)
+                 || '     AND NOT EXISTS (SELECT 1 FROM app_user pu WHERE pu.id = r.person_id AND pu.player_id IS NOT NULL)' || chr(10)
+                 || '     AND NOT EXISTS (SELECT 1 FROM role_assignment pa JOIN assignment_subject ps ON ps.assignment_id = pa.id' || chr(10)
+                 || '                      WHERE pa.person_id = r.person_id AND pa.active AND ps.relationship = ''self'') THEN' || chr(10)
+                 || '    RETURN QUERY SELECT false, ''pupil_needs_his_roster_row'', NULL::uuid; RETURN;' || chr(10)
+                 || '  END IF;' || chr(10) AS p176) k
+      WHERE p.oid = to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'))
     WHEN 'child_md5' THEN (SELECT md5(prosrc) FROM pg_proc WHERE oid = to_regprocedure('my_child_fixtures()'))
   END
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -17128,6 +17149,17 @@ BEGIN
     -- prove each. The four re-emitted bodies db/175 gates (my_alert_choices(),
     -- my_health_consents(), public_name_consent_set(),
     -- health_monitoring_consent_set()) keep the place they had.
+    -- db/176 adds one definer the application may call, reviewed here and not
+    -- on the list: born_links_to_review() reads no caller of its own; the
+    -- office's question (player_born_office(), through app_can(), which the
+    -- gate closes) decides every row. Its re-emitted bodies are the
+    -- application's to call never (pupil_signin_open(), pupil_signin_after_yes(),
+    -- role_request_grant_as()) or keep their place (audit_log()). §151 (links)
+    -- and (grants) prove each. pupil_accounts_waiting() reads no caller of its
+    -- own (pupil_claim_office() decides). And (Kameel, 26 Nov 2026, Q2)
+    -- player_born_tries_left() and player_born_refused(): each asks
+    -- app_can('player.profile.manage') of the caller itself, the row's own
+    -- update policy, so neither is on the list; §151 (tries) proves them.
     PERFORM _assert(v = 'auth_identity_sign_in(text,text,text,text),captain_nominate(uuid,uuid,jsonb),'
          || 'colours_decide(uuid,text,text),colours_nominate(uuid,text,text),colours_nominations(),'
          -- db/174 (25 Nov): the family list's three join it. Each asks the office's own question
@@ -19724,6 +19756,17 @@ BEGIN
     PERFORM _v175_route_added_later(false);
     PERFORM _as(P2);
     PERFORM _assert(_v175_reads(ARRAY[n2]) = 1, '§150 (notices): P2, agreed, does not read the notice about him');
+    -- db/176: a notice of kind 'system' about him, addressed to her, is held
+    -- as every other kind is (none the design opens names a child), by the
+    -- notice's own policy, with the route added later on; agreed, his other
+    -- guardian reads hers.
+    n3 := _v175_notice(B, P1, 'system'); n4 := _v175_notice(B, P2, 'system');
+    PERFORM _v175_route_added_later(true);
+    PERFORM _as(P1);
+    PERFORM _assert(_v175_reads(ARRAY[n3]) = 0, '§150 (notices): with the route added later, P1 reads a system notice about him before she agrees');
+    PERFORM _as(P2);
+    PERFORM _assert(_v175_reads(ARRAY[n4]) = 1, '§150 (notices): P2, agreed, does not read the system notice about him');
+    PERFORM _v175_route_added_later(false);
 
   ELSIF p_case = 'coach' THEN
     -- (coach) §5.4 case 10: P6 coaches his side and is his parent, not
@@ -19797,6 +19840,668 @@ CREATE OR REPLACE FUNCTION _v175_unrecorded() RETURNS SETOF uuid AS $$
      AND NOT EXISTS (SELECT 1 FROM guardian_terms_record x WHERE x.link_id = g.id)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/175 (section 150) ─────────────────────────────────────────────
+
+-- ┌── db/176 (section 151): a pupil's sign-in and his date of birth, followed up ──
+-- Helpers, as the owner. Every name is invented; every date relative to today.
+
+-- A second person at Hilton's office (schooladmin, school-wide): her id.
+CREATE OR REPLACE FUNCTION _v176_office(p_tag text) RETURNS uuid AS $$
+DECLARE u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'v176.office.' || p_tag || '@example.invalid', 'V176 Officer ' || initcap(p_tag), 'schooladmin')
+  RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (u, 'schooladmin', '11111111-1111-1111-1111-111111111111', sa_today() - 30);
+  RETURN u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Her role ended, as db/77 ends one (owner).
+CREATE OR REPLACE FUNCTION _v176_end(p_person uuid, p_role text) RETURNS void AS $$
+  UPDATE role_assignment SET active = false WHERE person_id = p_person AND role = p_role AND active
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An account's live assignments of a role, and its granted requests for it,
+-- past row security: "assignments/requests".
+CREATE OR REPLACE FUNCTION _v176_holds(p_account uuid, p_role text) RETURNS text AS $$
+  SELECT (SELECT count(*) FROM role_assignment a WHERE a.person_id = p_account AND a.role = p_role AND a.active) || '/'
+      || (SELECT count(*) FROM role_request r WHERE r.person_id = p_account AND r.role = p_role AND r.state = 'granted')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The record of his `player` grant, past row security: "asked_by|decided_by|self link verified_by".
+CREATE OR REPLACE FUNCTION _v176_record(p_account uuid) RETURNS text AS $$
+  SELECT coalesce(r.asked_by::text, '-') || '|' || coalesce(r.decided_by::text, '-') || '|'
+         || coalesce((SELECT g.verified_by::text FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id
+                       WHERE a.person_id = p_account AND g.relationship = 'self' ORDER BY g.created_at DESC LIMIT 1), '-')
+    FROM role_request r WHERE r.person_id = p_account AND r.role = 'player' AND r.state = 'granted'
+   ORDER BY r.decided_at DESC LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The claim's recogniser forgotten, as an erased office account's SET NULL leaves it (owner).
+CREATE OR REPLACE FUNCTION _v176_forget_recogniser(p_user uuid) RETURNS void AS $$
+  UPDATE pupil_claim SET known_by = NULL WHERE user_id = p_user
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A claim removed, as the office's clear or his own Remove leaves the account (owner).
+CREATE OR REPLACE FUNCTION _v176_unclaim(p_user uuid) RETURNS void AS $$
+  DELETE FROM pupil_claim WHERE user_id = p_user
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An account's address (owner): for the office's enrolment by email.
+CREATE OR REPLACE FUNCTION _v176_email(p_account uuid) RETURNS text AS $$
+  SELECT email FROM app_user WHERE id = p_account
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An account's pending request for a role (owner): its id.
+CREATE OR REPLACE FUNCTION _v176_ask(p_account uuid, p_role text, p_team text) RETURNS uuid AS $$
+  INSERT INTO role_request (person_id, role, school_id, team_code, note)
+  VALUES (p_account, p_role, '11111111-1111-1111-1111-111111111111', p_team, 'v176')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- He left school on p_left: his guardian links dated by db/62's rule (owner).
+CREATE OR REPLACE FUNCTION _v176_left(p_boy uuid, p_left date) RETURNS integer AS $$
+  SELECT guardian_links_close_on_leaving(p_boy, p_left)
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A link's end date and state, past row security: "valid_until|state".
+CREATE OR REPLACE FUNCTION _v176_link(p_link uuid) RETURNS text AS $$
+  SELECT coalesce(g.valid_until::text, '-') || '|' || g.verification_state FROM assignment_subject g WHERE g.id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An office person made his guardian too: a verified link, the terms agreed (owner).
+CREATE OR REPLACE FUNCTION _v176_mother(p_person uuid, p_boy uuid) RETURNS void AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_boy, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(),
+          'granted', 'popia-2026-01', now(), '88888888-0000-0000-0000-00000000000c', sa_today() - 30);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- His yeses for his own sign-in, past row security: "count|how:given_by" of the latest.
+CREATE OR REPLACE FUNCTION _v176_yeses(p_boy uuid) RETURNS text AS $$
+  SELECT count(*)::text || '|' || coalesce((SELECT y.how || ':' || y.given_by::text FROM pupil_signin_consent y
+                                            WHERE y.player_id = p_boy AND y.answer = 'yes' ORDER BY y.seq DESC LIMIT 1), '-')
+    FROM pupil_signin_consent y WHERE y.player_id = p_boy AND y.answer = 'yes'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy with no date of birth, as a row written before db/11 is (owner).
+CREATE OR REPLACE FUNCTION _v176_nodate(p_tag text) RETURNS uuid AS $$
+DECLARE b uuid;
+BEGIN
+  PERFORM _born_constraint(false);
+  b := _v172_boy(p_tag, NULL, NULL);
+  PERFORM _born_constraint(true);
+  RETURN b;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- His refused tries in order, past row security: "by_id:office,...", and whether each names its writer.
+CREATE OR REPLACE FUNCTION _v176_refusals(p_boy uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(r.by_id::text || ':' || CASE WHEN r.by_office THEN 't' ELSE 'f' END
+                             || CASE WHEN r.by_name IS NULL OR r.school_id IS DISTINCT FROM '11111111-1111-1111-1111-111111111111' THEN '?' ELSE '' END,
+                             ',' ORDER BY r.at), '')
+    FROM player_born_refusal r WHERE r.player_id = p_boy
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- His refused tries put back a day (owner).
+CREATE OR REPLACE FUNCTION _v176_refusals_back(p_boy uuid) RETURNS void AS $$
+  UPDATE player_born_refusal SET at = at - interval '1 day' WHERE player_id = p_boy
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The refusal record's columns, by name.
+CREATE OR REPLACE FUNCTION _v176_refusal_cols() RETURNS text AS $$
+  SELECT string_agg(a.attname, ',' ORDER BY a.attname) FROM pg_attribute a
+   WHERE a.attrelid = 'player_born_refusal'::regclass AND a.attnum > 0 AND NOT a.attisdropped
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy's school on his record, past row security.
+CREATE OR REPLACE FUNCTION _v176_school_of(p_boy uuid) RETURNS uuid AS $$
+  SELECT p.school_id FROM player p WHERE p.id = p_boy
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A boy's latest date-of-birth change, past row security: its id.
+CREATE OR REPLACE FUNCTION _v176_born_change(p_boy uuid) RETURNS uuid AS $$
+  SELECT c.id FROM player_born_change c WHERE c.player_id = p_boy ORDER BY c.at DESC LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A link given another end date, or revoked (owner).
+CREATE OR REPLACE FUNCTION _v176_link_set(p_link uuid, p_until date, p_state text) RETURNS void AS $$
+  UPDATE assignment_subject SET valid_until = p_until, verification_state = p_state WHERE id = p_link
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The 18th birthday for a date (owner).
+CREATE OR REPLACE FUNCTION _v176_of_age(p_born date) RETURNS date AS $$
+  SELECT majority_on(p_born)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A link at 'withdrawn' that was never agreed (consent_at empty), as no door
+-- writes it today (owner).
+CREATE OR REPLACE FUNCTION _v176_withdrawn_unagreed(p_link uuid) RETURNS void AS $$
+  UPDATE assignment_subject SET consent_state = 'withdrawn' WHERE id = p_link AND consent_state = 'pending' AND consent_at IS NULL
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An owner's write on the record of agreements, or its foreign keys' (owner):
+-- 'erase' deletes the guardian's account, 'boy' deletes his roster row,
+-- 'tamper' edits a row, 'unlink' empties its guardian by hand, 'remove'
+-- deletes one. 'ok' or the refusal.
+CREATE OR REPLACE FUNCTION _v176_record_write(p_what text, p_id uuid) RETURNS text AS $$
+DECLARE was text := current_setting('app.user_id', true);
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  BEGIN
+    IF p_what = 'erase' THEN DELETE FROM app_user WHERE id = p_id;
+    ELSIF p_what = 'boy' THEN DELETE FROM player WHERE id = p_id;
+    ELSIF p_what = 'tamper' THEN UPDATE guardian_terms_record SET guardian_name = 'Verify 176 Tamper' WHERE player_id = p_id;
+    ELSIF p_what = 'unlink' THEN UPDATE guardian_terms_record SET guardian_id = NULL WHERE player_id = p_id;
+    ELSE DELETE FROM guardian_terms_record WHERE player_id = p_id; END IF;
+  EXCEPTION WHEN OTHERS THEN
+    PERFORM set_config('app.user_id', coalesce(was, ''), true);
+    RETURN SQLERRM;
+  END;
+  PERFORM set_config('app.user_id', coalesce(was, ''), true);
+  RETURN 'ok';
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The record's rows for a boy, past row security: "n|guardian ids kept|names kept".
+CREATE OR REPLACE FUNCTION _v176_record_rows(p_boy uuid) RETURNS text AS $$
+  SELECT count(*) || '|' || count(guardian_id) || '|' || count(guardian_name) FROM guardian_terms_record WHERE player_id = p_boy
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Is the family list switched on at a school (owner)?
+CREATE OR REPLACE FUNCTION _v176_list_on(p_school uuid) RETURNS boolean AS $$
+  SELECT coalesce(family_list_links_on(p_school), false)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- What born_links_to_review() answers the caller, as the caller:
+-- "link:why:ends_on:old:new;…", by link id.
+CREATE OR REPLACE FUNCTION _v176_review(p_school uuid, p_player uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(l.link_id || ':' || l.why || ':' || l.ends_on || ':' || l.old_of_age_on || ':' || l.of_age_on,
+                             ';' ORDER BY l.link_id), '')
+    FROM born_links_to_review(p_school, p_player) l
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of §151, run as the caller (scrbrd_app, under each person's
+-- session in turn). Invoker, so every read meets row security as the API
+-- would. Each case seeds its own people and raises on its first failure.
+CREATE OR REPLACE FUNCTION _v176_case(p_case text) RETURNS void AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  NIL    uuid := '00000000-0000-0000-0000-000000000000';
+  REG    uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's office (schooladmin)
+  DOS    uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (audit.read, player.age.read)
+  COACH  uuid := '88888888-0000-0000-0000-000000000004';   -- a Hilton coach
+  WESOFF uuid := '88888888-0000-0000-0000-00000000000d';   -- Westville's office
+  -- A boy of sixteen and a half, the same a year older, and one of eighteen and a half.
+  D16 date := (sa_today() - make_interval(years => 16, months => 6))::date;
+  D17 date := (sa_today() - make_interval(years => 17, months => 6))::date;
+  D18 date := (sa_today() - make_interval(years => 18, months => 6))::date;
+  DL  date := (sa_today() - make_interval(years => 16, months => 6))::date - 9;
+  -- Eighteen ten days ago.
+  DM  date := (sa_today() - make_interval(years => 18))::date - 10;
+  K uuid; K2 uuid; B uuid; B2 uuid; G uuid; G2 uuid; G3 uuid; O2 uuid; U uuid; n1 uuid;
+  L1 uuid; L2 uuid; L3 uuid; L4 uuid; L5 uuid; L6 uuid; BOY uuid; BOY2 uuid; BOY3 uuid; BOY4 uuid;
+  st text; v text; v2 text; n int; ok_ boolean; why text; inf boolean; held_ text; r record;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+
+  IF p_case = 'gate' THEN
+    -- (gate) An account that said it is a pupil here (a claim) and is not yet
+    -- a roster boy's is closed while its claim waits: with the office, or
+    -- recognised (a recognised claim held for a safeguarding concern too). A
+    -- role it holds counts for nothing; with the claim removed (the control)
+    -- the same account opens and the role counts. A claim the office has
+    -- declined, or taken back as "not him", waits for nothing: the account
+    -- opens and its role counts. An account with no claim and no role is open
+    -- (the control). A recognised claim opened by a guardian's yes opens,
+    -- through the grant door, as before.
+    U := _v169_bare('v176gate');
+    PERFORM _assert(_v169_open(U), '§151 (gate): an account with no claim and no role is closed (the control)');
+    FOREACH st IN ARRAY ARRAY['with_office', 'recognised', 'held'] LOOP
+      K := _v168_account('v176gate' || st); B := _v168_boy(HIL, 'v176gate' || st, 15);
+      PERFORM _as(K);
+      SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_send(HIL, 'Verify Gate ' || initcap(st), 'Grade 10') x;
+      PERFORM _assert(ok_, format('§151 (gate): the claim was not sent (%s)', why));
+      PERFORM _as(REG);
+      IF st IN ('recognised', 'held') THEN
+        SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_recognise(_v168_claim_id(K), B) x;
+        PERFORM _assert(ok_, format('§151 (gate): not recognised (%s)', why));
+      END IF;
+      IF st = 'held' THEN
+        PERFORM _as(K);
+        SELECT x.ok INTO ok_ FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
+          'Somebody at nets keeps shouting at me and pushing me.', 'victim') x;
+        PERFORM _assert(ok_, '§151 (gate): the claimant could not raise his concern (the setup)');
+      END IF;
+      PERFORM _assert(split_part(_v168_claim(K), '|', 1) = CASE WHEN st = 'held' THEN 'recognised' ELSE st END,
+                      format('§151 (gate): the claim reads %s', _v168_claim(K)));
+      -- A scorer's role, as a fixture duty's door writes one (it names no boy).
+      PERFORM _v169_give_role(K, 'scorer', NULL);
+      PERFORM _assert(NOT _v169_open(K), format('§151 (gate): a claim %s left the account open', st));
+      PERFORM _as(K);
+      PERFORM _assert(NOT app_can('scoring.start', HIL, '*', NIL, NIL) AND NOT app_holds('scoring.start'),
+                      format('§151 (gate): a claim %s, his scorer''s role counts', st));
+      SELECT x.pupil, x.open INTO ok_, inf FROM my_own_signin() x;
+      PERFORM _assert(inf IS FALSE, format('§151 (gate): a claim %s, my_own_signin() reads open %s', st, inf));
+    END LOOP;
+    -- The control: the claim removed, the same account opens and its role counts.
+    PERFORM _v176_unclaim(K);
+    PERFORM _assert(_v169_open(K), '§151 (gate): the claim removed, the account is still closed');
+    PERFORM _as(K);
+    PERFORM _assert(app_can('scoring.start', HIL, '*', NIL, NIL), '§151 (gate): the claim removed, his scorer''s role does not count (the control)');
+    -- Answered no: declined, and taken back as "not him" (a decline): the
+    -- account is not a pupil waiting, so a role it is given later counts.
+    K := _v168_account('v176gatedeclined');
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Gate Declined', 'Grade 10');
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_decline(_v168_claim_id(K)) x;
+    PERFORM _assert(ok_ AND split_part(_v168_claim(K), '|', 1) = 'declined', format('§151 (gate): not declined (%s)', why));
+    PERFORM _v169_give_role(K, 'assistantcoach', 'U16A');
+    PERFORM _assert(_v169_open(K), '§151 (gate): a declined claim closed the account');
+    PERFORM _as(K);
+    PERFORM _assert(app_can('team.read', HIL, 'U16A', NIL, NIL), '§151 (gate): a declined claim, his role does not count');
+    K := _v168_account('v176gatenothim'); B := _v168_boy(HIL, 'v176gatenothim', 15);
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Gate Nothim', 'Grade 10');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), B);
+    SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_not_him(_v168_claim_id(K)) x;
+    PERFORM _assert(ok_ AND split_part(_v168_claim(K), '|', 1) = 'declined', format('§151 (gate): "not him" reads %s (%s)', _v168_claim(K), why));
+    PERFORM _v169_give_role(K, 'scorer', NULL);
+    PERFORM _assert(_v169_open(K), '§151 (gate): a claim taken back as not him closed the account');
+    -- The yes opens a recognised claim as before: his account becomes his
+    -- roster row's, the claim 'open', and his own yes decides.
+    K := _v168_account('v176gateyes'); B := _v168_boy(HIL, 'v176gateyes', 15);
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Gate Yes', 'Grade 10');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), B);
+    PERFORM _assert(NOT _v169_open(K), '§151 (gate): recognised and waiting, the account is open');
+    G := _v169_guardian(B, 'v176gateyes', true);
+    PERFORM _as(G);
+    SELECT x.ok, x.in_force, x.held INTO ok_, inf, held_ FROM pupil_signin_consent_set(B, true) x;
+    PERFORM _assert(ok_ AND inf AND held_ IS NULL, format('§151 (gate): her yes: %s %s %s', ok_, inf, held_));
+    PERFORM _assert(split_part(_v168_claim(K), '|', 1) = 'open' AND _v169_open(K) AND _v169_boy(K) = B,
+                    format('§151 (gate): her yes did not open him: %s, open %s', _v168_claim(K), _v169_open(K)));
+    PERFORM _as(G); PERFORM pupil_signin_consent_set(B, false);
+    PERFORM _assert(NOT _v169_open(K), '§151 (gate): her no did not close him again');
+
+  ELSIF p_case = 'door' THEN
+    -- (door) The grant door gives a scorer's or a side's role to an account
+    -- that is a pupil's only once it is a roster boy's own. The office's
+    -- enrolment of a claimant as scorer, or as a side's coach, is refused by
+    -- name and writes nothing; so is the grant of a scorer's request to an
+    -- account holding a pupil's role that names no boy. An adult's account and
+    -- a roster boy's own account are granted (the controls); `player` names
+    -- its boy, so the claim's own grant still goes through ((gate) above).
+    K := _v168_account('v176door');
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Door', 'Grade 10');
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM enrol_person(_v176_email(K), 'Verify Door', 'scorer', HIL, NULL, NULL, 'v176') x;
+    PERFORM _assert(NOT ok_ AND why = 'pupil_needs_his_roster_row', format('§151 (door): a claimant enrolled as scorer: %s %s', ok_, why));
+    SELECT x.ok, x.reason INTO ok_, why FROM enrol_person(_v176_email(K), 'Verify Door', 'coach', HIL, 'U16A', NULL, 'v176') x;
+    PERFORM _assert(NOT ok_ AND why = 'pupil_needs_his_roster_row', format('§151 (door): a claimant enrolled as coach: %s %s', ok_, why));
+    PERFORM _assert(_v176_holds(K, 'scorer') = '0/0' AND _v176_holds(K, 'coach') = '0/0',
+                    format('§151 (door): a refusal left %s scorer and %s coach', _v176_holds(K, 'scorer'), _v176_holds(K, 'coach')));
+    U := _v169_noboy('v176door');
+    PERFORM _assert(_v168_is_pupil(U), '§151 (door): the account naming no boy is not a pupil''s (the setup)');
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM decide_role_request(_v176_ask(U, 'scorer', NULL), true, 'v176', NULL, NULL) x;
+    PERFORM _assert(NOT ok_ AND why = 'pupil_needs_his_roster_row', format('§151 (door): a scorer''s request of an account naming no boy: %s %s', ok_, why));
+    PERFORM _assert(_v176_holds(U, 'scorer') = '0/0', format('§151 (door): the refusal left %s', _v176_holds(U, 'scorer')));
+    -- The controls. A claim the office declined waits for nothing: the account
+    -- takes a side's role as any adult's does.
+    K2 := _v168_account('v176doordeclined');
+    PERFORM _as(K2); PERFORM pupil_claim_send(HIL, 'Verify Door Declined', 'Grade 10');
+    PERFORM _as(REG); PERFORM pupil_claim_decline(_v168_claim_id(K2));
+    SELECT x.ok, x.reason INTO ok_, why FROM enrol_person(_v176_email(K2), 'Verify Door Declined', 'assistantcoach', HIL, 'U16A', NULL, 'v176') x;
+    PERFORM _assert(ok_ AND _v176_holds(K2, 'assistantcoach') = '1/1',
+                    format('§151 (door): a declined claimant was refused a side''s role (%s, %s)', why, _v176_holds(K2, 'assistantcoach')));
+    U := _v169_bare('v176door');
+    SELECT x.ok, x.reason INTO ok_, why FROM enrol_person(_v176_email(U), 'Verify Door Adult', 'scorer', HIL, NULL, NULL, 'v176') x;
+    PERFORM _assert(ok_, format('§151 (door): an adult''s account was refused scorer (%s)', why));
+    K2 := _v169_pupil('v176door', 15);
+    SELECT x.ok, x.reason INTO ok_, why FROM enrol_person(_v176_email(K2), 'V164 V176door', 'scorer', HIL, NULL, NULL, 'v176') x;
+    PERFORM _assert(ok_ AND _v176_holds(K2, 'scorer') = '1/1', format('§151 (door): a roster boy''s own account was refused scorer (%s, %s)', why, _v176_holds(K2, 'scorer')));
+    PERFORM _assert(NOT _v169_open(K2), '§151 (door): the roster boy with no yes is open (his gate reads his yes)');
+
+  ELSIF p_case = 'asked' THEN
+    -- (asked) Her yes opens his recognised account: the request names her as
+    -- the one who asked, and the office person who recognised him as its
+    -- decider, still holding that right; his own link is verified by him.
+    -- A claim recognised by the office's hand, with the family list switched
+    -- off at the school (as it is everywhere until a school says yes).
+    PERFORM _assert(NOT _v176_list_on(HIL), '§151 (asked): the family list is on at Hilton (the setup)');
+    K := _v168_account('v176asked'); B := _v168_boy(HIL, 'v176asked', 15);
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Asked', 'Grade 10');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), B);
+    PERFORM _assert(split_part(_v168_claim(K), '|', 4) = 'office', format('§151 (asked): the claim reads %s', _v168_claim(K)));
+    G := _v169_guardian(B, 'v176asked', true);
+    PERFORM _as(G);
+    SELECT x.ok, x.in_force, x.held INTO ok_, inf, held_ FROM pupil_signin_consent_set(B, true) x;
+    PERFORM _assert(ok_ AND inf AND held_ IS NULL AND _v169_open(K), format('§151 (asked): her yes: %s %s %s', ok_, inf, held_));
+    PERFORM _assert(_v176_record(K) = G || '|' || REG || '|' || REG, format('§151 (asked): the record reads %s', _v176_record(K)));
+    -- The audit log: the grant on a yes, its actor the one who asked, and
+    -- who recognised him.
+    -- Read by its own key: every grant in this one transaction has the same
+    -- time, so the page is cut just above it.
+    PERFORM _as(REG);
+    v := 'role:' || _v169_role(K, 'player') || ':granted';
+    SELECT * INTO r FROM audit_log(HIL, ARRAY['role'], NULL, now(), v || '~', 1) a;
+    PERFORM _assert(r.key = v AND r.action = 'Granted a role on a yes for his own sign-in: ' || role_words('player') || ' (U16A)'
+                    AND r.detail->>'recognisedBy' = _v168_audit_label(REG) AND r.actor = _v168_audit_label(G),
+                    format('§151 (asked): the audit log does not say the grant came on her yes, recognised by the office: %s', row_to_json(r)));
+    -- The recogniser no longer holds the right: nothing is granted, she is
+    -- told her yes is recorded and his account waits, and the office's retry
+    -- opens him as its own act.
+    O2 := _v176_office('v176asked');
+    K2 := _v168_account('v176lapsed'); B2 := _v168_boy(HIL, 'v176lapsed', 15);
+    PERFORM _as(K2); PERFORM pupil_claim_send(HIL, 'Verify Lapsed', 'Grade 10');
+    PERFORM _as(O2);
+    SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_recognise(_v168_claim_id(K2), B2) x;
+    PERFORM _assert(ok_, format('§151 (asked): the second office person could not recognise (%s)', why));
+    PERFORM _v176_end(O2, 'schooladmin');
+    G2 := _v169_guardian(B2, 'v176lapsed', true);
+    PERFORM _as(G2);
+    SELECT x.ok, x.in_force, x.held INTO ok_, inf, held_ FROM pupil_signin_consent_set(B2, true) x;
+    PERFORM _assert(ok_ AND inf AND held_ = 'recogniser_lapsed', format('§151 (asked): with the recogniser gone, her yes: %s %s %s', ok_, inf, held_));
+    PERFORM _assert(NOT _v169_open(K2) AND _v176_holds(K2, 'player') = '0/0' AND split_part(_v168_claim(K2), '|', 1) = 'recognised',
+                    format('§151 (asked): with the recogniser gone, he was opened: %s, %s', _v176_holds(K2, 'player'), _v168_claim(K2)));
+    -- The office is told: its claims list reads the claim as a yes waiting
+    -- for it, and its queue counts it, naming nobody; nobody else reads either.
+    PERFORM _as(REG);
+    SELECT x.state INTO v FROM pupil_claims(HIL) x WHERE x.id = _v168_claim_id(K2);
+    n := pupil_accounts_waiting(HIL);
+    PERFORM _assert(v = 'yes_waits' AND n >= 1, format('§151 (asked): the office reads the claim as %s, its queue %s', v, n));
+    FOREACH U IN ARRAY ARRAY[COACH, DOS, WESOFF, G2] LOOP
+      PERFORM _as(U);
+      PERFORM _assert(pupil_accounts_waiting(HIL) IS NULL, format('§151 (asked): %s reads the office''s count', U));
+    END LOOP;
+    PERFORM _as(G2);
+    SELECT x.ok, x.held INTO ok_, held_ FROM pupil_signin_retry(B2) x;
+    PERFORM _assert(ok_ AND held_ = 'recogniser_lapsed' AND NOT _v169_open(K2), format('§151 (asked): her retry opened him (%s, %s)', ok_, held_));
+    PERFORM _as(REG);
+    SELECT x.ok, x.held INTO ok_, held_ FROM pupil_signin_retry(B2) x;
+    PERFORM _assert(ok_ AND held_ IS NULL AND _v169_open(K2), format('§151 (asked): the office''s retry did not open him (%s, %s)', ok_, held_));
+    PERFORM _assert(_v176_record(K2) = REG || '|' || REG || '|' || REG, format('§151 (asked): after the office''s retry the record reads %s', _v176_record(K2)));
+    SELECT x.state INTO v FROM pupil_claims(HIL) x WHERE x.id = _v168_claim_id(K2);
+    PERFORM _assert(v = 'open' AND pupil_accounts_waiting(HIL) = n - 1,
+                    format('§151 (asked): after the retry the office reads %s, its queue %s', v, pupil_accounts_waiting(HIL)));
+    -- A recogniser whose account is gone (known_by emptied): the same.
+    K := _v168_account('v176forgot'); B := _v168_boy(HIL, 'v176forgot', 15);
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Forgot', 'Grade 10');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), B);
+    PERFORM _v176_forget_recogniser(K);
+    G3 := _v169_guardian(B, 'v176forgot', true);
+    PERFORM _as(G3);
+    SELECT x.ok, x.held INTO ok_, held_ FROM pupil_signin_consent_set(B, true) x;
+    PERFORM _assert(ok_ AND held_ = 'recogniser_lapsed' AND NOT _v169_open(K) AND _v176_holds(K, 'player') = '0/0',
+                    format('§151 (asked): with no recogniser on record, her yes: %s %s, %s', ok_, held_, _v176_holds(K, 'player')));
+
+  ELSIF p_case = 'links' THEN
+    -- (links) After the office corrects his date, the guardian links whose
+    -- end date the old date set are listed for it, and none is changed:
+    --   BOY  left school at sixteen and a half: his parent's link ends on his
+    --        18th birthday; corrected a year older, listed 'eighteenth_birthday';
+    --        a second link with an end date of its own, and a revoked one, not.
+    --   BOY2 left school an adult by the old date: the link ended that day;
+    --        corrected younger, listed 'left_school'.
+    --   BOY3 still at school (no end date): corrected, nothing listed.
+    -- Nothing before a correction; nothing to a coach, the director or
+    -- Westville's office; the school-wide list holds both.
+    BOY := _v172_boy('v176links', D16, NULL);
+    G := _v169_guardian(BOY, 'v176links1', true); L1 := _v175_link_of(G, BOY);
+    G2 := _v169_guardian(BOY, 'v176links2', true); L2 := _v175_link_of(G2, BOY);
+    G3 := _v169_guardian(BOY, 'v176links3', true); L3 := _v175_link_of(G3, BOY);
+    n := _v176_left(BOY, sa_today() - 10);
+    PERFORM _assert(n = 3 AND _v176_link(L1) = _v176_of_age(D16) || '|verified',
+                    format('§151 (links): leaving dated %s links; the first reads %s', n, _v176_link(L1)));
+    PERFORM _v176_link_set(L2, sa_today() + 100, 'verified');
+    PERFORM _v176_link_set(L3, sa_today() - 1, 'revoked');
+    PERFORM _as(REG);
+    PERFORM _assert(_v176_review(HIL, BOY) = '', format('§151 (links): before a correction the list reads %s', _v176_review(HIL, BOY)));
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY, D17, 'Verify 176: birth certificate seen') x;
+    PERFORM _assert(ok_, format('§151 (links): the correction did not go in (%s)', why));
+    v := _v176_review(HIL, BOY);
+    PERFORM _assert(v = L1 || ':eighteenth_birthday:' || _v176_of_age(D16) || ':' || _v176_of_age(D16) || ':' || _v176_of_age(D17),
+                    format('§151 (links): after the correction the list reads %s', v));
+    PERFORM _assert(_v176_link(L1) = _v176_of_age(D16) || '|verified' AND _v176_link(L2) = (sa_today() + 100) || '|verified',
+                    format('§151 (links): the list changed a link: %s, %s', _v176_link(L1), _v176_link(L2)));
+    BOY2 := _v172_boy('v176links2', D18, NULL);
+    G := _v169_guardian(BOY2, 'v176links4', true); L4 := _v175_link_of(G, BOY2);
+    n := _v176_left(BOY2, sa_today() - 10);
+    PERFORM _assert(_v176_link(L4) = (sa_today() - 10) || '|verified', format('§151 (links): the adult''s link reads %s', _v176_link(L4)));
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY2, D16, 'Verify 176: birth certificate seen') x;
+    PERFORM _assert(ok_, format('§151 (links): the second correction did not go in (%s)', why));
+    v := _v176_review(HIL, BOY2);
+    PERFORM _assert(v = L4 || ':left_school:' || (sa_today() - 10) || ':' || _v176_of_age(D18) || ':' || _v176_of_age(D16),
+                    format('§151 (links): the adult re-dated younger reads %s', v));
+    -- An adult by the old date who left school at seventeen: his parent's
+    -- link ran out on that 18th birthday, ten days ago (the clock, not a
+    -- person); corrected younger, it is listed, as the link the office
+    -- reopens (Kameel, 25 Nov 2026, Q4).
+    BOY4 := _v172_boy('v176links4', DM, NULL);
+    G := _v169_guardian(BOY4, 'v176links6', true); L6 := _v175_link_of(G, BOY4);
+    n := _v176_left(BOY4, (sa_today() - make_interval(years => 1))::date);
+    PERFORM _assert(_v176_link(L6) = _v176_of_age(DM) || '|verified' AND _v176_of_age(DM) < sa_today(),
+                    format('§151 (links): the ended link reads %s', _v176_link(L6)));
+    PERFORM _as(REG);
+    PERFORM player_born_correct(BOY4, D16, 'Verify 176: birth certificate seen');
+    v := _v176_review(HIL, BOY4);
+    PERFORM _assert(v = L6 || ':eighteenth_birthday:' || _v176_of_age(DM) || ':' || _v176_of_age(DM) || ':' || _v176_of_age(D16),
+                    format('§151 (links): the link the clock ended reads %s', v));
+    BOY3 := _v172_boy('v176links3', D16, NULL);
+    G := _v169_guardian(BOY3, 'v176links5', true); L5 := _v175_link_of(G, BOY3);
+    PERFORM _as(REG);
+    PERFORM player_born_correct(BOY3, D17, 'Verify 176: birth certificate seen');
+    PERFORM _assert(_v176_review(HIL, BOY3) = '' AND _v176_link(L5) = '-|verified',
+                    format('§151 (links): a boy at school reads %s, his link %s', _v176_review(HIL, BOY3), _v176_link(L5)));
+    v := _v176_review(HIL, NULL);
+    PERFORM _assert(position(L1::text IN v) > 0 AND position(L4::text IN v) > 0 AND position(L2::text IN v) = 0 AND position(L5::text IN v) = 0,
+                    format('§151 (links): the school''s list reads %s', v));
+    FOREACH U IN ARRAY ARRAY[COACH, DOS, WESOFF] LOOP
+      PERFORM _as(U);
+      PERFORM _assert(_v176_review(HIL, NULL) = '' AND _v176_review(HIL, BOY) = '',
+                      format('§151 (links): %s reads %s', U, _v176_review(HIL, NULL)));
+    END LOOP;
+
+  ELSIF p_case = 'log' THEN
+    -- (log) The log's dates for a change go to a reader of his age while he
+    -- is still at the school of the change: Hilton's director and office read
+    -- them; moved to Westville, Hilton's log keeps the event and who made it,
+    -- without the dates.
+    -- A date of its own, so the rows read are his alone.
+    BOY := _v172_boy('v176log', DL, NULL);
+    PERFORM _as(REG);
+    SELECT x.ok INTO ok_ FROM player_born_correct(BOY, DL + 1, 'Verify 176: birth certificate seen') x;
+    PERFORM _assert(ok_, '§151 (log): the correction did not go in');
+    FOREACH U IN ARRAY ARRAY[DOS, REG] LOOP
+      PERFORM _as(U);
+      SELECT * INTO r FROM audit_log(HIL, ARRAY['dob']) a
+       WHERE a.detail->>'how' = 'correction' AND a.detail->>'was' = DL::text AND a.detail->>'became' = (DL + 1)::text;
+      PERFORM _assert(r.action = 'Corrected a date of birth', format('§151 (log): at Hilton, %s does not read the dates', U));
+    END LOOP;
+    PERFORM _v169_transfer(BOY);
+    FOREACH U IN ARRAY ARRAY[DOS, REG] LOOP
+      PERFORM _as(U);
+      SELECT count(*) INTO n FROM audit_log(HIL, ARRAY['dob']) a
+       WHERE a.detail->>'how' = 'correction' AND (a.detail->>'was' = DL::text OR a.detail->>'became' = (DL + 1)::text);
+      PERFORM _assert(n = 0, format('§151 (log): moved to Westville, %s still reads his dates (%s rows)', U, n));
+      SELECT count(*) INTO n FROM audit_log(HIL, ARRAY['dob']) a
+       WHERE a.detail->>'how' = 'correction' AND a.action = 'Corrected a date of birth' AND a.actor IS NOT NULL
+         AND NOT (a.detail ? 'was') AND NOT (a.detail ? 'became');
+      PERFORM _assert(n >= 1, format('§151 (log): moved to Westville, %s no longer reads the event', U));
+    END LOOP;
+    -- And (Kameel, 26 Nov 2026, Q4) once he has left without moving school:
+    -- his membership at Hilton closed today, his record still Hilton's. The
+    -- event and who made it, without the dates.
+    BOY := _v172_boy('v176logleft', DL + 40, NULL);
+    PERFORM _as(REG);
+    SELECT x.ok INTO ok_ FROM player_born_correct(BOY, DL + 41, 'Verify 176: birth certificate seen') x;
+    PERFORM _assert(ok_, '§151 (log): the second correction did not go in');
+    v := 'dob:' || _v176_born_change(BOY)::text;
+    SELECT * INTO r FROM audit_log(HIL, ARRAY['dob']) a WHERE a.key = v;
+    PERFORM _assert(r.detail->>'became' = (DL + 41)::text, '§151 (log): at Hilton, before he leaves, the office does not read the dates');
+    PERFORM _assert(_v111_leave(BOY) >= 1, '§151 (log): the fixture is void: he had no open membership at Hilton');
+    PERFORM _assert(_v176_school_of(BOY) = HIL, '§151 (log): the fixture is void: leaving moved his record');
+    FOREACH U IN ARRAY ARRAY[DOS, REG] LOOP
+      PERFORM _as(U);
+      SELECT * INTO r FROM audit_log(HIL, ARRAY['dob']) a WHERE a.key = v;
+      PERFORM _assert(r.key = v AND r.action = 'Corrected a date of birth' AND r.actor IS NOT NULL,
+                      format('§151 (log): left Hilton, %s no longer reads the event', U));
+      PERFORM _assert(NOT (r.detail ? 'was') AND NOT (r.detail ? 'became'),
+                      format('§151 (log): left Hilton without moving school, %s still reads his dates: %s', U, r.detail));
+    END LOOP;
+
+  ELSIF p_case = 'agreed' THEN
+    -- (agreed) Kameel, 20 Nov 2026 (Q1): her link reads once she has agreed:
+    -- 'granted', or 'withdrawn' after agreeing. A link at 'withdrawn' that was
+    -- never agreed reaches nothing of him, is due for her agreement, and his
+    -- notices are held from her; one agreed and then withdrawn reads (the
+    -- control), and so does an agreed one.
+    B := _v168_boy(HIL, 'v176agreed', 14);
+    G := _v175_guardian(B, 'v176agreed1', 'pending'); L1 := _v175_link_of(G, B);
+    PERFORM _v176_withdrawn_unagreed(L1);
+    G2 := _v175_guardian(B, 'v176agreed2', 'withdrawn');
+    G3 := _v175_guardian(B, 'v176agreed3', 'granted');
+    n1 := _v175_notice(B, G, 'availability');
+    PERFORM _as(G);
+    PERFORM _assert(_v175_reach(B) = 'player:0 caps:0 family:f health:0 alerts:0 school:f',
+                    format('§151 (agreed): a link withdrawn and never agreed reaches %s', _v175_reach(B)));
+    PERFORM _assert((SELECT count(*) FROM my_terms_due() t WHERE t.player_id = B) = 1,
+                    '§151 (agreed): a link withdrawn and never agreed is not due for her agreement');
+    PERFORM _assert(_v175_reads(ARRAY[n1]) = 0, '§151 (agreed): a link withdrawn and never agreed reads a notice about him');
+    SELECT count(*) INTO n FROM pupil_signin_state(B);
+    PERFORM _assert(n = 0, '§151 (agreed): "Allow his own sign-in" answers a link withdrawn and never agreed');
+    FOREACH U IN ARRAY ARRAY[G2, G3] LOOP
+      PERFORM _as(U);
+      v := _v175_reach(B);
+      PERFORM _assert(v LIKE 'player:1 caps:% family:t %' AND (SELECT count(*) FROM my_terms_due() t WHERE t.player_id = B) = 0,
+                      format('§151 (agreed): %s, agreed, reaches %s', U, v));
+    END LOOP;
+
+  ELSIF p_case = 'record' THEN
+    -- (record) The record of agreements keeps its own foreign keys' rules:
+    -- her account erased, its row stays with her name and no id; his roster
+    -- row deleted, his rows go with it. Any other change, the owner's own,
+    -- is refused as before.
+    B := _v168_boy(HIL, 'v176record', 14);
+    G := _v175_guardian(B, 'v176record', 'granted');
+    PERFORM _assert(_v176_record_rows(B) = '1|1|1', format('§151 (record): the record reads %s (the setup)', _v176_record_rows(B)));
+    v := _v176_record_write('tamper', B);
+    PERFORM _assert(v LIKE '%append-only%', format('§151 (record): a row was edited: %s', v));
+    v := _v176_record_write('remove', B);
+    PERFORM _assert(v LIKE '%append-only%', format('§151 (record): a row was removed: %s', v));
+    v := _v176_record_write('unlink', B);
+    PERFORM _assert(v LIKE '%append-only%', format('§151 (record): a row''s guardian was emptied by hand: %s', v));
+    v := _v176_record_write('erase', G);
+    PERFORM _assert(v = 'ok' AND _v176_record_rows(B) = '1|0|1', format('§151 (record): her erasure: %s, the record %s', v, _v176_record_rows(B)));
+    v := _v176_record_write('boy', B);
+    PERFORM _assert(v = 'ok' AND _v176_record_rows(B) = '0|0|0', format('§151 (record): his roster row deleted: %s, the record %s', v, _v176_record_rows(B)));
+
+  ELSIF p_case = 'mother' THEN
+    -- (mother) Kameel, 26 Nov 2026 (Q7): an office person who is the boy's
+    -- own guardian gives her yes as a guardian's; another office person, or
+    -- the one who recognised him, decides. She recognised his claim herself:
+    -- her "Allow" is kept as a guardian's yes and opens nothing (own_child),
+    -- nor does her retry; her signed form for him is hers to record (Q7 read
+    -- narrowly) and opens nothing either; the office reads the claim as a yes
+    -- waiting, and another office person's retry opens him on his own
+    -- decision. Recognised by another office person still holding the right:
+    -- her "Allow" opens him, she the asker and the recogniser the decider.
+    O2 := _v176_office('v176mother');
+    K := _v168_account('v176mother'); B := _v168_boy(HIL, 'v176mother', 15);
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Mother', 'Grade 10');
+    PERFORM _as(O2);
+    SELECT x.ok, x.reason INTO ok_, why FROM pupil_claim_recognise(_v168_claim_id(K), B) x;
+    PERFORM _assert(ok_, format('§151 (mother): she could not recognise his claim (%s)', why));
+    PERFORM _v176_mother(O2, B);
+    SELECT x.ok, x.in_force, x.held INTO ok_, inf, held_ FROM pupil_signin_consent_set(B, true) x;
+    PERFORM _assert(ok_ AND inf AND held_ = 'own_child' AND NOT _v169_open(K) AND _v176_holds(K, 'player') = '0/0',
+                    format('§151 (mother): her own yes, at the office, opened him: %s %s %s, %s', ok_, inf, held_, _v176_holds(K, 'player')));
+    PERFORM _assert(_v176_yeses(B) = '1|guardian:' || O2, format('§151 (mother): her yes is not kept as a guardian''s: %s', _v176_yeses(B)));
+    SELECT x.ok, x.held INTO ok_, held_ FROM pupil_signin_retry(B) x;
+    PERFORM _assert(ok_ AND held_ = 'own_child' AND NOT _v169_open(K), format('§151 (mother): her retry: %s %s', ok_, held_));
+    SELECT x.ok, x.reason, x.held INTO ok_, why, held_ FROM pupil_signin_office_set(B, true, 'V176 Mother', NULL) x;
+    PERFORM _assert(ok_ AND held_ = 'own_child' AND NOT _v169_open(K) AND _v176_yeses(B) = '2|office:' || O2,
+                    format('§151 (mother): her signed form for him: %s %s %s, his yeses %s', ok_, why, held_, _v176_yeses(B)));
+    PERFORM _as(REG);
+    SELECT x.state INTO v FROM pupil_claims(HIL) x WHERE x.id = _v168_claim_id(K);
+    PERFORM _assert(v = 'yes_waits', format('§151 (mother): the office reads his claim as %s', v));
+    SELECT x.ok, x.held INTO ok_, held_ FROM pupil_signin_retry(B) x;
+    PERFORM _assert(ok_ AND held_ IS NULL AND _v169_open(K), format('§151 (mother): another office person''s retry: %s %s', ok_, held_));
+    PERFORM _assert(_v176_record(K) = REG || '|' || REG || '|' || REG, format('§151 (mother): after the retry the record reads %s', _v176_record(K)));
+    K2 := _v168_account('v176mother2'); B2 := _v168_boy(HIL, 'v176mother2', 15);
+    PERFORM _as(K2); PERFORM pupil_claim_send(HIL, 'Verify Mother Two', 'Grade 10');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K2), B2);
+    PERFORM _v176_mother(O2, B2);
+    PERFORM _as(O2);
+    SELECT x.ok, x.in_force, x.held INTO ok_, inf, held_ FROM pupil_signin_consent_set(B2, true) x;
+    PERFORM _assert(ok_ AND inf AND held_ IS NULL AND _v169_open(K2),
+                    format('§151 (mother): recognised by another office person, her yes: %s %s %s', ok_, inf, held_));
+    PERFORM _assert(_v176_record(K2) = O2 || '|' || REG || '|' || REG,
+                    format('§151 (mother): recognised by another office person, the record reads %s', _v176_record(K2)));
+    -- Her signed form for her own son, recognised by another office person:
+    -- it opens him, on the recogniser's decision, never hers.
+    K := _v168_account('v176mother3'); B := _v168_boy(HIL, 'v176mother3', 15);
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Mother Three', 'Grade 10');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), B);
+    PERFORM _v176_mother(O2, B);
+    PERFORM _as(O2);
+    SELECT x.ok, x.reason, x.held INTO ok_, why, held_ FROM pupil_signin_office_set(B, true, 'V176 Mother', NULL) x;
+    PERFORM _assert(ok_ AND held_ IS NULL AND _v169_open(K) AND _v176_yeses(B) = '1|office:' || O2,
+                    format('§151 (mother): her signed form for her own son, recognised by another: %s %s %s, his yeses %s', ok_, why, held_, _v176_yeses(B)));
+    PERFORM _assert(_v176_record(K) = O2 || '|' || REG || '|' || REG,
+                    format('§151 (mother): her signed form opened him, the record reads %s', _v176_record(K)));
+
+  ELSIF p_case = 'tries' THEN
+    -- (tries) Kameel, 26 Nov 2026 (Q2): "Record it" stays open to one who may
+    -- manage the boy. Each refused try is recorded (who, which boy, whether
+    -- his school's office, when; never the date), and three a day from anyone
+    -- but his school's office are all that day. The office's own is recorded
+    -- and not counted; yesterday's do not count today; nobody else counts or
+    -- records one; a boy whose date is on record has no try to refuse.
+    B := _v176_nodate('v176tries');
+    PERFORM _as(REG);
+    n := player_born_refused(B);
+    PERFORM _assert(n = 3, format('§151 (tries): the office''s refused try counted against him (%s left)', n));
+    PERFORM _as(DOS);
+    PERFORM _assert(player_born_tries_left(B) = 3, format('§151 (tries): the director starts with %s tries', player_born_tries_left(B)));
+    FOR i IN 1..3 LOOP
+      n := player_born_refused(B);
+      PERFORM _assert(n = 3 - i, format('§151 (tries): after %s refused tries, %s left', i, n));
+    END LOOP;
+    PERFORM _assert(player_born_tries_left(B) = 0, format('§151 (tries): after three, %s left', player_born_tries_left(B)));
+    PERFORM _assert(_v176_refusals(B) = format('%s:t,%s:f,%s:f,%s:f', REG, DOS, DOS, DOS),
+                    format('§151 (tries): the record reads %s', _v176_refusals(B)));
+    PERFORM _assert(_v176_refusal_cols() = 'at,by_id,by_name,by_office,id,player_id,school_id',
+                    format('§151 (tries): the record holds %s', _v176_refusal_cols()));
+    PERFORM _v176_refusals_back(B);
+    PERFORM _assert(player_born_tries_left(B) = 3, format('§151 (tries): yesterday''s count today: %s left', player_born_tries_left(B)));
+    G := _v169_guardian(B, 'v176tries', true);
+    FOREACH U IN ARRAY ARRAY[COACH, WESOFF, G] LOOP
+      PERFORM _as(U);
+      PERFORM _assert(player_born_tries_left(B) IS NULL AND player_born_refused(B) IS NULL,
+                      format('§151 (tries): %s counts or records a try at his date', U));
+    END LOOP;
+    PERFORM _assert(_v176_refusals(B) = format('%s:t,%s:f,%s:f,%s:f', REG, DOS, DOS, DOS),
+                    format('§151 (tries): another person''s try was recorded: %s', _v176_refusals(B)));
+    B2 := _v172_boy('v176tries2', DL, NULL);
+    PERFORM _as(DOS);
+    n := player_born_refused(B2);
+    PERFORM _assert(n IS NULL AND _v176_refusals(B2) = '',
+                    format('§151 (tries): a try at a date on record was recorded (%s left): %s', n, _v176_refusals(B2)));
+
+  ELSIF p_case = 'grants' THEN
+    -- (grants) The list is scrbrd_app's alone; the gate, the yes's door and
+    -- the grant door nobody's; the new column is on the request.
+    PERFORM _assert(_v168_acl('born_links_to_review(uuid,uuid)') = 'scrbrd_app:EXECUTE'
+                    AND _v168_acl('pupil_accounts_waiting(uuid)') = 'scrbrd_app:EXECUTE'
+                    AND _v168_acl('guardian_terms_record_append_only()') = '',
+                    format('§151 (grants): born_links_to_review() is granted %s, pupil_accounts_waiting() %s',
+                           _v168_acl('born_links_to_review(uuid,uuid)'), _v168_acl('pupil_accounts_waiting(uuid)')));
+    FOREACH v IN ARRAY ARRAY['pupil_signin_open(uuid)', 'pupil_signin_after_yes(uuid,text)', 'role_request_grant_as(uuid,uuid,text,uuid,text)'] LOOP
+      PERFORM _assert(_v168_acl(v) = '', format('§151 (grants): %s is granted %s', v, _v168_acl(v)));
+    END LOOP;
+    PERFORM _assert(_v172_definer('born_links_to_review(uuid,uuid)'), '§151 (grants): born_links_to_review() is not a definer');
+    -- Q2: "Record it"'s two doors the application's; its record nobody's.
+    FOREACH v IN ARRAY ARRAY['player_born_tries_left(uuid)', 'player_born_refused(uuid)'] LOOP
+      PERFORM _assert(_v168_acl(v) = 'scrbrd_app:EXECUTE' AND _v172_definer(v), format('§151 (grants): %s is granted %s', v, _v168_acl(v)));
+    END LOOP;
+    PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'player_born_refusal', 'SELECT, INSERT, UPDATE, DELETE')
+                    AND (SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = 'player_born_refusal'::regclass),
+                    '§151 (grants): the record of refused tries is open to the application, or its row security is off');
+    -- ...nor to Supabase's three roles, on its own grants and not only db/157's
+    -- revoked defaults (where the roles are there: on the host, and in the
+    -- full run once §135 has staged the host).
+    FOREACH v IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles x WHERE x.rolname = v)
+                      OR NOT has_table_privilege(v, 'player_born_refusal', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'),
+                      format('§151 (grants): the record of refused tries is open to %s', v));
+    END LOOP;
+
+  ELSE
+    RAISE EXCEPTION '§151: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.user_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/176 (section 151) ─────────────────────────────────────────────
 
 -- ┌── Section timing (Kameel, 25 Nov 2026) ─────────────────────────────
 -- CI's verifier ran for two to three and a half hours with no output at all,
@@ -28657,7 +29362,9 @@ select s.player_id, p.full_name, p.known_as, p.team_code,
               and s.verification_state = 'verified'
               and s.valid_from <= sa_today()
               and (s.valid_until is null or s.valid_until > sa_today())
-              and s.consent_state <> 'pending'
+              -- db/176 (Kameel, 20 Nov 2026, Q1): agreed, or agreed and since
+              -- withdrawn, as the database's own gate reads her link.
+              and (s.consent_state = 'granted' or (s.consent_state = 'withdrawn' and s.consent_at is not null))
            union all
            select t.player_id, t.full_name, null, null,
                   t.school_id, t.school_name, null,
@@ -39076,7 +39783,8 @@ $v49$;
       '§89 (check): role_assignment_player_team_scoped is not db/108''s, or not validated');
     PERFORM _assert(_v112_fact('teamless_live') = '0', '§89 (check): a live player row names no side');
     PERFORM _assert(_v112_fact('grant_md5') = 'a9a5a09414e0629d70c873fcbeb99f75',
-      '§89 (check): role_request_grant_as() is not db/92''s body with db/108''s block');
+      format('§89 (check): role_request_grant_as() is not db/92''s body with db/108''s block (and db/169''s and db/176''s): %s',
+             coalesce(_v112_fact('grant_md5'), 'db/108''s block is not in it')));
 
     -- ── (doors) ──
     PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = to_regclass('player')
@@ -52782,6 +53490,95 @@ $m130$;
   PERFORM _v175_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/175 (section 150) ─────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§151 A pupil''s sign-in and his date of birth, followed up');
+  -- ┌── db/176 (section 151) ─────────────────────────────────────────
+  -- ── 151. A pupil's sign-in and his date of birth, followed up (db/176; Kameel, 18 Nov 2026 Q5, 20 Nov A; the map's rule 7 and class A2; the re-dating design §3.2, §3.5, Q4) ──
+  -- Each case stages its own people (as the owner) and runs as scrbrd_app
+  -- under each person's session (_v176_case, an invoker). Labels:
+  --   (gate)    an account whose claim waits (with the office, recognised,
+  --             held for a concern) and no roster boy is closed; a scorer's
+  --             role it holds counts for nothing; the claim removed, it opens
+  --             (the control); declined, or taken back as "not him", it is
+  --             open and its role counts; a guardian's yes still opens a
+  --             recognised claim, and her no closes it
+  --   (door)    the grant door refuses a scorer's or a side's role to a
+  --             claimant and to an account naming no boy, writing nothing; a
+  --             declined claimant, an adult and a roster boy's own account are
+  --             granted (the controls)
+  --   (asked)   on a claim the office recognised by hand, the family list
+  --             off: her yes's request names her as asked_by and the
+  --             recogniser as decider, and the audit log says so; a recogniser
+  --             whose right has lapsed, or who is gone, grants nothing
+  --             (recogniser_lapsed), her retry neither; the office's list
+  --             reads the claim as a yes waiting and its queue counts it
+  --             (nobody else reads the count); the office's retry opens him
+  --   (links)   after a correction the links the old date dated are listed
+  --             (his 18th birthday, ahead or already passed; the day he left
+  --             as an adult), none changed; not a link dated otherwise, a
+  --             revoked one or one at school; the office's alone
+  --   (log)     the log's dates of a change while he is at that school and
+  --             has not left it (Q4); moved, or left without moving, the event
+  --             without the dates
+  --   (agreed)  Q1: a link withdrawn and never agreed reaches nothing, is due,
+  --             its notices held, "Allow" answers nothing; agreed, or agreed
+  --             and withdrawn, reads
+  --   (record)  the record of agreements: her erasure and his roster row's
+  --             deletion go through; a row edited, emptied or removed by hand
+  --             is refused
+  --   (mother)  Q7: an office person who is his own guardian: her yes is a
+  --             guardian's and opens nothing on her decision (own_child), nor
+  --             her retry, nor her signed form for him (hers to record);
+  --             another office person's retry opens him; recognised by
+  --             another, her yes opens him on the recogniser's decision
+  --   (tries)   Q2: "Record it"'s refused tries, recorded (who, which boy, the
+  --             office or not; no date), three a day from anyone but the
+  --             office; the office's not counted, yesterday's not today's;
+  --             nobody else counts or records; none at a date on record
+  --   (grants)  ACLs, and the record of refused tries nobody's, Supabase's
+  --             three roles included
+  -- And §150 (notices): a system notice about him is held from a parent who
+  -- has not agreed, by the notice's own policy.
+  -- Broken by hand (26 Nov 2026), each went red for its own reason:
+  --   the gate without its claim arm              → (gate) red: a claim with_office left the account open
+  --   the claim arm reading only 'with_office'    → (gate) red: a claim recognised left the account open
+  --   the grant door without its refusal          → (door) red: a claimant enrolled as scorer
+  --   the refusal for scorer alone                → (door) red: a claimant enrolled as coach
+  --   the decider as db/173 chose it              → (asked) red: with the recogniser gone, her yes opened him (held empty)
+  --   asked_by not written                        → (asked) red: the record reads -|…
+  --   the list without the old date's test        → (links) red: a link dated otherwise is listed
+  --   the list without the office's test          → (links) red: a coach reads it
+  --   the log's school test out                   → (log) red: moved, the director still reads his dates
+  -- And on the red-team of db/175 and db/176 (26 Nov 2026), ten more:
+  --   the gate's claim arm as `<> 'open'`          → (gate) red: a declined claim closed the account
+  --   the grant door asking person_is_pupil()     → (door) red: a declined claimant refused a side's role
+  --   app_can() back to "not pending"             → (agreed) red: a link never agreed reaches 21 capabilities
+  --   my_terms_due() back to "pending"            → (agreed) red: not due for her agreement
+  --   the record's trigger as db/175 wrote it     → (record) red: her erasure refused
+  --   the record's trigger without its depth test → (record) red: emptied by hand
+  --   the notice policy's system arm put back     → §150 (notices) red: with the route added later, read
+  --   the claims list without yes_waits           → (asked) red: the office reads recognised
+  --   the count without the office's test         → (asked) red: a coach reads the count
+  --   the audit log without the yes's request     → (asked) red: the grant is not said to come on her yes
+  -- And on Kameel's answers of 26 Nov 2026 (Q2, Q4, Q7), seven more:
+  --   the log's dates without the departure test  → (log) red: left Hilton without moving, the director reads his dates
+  --   the office arm without the own-child test   → (mother) red: her own yes, at the office, opened him
+  --   the recogniser arm without "not the caller" → (mother) red: her own yes, as his recogniser, opened him
+  --   the count without the school's day          → (tries) red: yesterday's counted today
+  --   the count with the office's own             → (tries) red: the office's refused try counted against him
+  --   the two doors without the manage test       → (tries) red: a coach counts and records a try
+  --   the record without "his date is missing"    → (tries) red: a try at a date on record recorded
+  PERFORM _v176_case('gate');
+  PERFORM _v176_case('door');
+  PERFORM _v176_case('asked');
+  PERFORM _v176_case('links');
+  PERFORM _v176_case('log');
+  PERFORM _v176_case('agreed');
+  PERFORM _v176_case('record');
+  PERFORM _v176_case('mother');
+  PERFORM _v176_case('tries');
+  PERFORM _v176_case('grants');
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/176 (section 151) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE '%', pg_temp._v_section_summary();
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

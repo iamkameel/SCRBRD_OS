@@ -95,6 +95,9 @@ export function fixFor(kind, { matchId = null, competitionId = null, requestId =
       return { page: "staff", find: ['[data-testid="claims"]'] };
     case "register":
       return { page: "staff", find: ['[data-testid="clearance-register"]'] };
+    case "pupils":
+      // db/176: the pupil claims list, where the waiting account's row has Open his account.
+      return { page: "staff", find: ['[data-testid="pupil-claim-open"]'], fallback: ['[data-testid="pupil-claims"]'] };
     default:
       return null;
   }

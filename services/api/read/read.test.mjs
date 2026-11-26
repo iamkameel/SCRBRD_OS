@@ -308,7 +308,11 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
   // db/175 (slice 5b): a link still waiting for her agreement is not read
   // through the player join; its row is my_terms_due()'s, 'pending', his name
   // and school only, so the screen draws the terms card from her link.
-  ok("db/175: the player join reads her agreed (or withdrawn) links only", /and s\.consent_state <> 'pending'/.test(t));
+  // db/176 (Kameel, 20 Nov 2026, Q1): agreed, or agreed and since withdrawn;
+  // a link withdrawn before she ever agreed is terms still due, not a child.
+  ok("db/176: the player join reads her agreed (or agreed and withdrawn) links only",
+     /and \(s\.consent_state = 'granted' or \(s\.consent_state = 'withdrawn' and s\.consent_at is not null\)\)/.test(t)
+     && !/consent_state <> 'pending'/.test(t));
   ok("...and a waiting link's row is my_terms_due()'s, said 'verified' and 'pending', nothing else of his",
      /union all\s+select t\.player_id, t\.full_name, null, null,\s+t\.school_id, t\.school_name, null,\s+null, 'verified', 'pending',\s+null, null,\s+null, null\s+from my_terms_due\(\) t/.test(t));
   ok("my_terms_due is its own read, the definer's five columns and no parameter",

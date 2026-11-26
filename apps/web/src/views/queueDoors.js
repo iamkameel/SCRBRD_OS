@@ -41,6 +41,7 @@ export function doorsFor({ nav, byId, assignments, onNav }) {
       case "fixture": return fixture;
       case "requests": return page("management", "Decide");
       case "claims": return page("staff", "Confirm");
+      case "pupils": return page("staff", "Open");
       case "register": return page("staff", "The register");
       case "result": return a.matchId ? { label: a.label, go: () => { requestResult(/** @type {string} */ (a.matchId)); onNav("matches"); } } : null;
       default: return null;

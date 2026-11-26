@@ -27,7 +27,8 @@ const ok = (label, cond, detail = "") => {
 
 // The deliberate ones, each by what it says rather than by line number.
 const DELIBERATE = [
-  /replace\(prosrc, 'sa_today\(\)', 'current_date'\)/,           // grant_md5: db/92's body, read back
+  /replace\((p\.)?prosrc, 'sa_today\(\)', 'current_date'\)/,         // grant_md5: db/92's body, read back
+  /pr\.valid_until > current_date\)\)\)' \|\| chr\(10\)/,          // grant_md5: db/176's refusal, cut after that swap
   /replace\(v_def, 'sa_today\(\)', 'current_date'\)/,            // _v128_break(true): the guard's red
   /regexp_replace\(v_def, '\\mcurrent_date\\M', 'sa_today\(\)'/,  // _v128_break(false): mended
   /position\('current_date' IN got\) = 0/,                         // §102 (k): a body no longer spells it
@@ -46,7 +47,7 @@ const stray = lines
 ok("db/99 reads today as sa_today(), the day the product reads since db/128", stray.length === 0,
    stray.slice(0, 10).map(({ l, n }) => `db/99:${n}: ${l.trim().slice(0, 140)}`).join("\n    "));
 const kept = lines.filter((l) => code(l) && DELIBERATE.some((re) => re.test(l))).length;
-ok("...and each deliberate UTC day is still there (11 lines)", kept === 11, `found ${kept}`);
+ok("...and each deliberate UTC day is still there (12 lines)", kept === 12, `found ${kept}`);
 
 // The walks that went red in the window, and the day each reads.
 const WALKS = ["assess", "guardian", "link18", "moves", "notes", "rating"];
