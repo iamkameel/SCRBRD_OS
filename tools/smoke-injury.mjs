@@ -107,7 +107,7 @@ try {
   const coach2 = await login("coach2@example.invalid");      // P Moodley, 2XI
   const parent = await login("parent@example.invalid");      // D Pillay, R Pillay's guardian
   const pillay = await login("pillay@example.invalid");      // R Pillay, himself
-  const pupil = await login("spectator@example.invalid");    // a pupil (`player`) at Hilton
+  const pupil = await login("mate@example.invalid");    // a pupil (`player`) at Hilton
   const director = await login("sarah@example.invalid");
   const principal = await login("principal@example.invalid");
   const dso = await login("dso@example.invalid");

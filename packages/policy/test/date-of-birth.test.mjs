@@ -6,7 +6,7 @@
  * accepts anything is the state this replaces, and a rule that only ever says
  * yes is indistinguishable from no rule.
  */
-import { resolveBirthDate, BIRTH_DATE_MESSAGE, PLAUSIBLE_YEARS, PLAUSIBLE_YEARS_OFFICIAL } from "../src/date-of-birth.mjs";
+import { resolveBirthDate, BIRTH_DATE_MESSAGE, PLAUSIBLE_YEARS, PLAUSIBLE_YEARS_OFFICIAL, majorityOn, isEighteenOn } from "../src/date-of-birth.mjs";
 
 let pass = 0, fail = 0;
 // The third argument is accepted and NOT printed — one call below passes a
@@ -116,6 +116,17 @@ console.log("\n" + "─".repeat(52));
   ok("...and not a plausible pupil", resolveBirthDate({ born: "1979-03-02" }, new Date("2026-09-16")).ok === false);
   const child = resolveBirthDate({ born: "2014-03-02" }, new Date("2026-09-16"), { plausible: PLAUSIBLE_YEARS_OFFICIAL, notPlausible: "born_not_plausible_for_an_official" });
   ok("a twelve-year-old is refused as an official, with the official's reason", child.ok === false && child.reason === "born_not_plausible_for_an_official");
+}
+
+// db/173: the day he turns 18, as Postgres's majority_on() has it, and the
+// import's test of a first date against the school's today.
+{
+  ok("18 years on", majorityOn("2008-11-25") === "2026-11-25");
+  ok("29 February turns 18 on 28 February, as Postgres clamps it", majorityOn("2008-02-29") === "2026-02-28");
+  ok("...and on 29 February in a leap year", majorityOn("2010-02-28") === "2028-02-28" && majorityOn("2012-02-29") === "2030-02-28");
+  ok("18 today is 18", isEighteenOn("2008-11-25", "2026-11-25"));
+  ok("18 tomorrow is not", !isEighteenOn("2008-11-26", "2026-11-25"));
+  ok("19 is", isEighteenOn("2007-01-01", "2026-11-25"));
 }
 
 console.log(`DATE OF BIRTH: ${pass} passed, ${fail} failed`);

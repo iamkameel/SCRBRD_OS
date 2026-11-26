@@ -2706,6 +2706,67 @@ To paste:
 Pasted on the demo and production, 25 Nov 2026, from df3c9433. Hash-checked:
 `sha256 273369f0c7f68464f33493b461f24a5ec4562d406dc09a0c36111102a136f68a`.
 <!-- ── end db/172 ── -->
+<!-- ── db/173: a first date of birth ── -->
+#### A first date of birth: the office's when it makes a boy 18; Coming of age (db/173)
+
+`db/173_dob_first_dates.sql` (branch claude/wip-db173-first-dates, on db/172;
+Kameel's decisions of 25 Nov 2026, all as recommended). The last change before
+Westville's real pupils load. A first date of birth (a new boy, or one with
+none) that makes a boy 18 today is the school office's to write
+(`born_needs_the_office`), and so is any ID number, first or not
+(`id_number_needs_the_office`); the owner with no one signed in is let through,
+as before. Every first date is now recorded in `player_born_change`, `was`
+empty. The office confirms a date with `player_born_confirm()`, and
+`born_unconfirmed(school)` ("Coming of age") lists the boys 18, or 18 within 60
+days, on a date no office person wrote or confirmed. The roster import lists
+the lines that would make a boy 18: the office commits them on its tick of that
+count; anyone else's are left out with one sentence. `pupil_signin_carry_over()`
+carries over only own links stamped before db/169's first paste. The seeded
+test account (spectator@example.invalid) is no longer let through the sign-in
+gate by its id, and its live `player` assignment is ended. Before her "Allow his
+own sign-in", a guardian reads what the recognised account typed (its name and
+year) and the day the office recognised it (`pupil_signin_account()`, Q3); a
+claim held for a safeguarding concern reads as none, and a yes no longer opens
+that account. Its proof is db/99 §148.
+
+To paste, in this order:
+
+1. **db/169, then db/170, db/171 and db/172**, each as its own section says.
+   db/173 replaces two functions of db/172 and three of db/169 whole, and patches
+   `audit_log()` by needle, each only over the body that file left (or its own,
+   on a second paste): anything else fails the paste loudly, changing nothing.
+2. **db/173 as one transaction:** the SQL Editor's single run, or `psql -1 -v
+   ON_ERROR_STOP=1 -f`. Read its NOTICE: the count of the test account's
+   `player` assignments it ended (1 where the seeded row is live, 0 where it is
+   already ended). It ends them only while that account is
+   spectator@example.invalid and names no boy; otherwise it says so and touches
+   nothing.
+3. **The API that reads it** (`services/api/expected-migrations.json` lists 173,
+   and the API refuses to start without it).
+
+- **No roster imports between the paste and the API's deploy.** The API before
+  it does not word db/173's two refusals, and does not list the lines that make
+  a boy 18, so an import in that window fails on a raw name for any such line
+  (it fails closed: nothing is written).
+- **Paste first, then load Westville** (RT D4): the carry-over's guard and the
+  first-date rule must both be in before the first real roster arrives.
+- **After the load**, the office opens School, People: "Coming of age" lists
+  each boy 18, or 18 within 60 days, on a date nobody at the office checked
+  (`GET /api/schools/:id/coming-of-age`), and "Confirm his date" confirms one
+  (`POST /api/players/:id/date-of-birth/confirm`). The owner in the SQL Editor
+  reads nothing there (no one is signed in). The office's own import counts as
+  checked only for the lines it ticked (Kameel, 26 Nov 2026, Q1).
+- **Who runs the load:** the school's office, through Import. A platform
+  login is not the office of the school: its lines that make a boy 18 are left
+  out. The owner's hand load is recorded as SCRBRD's, and every such boy is on
+  Coming of age until the office confirms him.
+- It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, `DROP ... IF
+  EXISTS` before each constraint and trigger. It takes a short lock on `player`
+  and `player_born_change` (ten-second `lock_timeout`, reset by its last
+  statement); a paste that timed out on its lock is simply run again.
+
+Not pasted yet. Hash to check: `sha256 97fa4a5e56a738e7a0cf100746bb7dd6e0280ff8e5ba5a2546e77e0d6ac74ed7`.
+<!-- ── end db/173 ── -->
 
 ### 5 · Cloud Run, the first time
 

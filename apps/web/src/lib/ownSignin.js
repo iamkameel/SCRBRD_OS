@@ -57,6 +57,20 @@ export function heldWords(held, name) {
   return `The yes is recorded, but ${name}'s account has not been opened yet. Try again, or ask the school office.`;
 }
 
+/**
+ * Q3 (Kameel, 25 Nov 2026; db/173): before her yes, what the account the
+ * school recognised as him typed, and the day it did, so she can tell it is
+ * his. Nothing else of the account. NULL when there is none to show.
+ * @param {{ typedName: string, typedYear: string | null, recognisedOn: string | null } | null | undefined} a
+ * @param {string} place  "school" (the words' w.place)
+ */
+export function accountWords(a, place = "school") {
+  if (!a?.typedName) return null;
+  const year = a.typedYear ? `, ${a.typedYear}` : "";
+  const when = a.recognisedOn ? ` on ${dayOf(a.recognisedOn)}` : "";
+  return `Your yes opens the account the ${place} office recognised as him${when}. It gave the name \u201c${a.typedName}\u201d${year}. If that is not him, ask the ${place} office before you say yes.`;
+}
+
 /** A day as the family reads it: 18 November 2026. @param {string} iso (a time, or a YYYY-MM-DD day) */
 function dayOf(iso) {
   const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T12:00:00Z` : iso);

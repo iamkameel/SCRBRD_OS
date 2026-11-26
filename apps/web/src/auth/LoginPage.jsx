@@ -42,10 +42,9 @@ const PILOT_ACCOUNTS = [
   // does NOT get: the coaches' development notes about him.
   { email: "pillay@example.invalid",  label: "Player",         role: "player" },
   { email: "medical@example.invalid", label: "Medical",        role: "medical" },
-  // A genuine spectator. The account seeded as spectator@example.invalid holds
-  // a PLAYER assignment, and the player bundle includes medical.status.read —
-  // so it is the wrong account to demonstrate what a bystander can see, and
-  // the wrong one to test with.
+  // A genuine spectator. The account seeded as spectator@example.invalid held
+  // a PLAYER assignment naming no boy until db/173 ended it; watcher@ has
+  // always been the plain bystander, so it stays the one shown here.
   { email: "watcher@example.invalid", label: "Spectator",      role: "spectator" },
   // The bursar. The only demo account holding sponsorship.finance.read, and
   // therefore the only one that can show the commercial mask doing anything:

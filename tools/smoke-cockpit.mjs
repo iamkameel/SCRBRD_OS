@@ -207,7 +207,7 @@ try {
   const medic = await login("medical@example.invalid");       // physio, the school
   const head = await login("sarah@example.invalid");          // director of sport
   const scorer = await login("scorer@example.invalid");       // scorer, the school
-  const pupil = await login("spectator@example.invalid");     // seeded as a spectator; his assignment is a pupil's (player, Hilton), no self-access
+  const pupil = await login("mate@example.invalid");     // T Bekker's own account: `player` on the 1st XI, no self-access
   const self = await login("pillay@example.invalid");         // R Pillay: a pupil on the side, and self-access to his own record
   const wes = await login("coach.wes@example.invalid");       // Westville's 1XI coach
   const owner = await login("owner@example.invalid");         // the owner's key
@@ -370,8 +370,11 @@ try {
     await assign(pupilW, "player", WES, "1XI");
     await assign(pupilW, "selfaccess", WES, null, AWAYBAT);
     // db/169: enrolled the way the office did before db/169 (his own link stamped
-    // 'granted'); the paste carries that over as the office's yes (db/169 §6).
-    await q(`select pupil_signin_carry_over()`);
+    // 'granted'); the paste carried that over as the school's yes (db/169 §6).
+    // db/173 carries over only stamps from before db/169's first paste, so the
+    // walk writes that yes itself.
+    await q(`insert into pupil_signin_consent (player_id, answer, how, given_by, given_by_name, terms_version, given_at, school_id)
+             values ($1, 'yes', 'enrolled', $2, 'The office', 'popia-2026-01', now(), $3)`, [AWAYBAT, OFFICE, WES]);
     const parentW = await appoint("away.parent.ck@example.invalid", "V Away Parent", WES, "guardian");
     await assign(parentW, "guardian", WES, null, AWAYBAT);
     const specW = await appoint("away.spec.ck@example.invalid", "V Away Spectator", WES, "spectator");

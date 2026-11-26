@@ -4,12 +4,12 @@ import { Card, EmptyState } from "../ui/primitives.jsx";
 import { api, apiBase, getToken, signedIn } from "../lib/api.js";
 import { schoolsWhere } from "../lib/session.js";
 import { holdsCapability } from "../rbac/index.js";
-import { IMPORT_KINDS, MAX_FILE_BYTES, checkSummary, errorWords, importSummary, kindsHeld, mayImport, refusalWords } from "../lib/importScreen.js";
+import { IMPORT_KINDS, MAX_FILE_BYTES, adultTick, checkSummary, errorWords, importSummary, kindsHeld, mayImport, refusalWords } from "../lib/importScreen.js";
 
 /**
  * Settings → Import: a spreadsheet of boys, checked, then imported.
  *
- *   POST /api/import/:kind { csv, schoolId, commit }   (services/api/io/import-api.mjs)
+ *   POST /api/import/:kind { csv, schoolId, commit, adultsChecked }   (services/api/io/import-api.mjs)
  *   GET  /api/import/:kind/template
  *
  * WHAT THIS SCREEN DECIDES: one thing, and it is the server's rule said
@@ -20,7 +20,9 @@ import { IMPORT_KINDS, MAX_FILE_BYTES, checkSummary, errorWords, importSummary, 
  * error even if it were asked. Every row is a write under the person's own
  * policy, so a school they may not import into is refused row by row there.
  * Nothing is kept here: the file is read in the browser, sent to the route and
- * dropped with the page. This screen never draws a cell of it back.
+ * dropped with the page. This screen never draws a cell of it back, but for
+ * the names on the lines whose first date makes a boy 18 (db/173): the office
+ * ticks that it has checked them, and anyone else's are left out, each said.
  *
  * Floors: text 12px or more, anything tapped 44px or more.
  */
@@ -65,11 +67,15 @@ function ImportLive({ role }) {
   const [result, setResult] = useState(/** @type {string | null} */ (null));
   const [refusal, setRefusal] = useState(/** @type {string | null} */ (null));
   const [saidTemplate, setSaidTemplate] = useState(/** @type {string | null} */ (null));
+  // The office's tick for the lines that make a boy 18, for the Check it was given on.
+  const [ticked, setTicked] = useState(/** @type {any} */ (null));
 
   const now = { kind: kind.id, schoolId: school, text: file?.text ?? null };
   // What a Check said counts only for the file, kind and school it was run on.
   const shown = checked && checked.kind === now.kind && checked.schoolId === now.schoolId && checked.text === now.text ? checked.report : null;
-  const offered = mayImport(checked, now);
+  const tick = shown ? adultTick(shown) : null;
+  const tickedNow = tick != null && ticked === checked;
+  const offered = mayImport(checked, now) && (tick == null || !tick.required || tickedNow);
   const wipe = () => { setResult(null); setRefusal(null); };
 
   const pick = async (ev) => {
@@ -87,7 +93,8 @@ function ImportLive({ role }) {
     setBusy(commit ? "import" : "check"); wipe();
     try {
       const report = await api(`/api/import/${encodeURIComponent(kind.id)}`, { method: "POST", timeoutMs: 60000,
-        body: { csv: file.text, schoolId: school, ...(commit ? { commit: true } : {}) } });
+        body: { csv: file.text, schoolId: school, ...(commit ? { commit: true } : {}),
+                ...(commit && tickedNow && tick ? { adultsChecked: tick.hash } : {}) } });
       if (commit && report?.committed === true) { setResult(importSummary(report)); setChecked(null); }
       else setChecked({ kind: kind.id, schoolId: school, text: file.text, report });
     } catch (e) {
@@ -180,6 +187,28 @@ function ImportLive({ role }) {
               <ul data-testid="import-warnings" style={{ margin: 0, paddingLeft: "18px", display: "grid", gap: "4px", ...SUB() }}>
                 {shown.warnings.map((e, i) => <li key={i}>{errorWords(e)}</li>)}
               </ul>
+            )}
+            {shown.leftOut?.length > 0 && (
+              <div data-testid="import-left-out" style={SUB()}>
+                Left out, and not written: the school office records a date of birth that makes a boy 18.
+                <ul style={{ margin: "4px 0 0", paddingLeft: "18px", display: "grid", gap: "4px" }}>
+                  {shown.leftOut.map((e, i) => <li key={i}>{errorWords(e)}</li>)}
+                </ul>
+              </div>
+            )}
+            {tick && (
+              <div data-testid="import-adults" style={{ display: "grid", gap: "6px" }}>
+                <ul style={{ margin: 0, paddingLeft: "18px", display: "grid", gap: "4px", ...SUB(), color: D.textPrimary }}>
+                  {tick.lines.map((l, i) => <li key={i}>{l}</li>)}
+                </ul>
+                <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "44px", cursor: "pointer",
+                                fontFamily: D.body, fontSize: "13px", color: D.textPrimary }}>
+                  <input type="checkbox" data-testid="import-adults-tick" checked={tickedNow}
+                         onChange={(e) => setTicked(e.target.checked ? checked : null)}
+                         style={{ width: "44px", height: "44px", margin: 0, flexShrink: 0 }}/>
+                  {tick.words}
+                </label>
+              </div>
             )}
           </div>
         )}

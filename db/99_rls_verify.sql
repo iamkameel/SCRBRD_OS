@@ -82,6 +82,61 @@ CREATE OR REPLACE FUNCTION _assert(cond boolean, msg text) RETURNS void AS $$
 -- `IF NOT NULL` does not raise. That let an assertion pass vacuously.
 BEGIN IF cond IS NOT TRUE THEN RAISE EXCEPTION 'RLS ASSERT FAILED: % (condition was %)', msg, coalesce(cond::text, 'NULL'); END IF; END $$ LANGUAGE plpgsql;
 
+-- db/173: a write made for a signed-in person meets the date-of-birth rules
+-- under any login, so a definer door called under a session meets them as
+-- the owner. This file's own fixtures (its definer helpers, named with a
+-- leading underscore) are the owner's writes, made "as the owner" while a
+-- case's session may still be set: for the rules' check alone, such a write
+-- reads as no one signed in, as it did before db/173. Not for the helpers
+-- §147 and §148 call as doors under a session, and never for a write through
+-- the application role or through a production function.
+CREATE OR REPLACE FUNCTION _v173_fixture_caller() RETURNS text AS $$
+DECLARE ctx text; l text; m text[];
+BEGIN
+  GET DIAGNOSTICS ctx = PG_CONTEXT;
+  -- The first function named after the shim's own frames.
+  FOR l IN SELECT x FROM regexp_split_to_table(ctx, '\n') x LOOP
+    CONTINUE WHEN position('_v173_fixture' IN l) > 0;
+    m := regexp_match(l, '^(?:PL/pgSQL function ([a-z_0-9]+)\(|SQL function "([a-z_0-9]+)")');
+    IF m IS NOT NULL THEN RETURN coalesce(m[1], m[2]); END IF;
+  END LOOP;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION _v173_fixture_before() RETURNS trigger AS $$
+DECLARE who text;
+BEGIN
+  IF current_user <> 'scrbrd_app' AND session_user <> 'scrbrd_app'
+     AND nullif(current_setting('app.user_id', true), '') IS NOT NULL THEN
+    who := _v173_fixture_caller();
+    IF who LIKE '\_%' AND who NOT IN ('_v172_boy', '_v172_door', '_v173_door_add') THEN
+      PERFORM set_config('v173.fixture_user', current_setting('app.user_id', true), true);
+      PERFORM set_config('app.user_id', '', true);
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION _v173_fixture_after() RETURNS trigger AS $$
+BEGIN
+  IF coalesce(current_setting('v173.fixture_user', true), '') <> '' THEN
+    PERFORM set_config('app.user_id', current_setting('v173.fixture_user', true), true);
+    PERFORM set_config('v173.fixture_user', '', true);
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+-- Fired by name: "_v173..." before "player_born_agrees_with_id", and
+-- "player_born_agrees_with_id_v173" straight after it, so every other
+-- trigger, and the record of the change, sees the session as it was.
+-- The order assumed: the session is blanked for every BEFORE trigger on
+-- player whose name sorts between the pair; as of db/173 that is
+-- player_born_agrees_with_id alone (the check it is blanked for), and
+-- player_pupil_claim_gone, the only other BEFORE trigger, sorts after it.
+DROP TRIGGER IF EXISTS _v173_fixture_before ON player;
+CREATE TRIGGER _v173_fixture_before BEFORE INSERT OR UPDATE OF born, id_number ON player
+  FOR EACH ROW EXECUTE FUNCTION _v173_fixture_before();
+DROP TRIGGER IF EXISTS player_born_agrees_with_id_v173 ON player;
+CREATE TRIGGER player_born_agrees_with_id_v173 BEFORE INSERT OR UPDATE OF born, id_number ON player
+  FOR EACH ROW EXECUTE FUNCTION _v173_fixture_after();
+
 -- Revoke an assignment as the table owner. Created here, before privilege is
 -- dropped, because the unprivileged role cannot SET ROLE back up — which is
 -- itself the correct behaviour and worth not weakening just to write a test.
@@ -16134,8 +16189,11 @@ CREATE OR REPLACE FUNCTION _v169_carry() RETURNS integer AS $$
   SELECT pupil_signin_carry_over()
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- A self link stamped 'granted' by the office before db/169, past row security.
+-- Dated a day before db/169's first paste on this database: since db/173 the
+-- carry-over reads only such stamps.
 CREATE OR REPLACE FUNCTION _v169_stamp_granted(p_boy uuid) RETURNS void AS $$
-  UPDATE assignment_subject SET consent_state = 'granted', consent_version = 'popia-2026-01', consent_at = now()
+  UPDATE assignment_subject SET consent_state = 'granted', consent_version = 'popia-2026-01',
+         consent_at = coalesce(pupil_signin_first_paste(), now()) - interval '1 day'
    WHERE player_id = p_boy AND relationship = 'self'
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 
@@ -16313,7 +16371,7 @@ DECLARE
   DOS    uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport
   PRIN   uuid := '88888888-0000-0000-0000-000000000016';   -- Hilton's principal
   PARENT uuid := '88888888-0000-0000-0000-000000000005';   -- R Pillay's guardian: another boy's, at Hilton
-  PUPIL  uuid := '88888888-0000-0000-0000-000000000001';   -- the seed's spectator@ pupil (player, 1XI)
+  PUPIL  uuid := '88888888-0000-0000-0000-000000000001';   -- the seed's spectator@, the test account (a spectator since db/173)
   WES    uuid := '22222222-2222-2222-2222-222222222222';   -- Westville
   K uuid; K2 uuid; K3 uuid; B uuid; B2 uuid; G uuid; G2 uuid; G3 uuid; q uuid; c uuid;
   v text; v2 text; ok_ boolean; why text; inf boolean; r record; n int;
@@ -16771,8 +16829,8 @@ BEGIN
     SELECT x.ok, x.reason INTO ok_, why FROM decide_role_request(q, true, 'v164', NULL, 'U16A') x;
     PERFORM _assert(NOT coalesce(ok_, false) AND why = 'player_required', format('§142 (noboy): the grant door made a `player` naming no boy (%s, %s)', ok_, why));
     PERFORM _assert(_v169_role(K2, 'player') IS NULL, '§142 (noboy): a refused grant left a `player` role');
-    -- The seeded test account (spectator@, `player` on the 1st XI, no boy) is
-    -- the one account A does not close, by its id.
+    -- The seeded test account (spectator@) holds no pupil's role since db/173,
+    -- which also took away the exemption by its id: §148 (gate).
     PERFORM _assert(_v169_boy(PUPIL) IS NULL AND _v169_open(PUPIL), '§142 (noboy): the seeded test account names a boy, or is closed');
 
   ELSIF p_case = 'form' THEN
@@ -17037,6 +17095,12 @@ BEGIN
     GET DIAGNOSTICS n = ROW_COUNT;
     PERFORM _assert(n = 1, '§142 (writes): open, he could not declare his own availability (the control)');
     v := _v169_ungated();
+    -- db/173 adds three, each asking for itself: player_born_confirm() is the
+    -- office's (player_born_office(), through app_can(), which the gate
+    -- closes); pupil_signin_account() answers a guardian on her own link and
+    -- never a child's own account (pupil_signin_child_account());
+    -- player_born_own_child() answers only whether the caller is the boy's
+    -- own guardian (Q8's refusal), and only about the caller.
     PERFORM _assert(v = 'auth_identity_sign_in(text,text,text,text),captain_nominate(uuid,uuid,jsonb),'
          || 'colours_decide(uuid,text,text),colours_nominate(uuid,text,text),colours_nominations(),'
          || 'dso_contacts(uuid),emergency_contact_stamp(),equipment_issue_fits(),honour_nomination_id(uuid),'
@@ -17045,8 +17109,8 @@ BEGIN
          || 'lift_contacts(uuid),lift_seat_decline(uuid),lift_seat_withdraw(uuid),match_award(uuid,uuid,jsonb),'
          || 'match_award_state(uuid),match_award_withdraw(uuid,text,text),'
          || 'match_nomination_decide(uuid,text,uuid,jsonb),match_nomination_state(uuid),my_alert_choices(),'
-         || 'my_lifts(),nominations_to_decide(),passport_consent_writer_ok(uuid),pupil_claim_not_him(uuid),'
-         || 'pupil_claim_recognise(uuid,uuid),pupil_claim_send(uuid,text,text,date),'
+         || 'my_lifts(),nominations_to_decide(),passport_consent_writer_ok(uuid),player_born_confirm(uuid),player_born_own_child(uuid),pupil_claim_not_him(uuid),'
+         || 'pupil_claim_recognise(uuid,uuid),pupil_claim_send(uuid,text,text,date),pupil_signin_account(uuid),'
          || 'pupil_signin_consent_set(uuid,boolean),pupil_signin_office_set(uuid,boolean,text,date),'
          || 'pupil_signin_state(uuid),recognition_review_stand(uuid),recognition_reviews_open(uuid),'
          || 'safeguarding_concern_open(uuid),safeguarding_family(uuid),'
@@ -17102,10 +17166,13 @@ BEGIN
   RETURN b;
 END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- His changes, past row security, oldest first: "was>became:how:by;…" ('-' for none).
+-- Since db/173 the owner's own first date (a fixture's INSERT, no one signed
+-- in) is a row too; it is left out here, so each case reads what it did
+-- itself. §148 reads every row.
 CREATE OR REPLACE FUNCTION _v172_rows(p_player uuid) RETURNS text AS $$
   SELECT coalesce(string_agg(coalesce(c.was::text, '-') || '>' || c.became || ':' || c.how || ':' || coalesce(c.by_id::text, '-'),
                              ';' ORDER BY c.at, c.id), '')
-    FROM player_born_change c WHERE c.player_id = p_player
+    FROM player_born_change c WHERE c.player_id = p_player AND NOT (c.how = 'owner' AND c.was IS NULL)
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- The name a change recorded for its author, past row security (the latest).
 CREATE OR REPLACE FUNCTION _v172_by_name(p_player uuid) RETURNS text AS $$
@@ -17288,7 +17355,8 @@ BEGIN
     INSERT INTO player (school_id, team_code, full_name, squad_no, playing_role, born, id_number)
     VALUES (HIL, 'U16A', 'Verify Onesevtwo Formboy', 172, 'batter', B, IDN) RETURNING id INTO BOY;
     PERFORM _assert(BOY IS NOT NULL, '§147 (insert): the office could not insert an agreeing row');
-    PERFORM _assert(_v172_rows(BOY) = '', format('§147 (insert): a first date is recorded as a change: %s', _v172_rows(BOY)));
+    -- db/173: a first date written with a new boy is recorded, `was` empty.
+    PERFORM _assert(_v172_rows(BOY) = format('->%s:capture:%s', B, REG), format('§147 (insert): the first date is recorded as %s', _v172_rows(BOY)));
     -- Month thirteen: unreadable, so unchecked (the doors refuse it in JS).
     BOY := _v172_boy('insert unreadable', B2, '0913015172084');
     PERFORM _assert(BOY IS NOT NULL, '§147 (insert): an unreadable number was checked against the date');
@@ -17402,7 +17470,8 @@ BEGIN
     SELECT * INTO r FROM player_born_correct(BOY, B2, 'Verify 172: birth certificate seen') x;
     PERFORM _assert(r.ok AND r.reason IS NULL AND r.was = B AND r.born = B2, format('§147 (door): the correction answered %s', row_to_json(r)));
     PERFORM _assert(_v172_now(BOY) = B2 || '|-', format('§147 (door): his date is %s', _v172_now(BOY)));
-    PERFORM _assert(_v172_rows(BOY) = format('%s>%s:correction:%s', B, B2, REG), format('§147 (door): recorded as %s', _v172_rows(BOY)));
+    -- db/173: his first date is a row too, the office's (it wrote him, through a door, under its session).
+    PERFORM _assert(_v172_rows(BOY) = format('->%s:capture:%s;%s>%s:correction:%s', B, REG, B, B2, REG), format('§147 (door): recorded as %s', _v172_rows(BOY)));
     PERFORM _assert(_v172_by_name(BOY) = _v168_audit_label(REG), format('§147 (door): the office person''s label was not kept: %s', _v172_by_name(BOY)));
     PERFORM _assert(_v172_reason(BOY) = 'Verify 172: birth certificate seen', format('§147 (door): the reason recorded is %s', _v172_reason(BOY)));
     -- 200 characters is a reason, trimmed.
@@ -17417,7 +17486,8 @@ BEGIN
     PERFORM player_born_correct(BOY, B2, 'Verify 172: birth certificate seen');
     PERFORM player_born_correct(BOY, B, 'Verify 172: birth certificate seen');
     SELECT count(*) INTO n FROM player_born_changes(BOY);
-    PERFORM _assert(n = 2, format('§147 (read): the office reads %s changes', n));
+    -- Two corrections, and (db/173) his first date, the owner's.
+    PERFORM _assert(n = 3, format('§147 (read): the office reads %s changes', n));
     SELECT * INTO r FROM player_born_changes(BOY) LIMIT 1;
     PERFORM _assert(r.was = B2 AND r.became = B AND r.how = 'correction' AND r.by_name IS NOT NULL
                     AND r.reason = 'Verify 172: birth certificate seen',
@@ -17545,14 +17615,16 @@ BEGIN
     PERFORM _born_constraint(true);
     PERFORM _as(DOS);
     v := _v172_write(BOY, 'both', (sa_today() - interval '19 years')::date || '|' || to_char((sa_today() - interval '19 years')::date, 'YYMMDD') || '5000080', 'import');
-    PERFORM _assert(v = '42501:id_number_change_is_the_office', format('§147 (idswap): a date and a forged number in one: %s', v));
+    -- db/173: a first date of 19 from the director is refused before the number is read.
+    PERFORM _assert(v = '42501:born_needs_the_office', format('§147 (idswap): a date and a forged number in one: %s', v));
     PERFORM _assert(_v172_now(BOY) = '-|' || IDN AND _v172_rows(BOY) = '', format('§147 (idswap): the forged date landed: %s / %s', _v172_now(BOY), _v172_rows(BOY)));
-    -- A number where there was none is a fill, the director's as before.
+    -- A number where there was none: the office's too since db/173 (Kameel,
+    -- 25 Nov 2026: an ID number, first or not, is the office's to write).
     PERFORM set_config('app.user_id', '', true);
     BOY := _v172_boy('idswap fill', B, NULL);
     PERFORM _as(DOS);
     v := _v172_write(BOY, 'id_number', IDN);
-    PERFORM _assert(v = '1 rows', format('§147 (idswap): filling a missing number: %s', v));
+    PERFORM _assert(v = '42501:id_number_needs_the_office', format('§147 (idswap): filling a missing number: %s', v));
 
   ELSIF p_case = 'definer' THEN
     -- (definer) A door the application calls is not the owner (review S2):
@@ -17778,6 +17850,530 @@ CREATE OR REPLACE FUNCTION _v171_acl(p_fn text) RETURNS text AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
 -- └── db/171 (section 146) ─────────────────────────────────────────────
 
+-- ┌── db/173 (section 148): a first date of birth, the office's when it
+-- makes a boy 18; first dates recorded; "Coming of age"; the carry-over's
+-- guard; the test account gated ──────────────────────────────────────
+-- Helpers, as the owner. Every name and number is invented.
+
+-- His date-of-birth rows, past row security, oldest first:
+-- "was>became:how:by:office;…" ('-' for none, t/f for the office).
+CREATE OR REPLACE FUNCTION _v173_rows(p_player uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(coalesce(c.was::text, '-') || '>' || c.became || ':' || c.how || ':'
+                             || coalesce(c.by_id::text, '-') || ':' || CASE WHEN c.by_office THEN 't' ELSE 'f' END,
+                             ';' ORDER BY c.at, c.id), '')
+    FROM player_born_change c WHERE c.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A Hilton U16A boy written by the owner with no one signed in (a seed, the
+-- SQL Editor): his id. A NULL date needs _born_constraint(false) first.
+CREATE OR REPLACE FUNCTION _v173_owner_boy(p_tag text, p_born date, p_id text) RETURNS uuid AS $$
+DECLARE was text := current_setting('app.user_id', true); b uuid;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born, id_number)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'U16A', 'Verify Oneseventhree ' || initcap(p_tag), 'Oneseventhree', 173, 'batter', p_born, p_id)
+  RETURNING id INTO b;
+  PERFORM set_config('app.user_id', coalesce(was, ''), true);
+  RETURN b;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The owner sets his date, no one signed in.
+CREATE OR REPLACE FUNCTION _v173_owner_born(p_player uuid, p_born date) RETURNS void AS $$
+DECLARE was text := current_setting('app.user_id', true);
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  UPDATE player SET born = p_born WHERE id = p_player;
+  PERFORM set_config('app.user_id', coalesce(was, ''), true);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The application adds a boy, as the caller (the Add Player form's and the
+-- import's INSERT): his id, or the refusal "sqlstate:message". p_how sets
+-- app.born_how for the statement ('' none).
+-- 'import+tick' is an import line under the office's tick (app.born_ticked).
+CREATE OR REPLACE FUNCTION _v173_add(p_tag text, p_born date, p_id text, p_how text DEFAULT '') RETURNS text AS $$
+DECLARE b uuid; st text; msg text;
+BEGIN
+  PERFORM set_config('app.born_how', split_part(p_how, '+', 1), true);
+  PERFORM set_config('app.born_ticked', CASE WHEN p_how LIKE '%+tick' THEN 'on' ELSE '' END, true);
+  BEGIN
+    INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born, id_number)
+    VALUES ('11111111-1111-1111-1111-111111111111', 'U16A', 'Verify Oneseventhree ' || initcap(p_tag), 'Oneseventhree', 173, 'batter', p_born, p_id)
+    RETURNING id INTO b;
+  EXCEPTION WHEN check_violation OR insufficient_privilege THEN
+    GET STACKED DIAGNOSTICS st = RETURNED_SQLSTATE, msg = MESSAGE_TEXT;
+    PERFORM set_config('app.born_how', '', true); PERFORM set_config('app.born_ticked', '', true);
+    RETURN st || ':' || msg;
+  END;
+  PERFORM set_config('app.born_how', '', true); PERFORM set_config('app.born_ticked', '', true);
+  RETURN b::text;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- His ID number's record, past row security, oldest first: "how:by:office;…".
+CREATE OR REPLACE FUNCTION _v173_id_rows(p_player uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(c.how || ':' || coalesce(c.by_id::text, '-') || ':' || CASE WHEN c.by_office THEN 't' ELSE 'f' END,
+                             ';' ORDER BY c.at, c.id), '')
+    FROM player_id_number_change c WHERE c.player_id = p_player
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An office person at Hilton of this section's own (schooladmin), as the owner: the id.
+CREATE OR REPLACE FUNCTION _v173_office(p_tag text) RETURNS uuid AS $$
+DECLARE u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'v173.' || p_tag || '@example.invalid', 'V173 ' || initcap(p_tag), 'schooladmin')
+  RETURNING id INTO u;
+  INSERT INTO role_assignment (person_id, role, school_id) VALUES (u, 'schooladmin', '11111111-1111-1111-1111-111111111111');
+  RETURN u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A person made a boy's guardian, a verified parent link, as the owner.
+CREATE OR REPLACE FUNCTION _v173_make_guardian(p_person uuid, p_boy uuid) RETURNS void AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_person, 'guardian', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_boy, 'parent', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'granted', 'popia-2026-01', now(),
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- His own account given a self link, pending, as the office enrols one (owner).
+CREATE OR REPLACE FUNCTION _v173_self_pending(p_account uuid, p_boy uuid) RETURNS void AS $$
+DECLARE a uuid;
+BEGIN
+  INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+  VALUES (p_account, 'selfaccess', '11111111-1111-1111-1111-111111111111', sa_today() - 30) RETURNING id INTO a;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, created_by, valid_from)
+  VALUES (a, p_boy, 'self', 'verified', '88888888-0000-0000-0000-00000000000c', now(), 'pending',
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30);
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v173_self_stamp(p_boy uuid) RETURNS text AS $$
+  SELECT string_agg(consent_state, ',') FROM assignment_subject WHERE player_id = p_boy AND relationship = 'self'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A door that adds a boy for whoever calls it, asking nothing: a definer,
+-- as the owner, under the caller's login and session. Throwaway, here only: his id, or
+-- "sqlstate:message".
+CREATE OR REPLACE FUNCTION _v173_door_add(p_tag text, p_born date) RETURNS text AS $$
+DECLARE b uuid; st text; msg text;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES ('11111111-1111-1111-1111-111111111111', 'U16A', 'Verify Oneseventhree ' || initcap(p_tag), 'Oneseventhree', 173, 'batter', p_born)
+  RETURNING id INTO b;
+  RETURN b::text;
+EXCEPTION WHEN check_violation OR insufficient_privilege THEN
+  GET STACKED DIAGNOSTICS st = RETURNED_SQLSTATE, msg = MESSAGE_TEXT;
+  RETURN st || ':' || msg;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How many boys called p_tag the owner can see: whether a refused add landed.
+CREATE OR REPLACE FUNCTION _v173_named(p_tag text) RETURNS integer AS $$
+  SELECT count(*)::int FROM player WHERE full_name = 'Verify Oneseventhree ' || initcap(p_tag)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- db/169's carry-over and db/173's reading of the ledger (owner-only).
+CREATE OR REPLACE FUNCTION _v173_carry() RETURNS integer AS $$
+  SELECT pupil_signin_carry_over()
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+CREATE OR REPLACE FUNCTION _v173_first_paste() RETURNS timestamptz AS $$
+  SELECT pupil_signin_first_paste()
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- His own link stamped 'granted', past row security: now (the grant door's
+-- way since db/169) or a day before db/169's first paste (the office's way
+-- before it).
+CREATE OR REPLACE FUNCTION _v173_stamp(p_boy uuid, p_before boolean) RETURNS void AS $$
+  UPDATE assignment_subject
+     SET consent_state = 'granted', consent_version = 'popia-2026-01',
+         consent_at = CASE WHEN p_before THEN pupil_signin_first_paste() - interval '1 day' ELSE now() END,
+         verified_at = CASE WHEN p_before THEN pupil_signin_first_paste() - interval '1 day' ELSE verified_at END
+   WHERE player_id = p_boy AND relationship = 'self'
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A live `player` on Hilton's 1st XI for an account, as the owner: the
+-- assignment the seeded test account held before db/173.
+CREATE OR REPLACE FUNCTION _v173_give_player(p_account uuid) RETURNS uuid AS $$
+  INSERT INTO role_assignment (person_id, role, school_id, team_code)
+  VALUES (p_account, 'player', '11111111-1111-1111-1111-111111111111', '1XI')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- An account's live pupil's roles, past row security.
+CREATE OR REPLACE FUNCTION _v173_pupil_roles(p_account uuid) RETURNS integer AS $$
+  SELECT count(*)::int FROM role_assignment a
+   WHERE a.person_id = p_account AND a.active AND a.role IN ('player', 'selfaccess')
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The first guardian linked to a boy, past row security.
+CREATE OR REPLACE FUNCTION _v169_guardian_of_first(p_boy uuid) RETURNS uuid AS $$
+  SELECT a.person_id FROM assignment_subject s JOIN role_assignment a ON a.id = s.assignment_id
+   WHERE s.player_id = p_boy AND a.role = 'guardian' AND s.consent_state = 'granted' ORDER BY s.created_at, s.id LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A function's body, owner-only to read in general.
+CREATE OR REPLACE FUNCTION _v173_body(p_fn text) RETURNS text AS $$
+  SELECT prosrc FROM pg_proc WHERE oid = to_regprocedure(p_fn)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of §148, run as the caller (scrbrd_app, under each person's
+-- session in turn). Raises on its first failure.
+CREATE OR REPLACE FUNCTION _v173_case(p_case text) RETURNS void AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  REG    uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's office (schooladmin)
+  PRIN   uuid := '88888888-0000-0000-0000-000000000016';   -- Hilton's principal
+  DOS    uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (player.profile.manage)
+  WESOFF uuid := '88888888-0000-0000-0000-00000000000d';   -- Westville's office
+  TEST   uuid := '88888888-0000-0000-0000-000000000001';   -- the seeded test account, spectator@
+  -- 19; 18 today; 18 tomorrow; 18 in 30, 59 and 61 days; 14 (with the ID
+  -- number that carries it).
+  ADULT   date := (sa_today() - interval '19 years')::date;
+  TODAY18 date := (sa_today() - interval '18 years')::date;
+  TOMORROW18 date := (sa_today() - interval '18 years')::date + 1;
+  NEAR    date := (sa_today() + 30 - interval '18 years')::date;
+  NEAR59  date := (sa_today() + 59 - interval '18 years')::date;
+  FAR61   date := (sa_today() + 61 - interval '18 years')::date;
+  B       date := make_date(extract(year FROM sa_today())::int - 14, 5, 17);
+  IDN     text := to_char(make_date(extract(year FROM sa_today())::int - 14, 5, 17), 'YYMMDD') || '5173084';
+  IDA     text := to_char((sa_today() - interval '19 years')::date, 'YYMMDD') || '5173084';
+  BOY uuid; BOY2 uuid; BOY3 uuid; K uuid; K1 uuid; SUP uuid; v text; v2 text; n int; ok_ boolean; why text; r record;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+
+  IF p_case = 'first' THEN
+    -- (first) A first date that makes him 18 today is the office's to write
+    -- (Kameel, 25 Nov 2026): the director of sport's INSERT of one is refused
+    -- and lands nothing; 18 tomorrow is not 18; a minor's passes; the office's
+    -- adult passes; the owner with no one signed in passes. Each first date
+    -- writes one row, `was` empty.
+    PERFORM _as(DOS);
+    v := _v173_add('first adult', ADULT, NULL);
+    PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s adult date: %s', v));
+    v := _v173_add('first today', TODAY18, NULL);
+    PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s date of 18 today: %s', v));
+    -- A door (a definer, as the owner) under his session, with this file's own
+    -- login, which is not the application's: refused all the same (M1: the
+    -- rules hold however the application logs in).
+    PERFORM _as(DOS);
+    v := _v173_door_add('first owners login', ADULT);
+    PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): a door under his session, another login: %s', v));
+    -- Logged in as the application, through a door (a definer, as the owner):
+    -- the same, under his session and under none. Needs a superuser login to
+    -- log in as the application for a moment, as §147 (definer) does.
+    IF _v172_super() THEN
+      PERFORM set_config('app.user_id', '', true);
+      SET SESSION AUTHORIZATION scrbrd_app;
+      PERFORM _as(DOS);
+      v := _v173_door_add('first door', ADULT);
+      PERFORM set_config('app.user_id', '', true);
+      v2 := _v173_door_add('first door nobody', ADULT);
+      RESET SESSION AUTHORIZATION;
+      SET ROLE scrbrd_app;
+      PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): the director''s adult date through a door: %s', v));
+      PERFORM _assert(v2 = '42501:born_needs_the_office', format('§148 (first): the application''s adult date through a door, no one signed in: %s', v2));
+    ELSE
+      RAISE NOTICE '§148 (first): the door case skipped, this login cannot log in as the application';
+    END IF;
+    PERFORM _as(DOS);
+    PERFORM _assert(_v173_named('first adult') = 0 AND _v173_named('first today') = 0 AND _v173_named('first door') = 0
+                    AND _v173_named('first door nobody') = 0 AND _v173_named('first owners login') = 0, '§148 (first): a refused boy landed');
+    BOY := _v173_add('first tomorrow', TOMORROW18, NULL)::uuid;
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:f', TOMORROW18, DOS), format('§148 (first): 18 tomorrow, recorded %s', _v173_rows(BOY)));
+    BOY := _v173_add('first minor', B, NULL)::uuid;
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:f', B, DOS), format('§148 (first): the director''s minor, recorded %s', _v173_rows(BOY)));
+    PERFORM _as(REG);
+    BOY := _v173_add('first office', ADULT, NULL)::uuid;
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:t', ADULT, REG), format('§148 (first): the office''s adult, recorded %s', _v173_rows(BOY)));
+    -- Kameel, 26 Nov 2026 (Q1): an import line is the office's only under its tick.
+    BOY := _v173_add('first import', B, NULL, 'import')::uuid;
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:import:%s:f', B, REG), format('§148 (first): the office''s import, no tick, recorded %s', _v173_rows(BOY)));
+    BOY := _v173_add('first ticked', B, NULL, 'import+tick')::uuid;
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:import:%s:t', B, REG), format('§148 (first): the office''s ticked import, recorded %s', _v173_rows(BOY)));
+    BOY := _v173_owner_boy('first owner', ADULT, NULL);
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:owner:-:f', ADULT), format('§148 (first): the owner''s adult, recorded %s', _v173_rows(BOY)));
+    -- None becoming a date: the same rule, and the same answer whether or not
+    -- an ID number carrying that date is on file.
+    PERFORM _born_constraint(false);
+    BOY := _v173_owner_boy('fill noid', NULL, NULL);
+    BOY2 := _v173_owner_boy('fill id', NULL, IDA);
+    PERFORM _born_constraint(true);
+    PERFORM _as(DOS);
+    v := _v172_write(BOY, 'capture', ADULT::text);
+    v2 := _v172_write(BOY2, 'capture', ADULT::text);
+    PERFORM _assert(v = '42501:born_needs_the_office' AND v2 = v, format('§148 (first): the director''s fill: %s, with an ID on file %s', v, v2));
+    PERFORM _assert(_v172_now(BOY) = '-|-' AND _v172_now(BOY2) = '-|' || IDA AND _v173_rows(BOY) = '' AND _v173_rows(BOY2) = '',
+                    format('§148 (first): a refused fill landed: %s / %s', _v172_now(BOY), _v172_now(BOY2)));
+    -- A support hour as the office is not the office.
+    SUP := _v168_support('v173');
+    PERFORM _as(SUP);
+    v := _v172_write(BOY, 'capture', ADULT::text);
+    PERFORM _assert(v = '42501:born_needs_the_office', format('§148 (first): a support hour''s fill: %s', v));
+    PERFORM _as(REG);
+    v := _v172_write(BOY2, 'capture', ADULT::text);
+    PERFORM _assert(v = '1 rows' AND _v173_rows(BOY2) = format('->%s:capture:%s:t', ADULT, REG),
+                    format('§148 (first): the office''s fill: %s / %s', v, _v173_rows(BOY2)));
+
+  ELSIF p_case = 'idnum' THEN
+    -- (idnum) An ID number, first or not, is the office's to write: the
+    -- director of sport's INSERT with one, and his fill of a missing one,
+    -- are refused, a minor's as an adult's; the office's pass.
+    PERFORM _as(DOS);
+    v := _v173_add('id insert', B, IDN);
+    PERFORM _assert(v = '42501:id_number_needs_the_office', format('§148 (idnum): the director''s insert with a number: %s', v));
+    PERFORM _assert(_v173_named('id insert') = 0, '§148 (idnum): the refused boy landed');
+    BOY := _v173_owner_boy('id fill', B, NULL);
+    PERFORM _as(DOS);
+    v := _v172_write(BOY, 'id_number', IDN);
+    PERFORM _assert(v = '42501:id_number_needs_the_office', format('§148 (idnum): the director''s first number: %s', v));
+    PERFORM _assert(_v172_now(BOY) = B || '|-', format('§148 (idnum): the refused number landed: %s', _v172_now(BOY)));
+    PERFORM _born_constraint(false);
+    BOY2 := _v173_owner_boy('id nodate', NULL, NULL);
+    PERFORM _born_constraint(true);
+    PERFORM _as(DOS);
+    v := _v172_write(BOY2, 'id_number', IDA);
+    PERFORM _assert(v = '42501:id_number_needs_the_office', format('§148 (idnum): the director''s number on a boy with no date: %s', v));
+    PERFORM _as(REG);
+    v := _v172_write(BOY, 'id_number', IDN);
+    PERFORM _assert(v = '1 rows' AND _v172_now(BOY) = B || '|' || IDN, format('§148 (idnum): the office''s first number: %s / %s', v, _v172_now(BOY)));
+    -- S5: every number written is recorded, who and whether the office; a
+    -- refusal records nothing; the number itself never.
+    PERFORM _assert(_v173_id_rows(BOY) = format('first:%s:t', REG), format('§148 (idnum): his number''s record reads %s', _v173_id_rows(BOY)));
+    v := _v172_write(BOY, 'id_number', to_char(B, 'YYMMDD') || '5999081');
+    PERFORM _assert(v = '1 rows' AND _v173_id_rows(BOY) = format('first:%s:t;changed:%s:t', REG, REG),
+                    format('§148 (idnum): the office''s change: %s / %s', v, _v173_id_rows(BOY)));
+    PERFORM _assert(_v173_id_rows(BOY2) = '', format('§148 (idnum): a refused number was recorded: %s', _v173_id_rows(BOY2)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                 WHERE table_name = 'player_id_number_change' AND column_name NOT IN ('id', 'player_id', 'school_id', 'how', 'by_id', 'by_name', 'by_office', 'at')),
+                    '§148 (idnum): the record of a number holds more than who, when and how');
+    BEGIN
+      PERFORM 1 FROM player_id_number_change LIMIT 1;
+      PERFORM _assert(false, '§148 (idnum): the application read player_id_number_change');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    v := _v173_add('id office', B, IDN);
+    PERFORM _assert(v ~ '^[0-9a-f-]{36}$', format('§148 (idnum): the office''s insert with a number: %s', v));
+
+  ELSIF p_case = 'coming' THEN
+    -- (coming) "Coming of age" lists the boys 18, or 18 within 60 days, on a
+    -- date no office person wrote or confirmed: 17 years 11 months written by
+    -- the director is listed, and leaves the list on the office's confirm; 59
+    -- days in, listed, 61 not; the owner's adult listed, the office's not.
+    -- Nobody but the office reads it or confirms; a write after the confirm
+    -- lists him again; his new school's office is asked again.
+    PERFORM _as(DOS);
+    BOY := _v173_add('coming near', NEAR, NULL)::uuid;
+    BOY2 := _v173_add('coming fiftynine', NEAR59, NULL)::uuid;
+    BOY3 := _v173_add('coming sixtyone', FAR61, NULL)::uuid;
+    PERFORM _as(REG);
+    SELECT * INTO r FROM born_unconfirmed(HIL) u WHERE u.player_id = BOY;
+    PERFORM _assert(r.player_id = BOY AND r.born = NEAR AND r.of_age_on = sa_today() + 30 AND r.how = 'capture'
+                    AND r.full_name = 'Verify Oneseventhree Coming Near',
+                    format('§148 (coming): 17 years 11 months reads %s', row_to_json(r)));
+    PERFORM _assert(EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = BOY2),
+                    '§148 (coming): 18 in 59 days is not listed');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = BOY3),
+                    '§148 (coming): 18 in 61 days is listed');
+    K := _v173_owner_boy('coming owner', ADULT, NULL);
+    PERFORM _assert(EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = K AND u.how = 'owner'),
+                    '§148 (coming): the owner''s adult is not listed');
+    K := _v173_add('coming office', NEAR, NULL)::uuid;
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = K),
+                    '§148 (coming): a date the office wrote is listed');
+    -- Q1 (Kameel, 26 Nov 2026): 17 years 11 months from the office's import,
+    -- not under its tick: not confirmed, and listed; under the tick: neither.
+    K := _v173_add('coming untick', NEAR, NULL, 'import')::uuid;
+    PERFORM _assert(EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = K AND u.how = 'import'),
+                    '§148 (coming): the office''s import with no tick is not listed');
+    K := _v173_add('coming ticked', NEAR, NULL, 'import+tick')::uuid;
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = K),
+                    '§148 (coming): the office''s ticked import is listed');
+    FOREACH SUP IN ARRAY ARRAY[DOS, PRIN, WESOFF] LOOP
+      PERFORM _as(SUP);
+      SELECT count(*) INTO n FROM born_unconfirmed(HIL);
+      PERFORM _assert(n = 0, format('§148 (coming): %s reads %s rows', SUP, n));
+      SELECT x.ok, x.reason INTO ok_, why FROM player_born_confirm(BOY) x;
+      PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§148 (coming): %s confirmed: %s %s', SUP, ok_, why));
+    END LOOP;
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_confirm(gen_random_uuid()) x;
+    PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§148 (coming): no such boy: %s %s', ok_, why));
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:f', NEAR, DOS), format('§148 (coming): a refused confirm wrote %s', _v173_rows(BOY)));
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_confirm(BOY) x;
+    PERFORM _assert(ok_ AND why IS NULL, format('§148 (coming): the office''s confirm: %s %s', ok_, why));
+    PERFORM _assert(_v173_rows(BOY) = format('->%s:capture:%s:f;%s>%s:confirmed:%s:t', NEAR, DOS, NEAR, NEAR, REG),
+                    format('§148 (coming): the confirm recorded %s', _v173_rows(BOY)));
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = BOY), '§148 (coming): confirmed, he is still listed');
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_confirm(BOY) x;
+    PERFORM _assert(ok_ AND why = 'unchanged' AND _v173_rows(BOY) LIKE '%confirmed%' AND _v173_rows(BOY) NOT LIKE '%confirmed%confirmed%',
+                    format('§148 (coming): a second confirm: %s %s / %s', ok_, why, _v173_rows(BOY)));
+    PERFORM _born_constraint(false);
+    K := _v173_owner_boy('coming nodate', NULL, NULL);
+    PERFORM _born_constraint(true);
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_confirm(K) x;
+    PERFORM _assert(NOT ok_ AND why = 'born_required', format('§148 (coming): no date: %s %s', ok_, why));
+    -- The audit log names the confirm, and the owner's first date.
+    PERFORM _as(PRIN);
+    SELECT * INTO r FROM audit_log(HIL, ARRAY['dob']) a WHERE a.detail->>'how' = 'confirmed' AND a.detail->>'became' = NEAR::text;
+    PERFORM _assert(r.action = 'Confirmed a date of birth', format('§148 (coming): the audit log reads %s', row_to_json(r)));
+    SELECT * INTO r FROM audit_log(HIL, ARRAY['dob']) a WHERE a.detail->>'how' = 'owner' AND a.detail->>'became' = ADULT::text AND NOT (a.detail ? 'was') LIMIT 1;
+    PERFORM _assert(r.action = 'SCRBRD recorded a date of birth', format('§148 (coming): the owner''s first date reads %s', row_to_json(r)));
+    -- A write after the confirm, even one back to the confirmed date: listed
+    -- again, as the owner's.
+    PERFORM _v173_owner_born(BOY, NEAR - 1);
+    PERFORM _v173_owner_born(BOY, NEAR);
+    PERFORM _as(REG);
+    PERFORM _assert(EXISTS (SELECT 1 FROM born_unconfirmed(HIL) u WHERE u.player_id = BOY AND u.how = 'owner'),
+                    '§148 (coming): re-dated after the confirm, and back, he is not listed again');
+    -- Confirmed at Hilton, then moved: Westville's office is asked again.
+    SELECT x.ok INTO ok_ FROM player_born_confirm(BOY2) x;
+    PERFORM _assert(ok_, '§148 (coming): the confirm before the move');
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v172_move(BOY2, WES);
+    PERFORM _as(WESOFF);
+    PERFORM _assert(EXISTS (SELECT 1 FROM born_unconfirmed(WES) u WHERE u.player_id = BOY2),
+                    '§148 (coming): moved to Westville, Hilton''s confirm stood for Westville');
+
+  ELSIF p_case = 'carry' THEN
+    -- (carry) The carry-over reads only own links stamped before db/169's
+    -- first paste (REDATING F1): one stamped since is not carried, one from
+    -- before is; and a boy enrolled while the record said he was 18 and
+    -- re-dated younger is not given the school's yes.
+    PERFORM _assert(_v173_first_paste() IS NOT NULL, '§148 (carry): no ledger row for db/169 here');
+    K := _v169_pupil('v173carry', 15); BOY := _v169_boy(K);
+    PERFORM _v173_stamp(BOY, false);
+    n := _v173_carry();
+    PERFORM _assert(_v169_record(BOY) = '' AND NOT _v169_open(K),
+                    format('§148 (carry): a link stamped since db/169 was carried over (%s, %s)', n, _v169_record(BOY)));
+    PERFORM _v173_stamp(BOY, true);
+    n := _v173_carry();
+    PERFORM _assert(n >= 1 AND _v169_record(BOY) LIKE 'yes/enrolled/%' AND _v169_open(K),
+                    format('§148 (carry): a link stamped before db/169 was not carried over (%s, %s)', n, _v169_record(BOY)));
+    -- F1: stamped 'granted' at 19 (his yes was his age), then re-dated to 15.
+    K := _v169_pupil('v173adult', 19); BOY2 := _v169_boy(K);
+    PERFORM _v173_stamp(BOY2, false);
+    PERFORM _assert(_v169_open(K), '§148 (carry): at 19 he was closed (the setup)');
+    PERFORM _v173_owner_born(BOY2, (sa_today() - interval '15 years')::date);
+    PERFORM _v173_carry();
+    PERFORM _assert(_v169_record(BOY2) = '' AND NOT _v169_open(K),
+                    format('§148 (carry): re-dated to 15, his stamp was carried over (%s)', _v169_record(BOY2)));
+
+  ELSIF p_case = 'gate' THEN
+    -- (gate) The seeded test account is no longer let through by its id: it
+    -- holds no pupil's role here (the seed's, and db/173 ends production's),
+    -- and given one back it is closed like any account whose pupil's role
+    -- names no boy.
+    PERFORM _assert(_v173_pupil_roles(TEST) = 0, format('§148 (gate): the test account holds %s pupil''s roles', _v173_pupil_roles(TEST)));
+    PERFORM _assert(_v169_open(TEST), '§148 (gate): the test account, a spectator, is closed');
+    PERFORM _v173_give_player(TEST);
+    PERFORM _assert(NOT _v169_open(TEST), '§148 (gate): the test account with `player` and no boy is open');
+    PERFORM _assert(position('88888888-0000-0000-0000-000000000001' IN _v173_body('pupil_signin_open(uuid)')) = 0,
+                    '§148 (gate): the gate still names the test account');
+    -- The seed's team-mate (mate@), who names his boy, reads the side.
+    PERFORM _assert(_v169_open('88888888-0000-0000-0000-000000000173'), '§148 (gate): the seed''s team-mate is closed');
+
+  ELSIF p_case = 'account' THEN
+    -- (account) Q3 (Kameel, 25 Nov 2026): before her yes, his guardian reads
+    -- what the account the office recognised as him typed (name, year) and
+    -- the day it was recognised; nothing else of it, never its email. Another
+    -- boy's guardian, one who has not agreed the terms, the office, the
+    -- account itself and the seed's pupil read nothing. A claim held for a
+    -- safeguarding concern reads as none, and her yes does not open it.
+    BOY := _v168_boy(HIL, 'v173acct', 14);
+    K := _v168_account('v173acct'); K1 := K;
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Typedname', 'Grade 9');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), BOY);
+    PERFORM set_config('app.user_id', '', true);
+    SUP := _v169_guardian(BOY, 'v173acct', true);
+    PERFORM _as(SUP);
+    SELECT count(*) INTO n FROM pupil_signin_account(BOY);
+    SELECT * INTO r FROM pupil_signin_account(BOY);
+    PERFORM _assert(n = 1 AND r.typed_name = 'Verify Typedname' AND r.typed_year = 'Grade 9' AND r.recognised_on = sa_today(),
+                    format('§148 (account): his guardian reads %s rows: %s', n, row_to_json(r)));
+    PERFORM _assert(row_to_json(r)::text !~ '@' AND row_to_json(r)::text !~* 'v163',
+                    format('§148 (account): the read carries more than the three: %s', row_to_json(r)));
+    PERFORM _assert((SELECT array_to_string(p.proargnames, ',') FROM pg_proc p WHERE p.oid = 'pupil_signin_account(uuid)'::regprocedure)
+                    = 'p_player,typed_name,typed_year,recognised_on', '§148 (account): the read answers more than the three');
+    BOY2 := _v168_boy(HIL, 'v173other', 14);
+    PERFORM set_config('app.user_id', '', true);
+    FOREACH K IN ARRAY ARRAY[_v169_guardian(BOY2, 'v173other', true), _v169_guardian(BOY, 'v173notagreed', false),
+                             REG, K, '88888888-0000-0000-0000-000000000009'::uuid] LOOP
+      PERFORM _as(K);
+      SELECT count(*) INTO n FROM pupil_signin_account(BOY);
+      PERFORM _assert(n = 0, format('§148 (account): %s reads %s rows', K, n));
+    END LOOP;
+    -- A second boy whose account is not held: her yes opens it (the control).
+    BOY3 := _v168_boy(HIL, 'v173open', 14);
+    K := _v168_account('v173open');
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Openname', NULL);
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), BOY3);
+    PERFORM set_config('app.user_id', '', true);
+    SUP := _v169_guardian(BOY3, 'v173open', true);
+    PERFORM _as(SUP); PERFORM pupil_signin_consent_set(BOY3, true);
+    PERFORM _assert(_v168_claim(K) LIKE 'open|%', format('§148 (account): the control''s yes left his claim %s', _v168_claim(K)));
+    -- The first boy's account raises a concern: it reads as none, and her yes leaves it shut.
+    K := K1;
+    PERFORM _as(K);
+    SELECT x.ok INTO ok_ FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
+      'Verify 173: somebody at nets keeps shouting at me.', 'victim') x;
+    PERFORM _assert(ok_, '§148 (account): he could not raise his concern');
+    PERFORM set_config('app.user_id', '', true);
+    SUP := _v169_guardian_of_first(BOY);
+    PERFORM _as(SUP);
+    SELECT count(*) INTO n FROM pupil_signin_account(BOY);
+    PERFORM _assert(n = 0, format('§148 (account): a held claim reads %s rows', n));
+    -- S3: enrolled already, his own link stamped pending: her yes moves neither.
+    PERFORM set_config('app.user_id', '', true);
+    PERFORM _v173_self_pending(K, BOY);
+    PERFORM _as(SUP);
+    PERFORM pupil_signin_consent_set(BOY, true);
+    -- (The gate itself reads the boy's yes, not the account: db/169's rule.)
+    PERFORM _assert(_v168_claim(K) LIKE 'recognised|%' AND _v173_pupil_roles(K) = 1 AND _v173_self_stamp(BOY) = 'pending',
+                    format('§148 (account): her yes moved a held claim''s account: %s, stamp %s', _v168_claim(K), _v173_self_stamp(BOY)));
+    -- S4: she reads nothing waiting; the office reads it as before.
+    SELECT * INTO r FROM pupil_signin_state(BOY);
+    PERFORM _assert(r.in_force AND NOT r.held, format('§148 (account): his family reads a held claim waiting: %s', row_to_json(r)));
+    PERFORM _as(REG);
+    SELECT * INTO r FROM pupil_signin_state(BOY);
+    PERFORM _assert(r.held, format('§148 (account): the office no longer reads the account waiting: %s', row_to_json(r)));
+
+  ELSIF p_case = 'ownchild' THEN
+    -- (ownchild) Kameel, 26 Nov 2026 (the re-dating design's Q8): an office
+    -- person who is the boy's own guardian is refused a first date that makes
+    -- him 18, a correction and "Confirm his date"; another office person is not.
+    K := _v173_office('v173mother'); K1 := _v173_office('v173other');
+    PERFORM _born_constraint(false);
+    BOY := _v173_owner_boy('own fill', NULL, NULL);
+    PERFORM _born_constraint(true);
+    BOY2 := _v173_owner_boy('own near', NEAR, NULL);
+    PERFORM _v173_make_guardian(K, BOY); PERFORM _v173_make_guardian(K, BOY2);
+    PERFORM _as(K);
+    v := _v172_write(BOY, 'capture', ADULT::text);
+    PERFORM _assert(v = '42501:born_own_child', format('§148 (ownchild): her first date of 18 for her son: %s', v));
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_correct(BOY2, NEAR - 1, 'Verify 173: birth certificate seen') x;
+    PERFORM _assert(NOT ok_ AND why = 'own_child', format('§148 (ownchild): her correction: %s %s', ok_, why));
+    SELECT x.ok, x.reason INTO ok_, why FROM player_born_confirm(BOY2) x;
+    PERFORM _assert(NOT ok_ AND why = 'own_child', format('§148 (ownchild): her confirm: %s %s', ok_, why));
+    PERFORM _assert(_v172_now(BOY) = '-|-' AND _v173_rows(BOY2) = format('->%s:owner:-:f', NEAR),
+                    format('§148 (ownchild): a refusal wrote %s / %s', _v172_now(BOY), _v173_rows(BOY2)));
+    PERFORM _as(K1);
+    v := _v172_write(BOY, 'capture', ADULT::text);
+    SELECT x.ok INTO ok_ FROM player_born_confirm(BOY2) x;
+    PERFORM _assert(v = '1 rows' AND ok_, format('§148 (ownchild): another office person: %s / %s', v, ok_));
+
+  ELSIF p_case = 'grants' THEN
+    -- (grants) The office's two doors are the application's; the two
+    -- readers they stand on nobody's; definer throughout, the check as the
+    -- writer (invoker).
+    FOR r IN SELECT * FROM (VALUES
+      ('player_born_confirm(uuid)', 'scrbrd_app:EXECUTE', true), ('born_unconfirmed(uuid)', 'scrbrd_app:EXECUTE', true),
+      ('player_born_confirmed(uuid)', '', true), ('pupil_signin_first_paste()', '', false),
+      ('pupil_signin_carry_over()', '', false), ('pupil_signin_open(uuid)', '', true),
+      ('player_born_checked()', '', false), ('player_born_record()', '', true),
+      ('pupil_signin_account(uuid)', 'scrbrd_app:EXECUTE', true), ('pupil_signin_after_yes(uuid,text)', '', true),
+      ('player_born_own_child(uuid)', 'scrbrd_app:EXECUTE', true), ('player_id_number_record()', '', true),
+      ('pupil_signin_state(uuid)', 'scrbrd_app:EXECUTE', true), ('player_born_correct(uuid,date,text)', 'scrbrd_app:EXECUTE', true)) AS t(fn, acl, definer) LOOP
+      PERFORM _assert(_v168_acl(r.fn) IS NOT DISTINCT FROM r.acl, format('§148 (grants): %s is granted %s', r.fn, coalesce(_v168_acl(r.fn), 'NULL (missing)')));
+      PERFORM _assert(_v172_definer(r.fn) IS NOT DISTINCT FROM r.definer, format('§148 (grants): %s definer is %s', r.fn, _v172_definer(r.fn)));
+    END LOOP;
+    -- N1: the record's CHECKs are the three db/172 and db/173 name.
+    PERFORM _assert((SELECT string_agg(conname, ',' ORDER BY conname) FROM pg_constraint
+                      WHERE conrelid = 'player_born_change'::regclass AND contype = 'c')
+                    = 'player_born_change_how,player_born_change_moved,player_born_change_reason', '§148 (grants): a stray CHECK on player_born_change');
+  ELSE
+    RAISE EXCEPTION '§148: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.user_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/173 (section 148) ─────────────────────────────────────────────
+
 -- ┌── Section timing (Kameel, 25 Nov 2026) ─────────────────────────────
 -- CI's verifier ran for two to three and a half hours with no output at all,
 -- so nobody could say which sections were slow. Each section of the DO block
@@ -17884,7 +18480,7 @@ DECLARE
   -- Seeded as spectator@example.invalid, but the ASSIGNMENT is role `player`
   -- at Hilton — a pupil. The one principal that separates the availability
   -- tier from the nature tier.
-  U_PUPIL   uuid := '88888888-0000-0000-0000-000000000001';
+  U_PUPIL   uuid := '88888888-0000-0000-0000-000000000173';   -- mate@, T Bekker's account: `player` on the 1st XI (db/173: spectator@ until then)
   -- R Pillay: the injured 1XI player, with an account and a self-access
   -- assignment naming their own player row.
   U_SELF    uuid := '88888888-0000-0000-0000-000000000009';
@@ -35515,7 +36111,7 @@ $v49$;
   --   (enrol)    enrol_person() for a pupil takes his side from the roster; a
   --              pupil on no side is refused by name and no account is left
   --   (seed)     the whole table holds no live team-less `player` row, and
-  --              the seed's spectator@ account is on the 1st XI
+  --              the seed's mate@ account is on the 1st XI (db/173)
   --   (doors)    the constraint as written and validated; db/01's coach rule
   --              untouched; the grant door derives
   --
@@ -35601,8 +36197,9 @@ $v49$;
     -- (seed)
     PERFORM _assert(_v108_fact('teamless_live') = '0',
       format('§85 (seed): %s live team-less player rows on the record', _v108_fact('teamless_live')));
-    PERFORM _assert(_v108_fact('team_of', 'a5510000-0000-0000-0000-000000000001') = '1XI',
-      '§85 (seed): the seed''s spectator@ account is not a pupil of the 1st XI');
+    -- The seed's team-mate (mate@, db/173; spectator@ until then).
+    PERFORM _assert(_v108_fact('team_of', 'a5510000-0000-0000-0000-000000000173') = '1XI',
+      '§85 (seed): the seed''s mate@ account is not a pupil of the 1st XI');
 
     -- (doors)
     PERFORM _assert((SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
@@ -36778,8 +37375,8 @@ $v49$;
   --                opened 1 on his side, mb's stray row ended, nb's ended: he
   --                has no side), and the earlier sections' too; nothing then
   --                disagrees, and a second run changes nothing at all; the
-  --                seed's two `player` rows (R Pillay's, and spectator@'s, no
-  --                boy's) are as they were
+  --                seed's two `player` rows (R Pillay's, and mate@'s since
+  --                db/173) are as they were
   --   (playing up) up reads every ball of f16a (home) and f16w (away), the
   --                matches he is on the sheet of, and none of f16b, the older
   --                side's other match; and his own side's f14 as before. His
@@ -36992,7 +37589,7 @@ $v49$;
     PERFORM _assert(j = '{}'::jsonb AND _v112_fact('all_assignments') = v_all,
       format('§89 (idempotent): a second correction answered %s, or changed an assignment', j));
     PERFORM _assert(_v112_fact('seed_live') = v_seed
-                    AND v_seed LIKE '%a5510000-0000-0000-0000-000000000001:1XI%'
+                    AND v_seed LIKE '%a5510000-0000-0000-0000-000000000173:1XI%'
                     AND v_seed LIKE '%a5510000-0000-0000-0000-00000000000c:1XI%',
       format('§89 (idempotent): the seed''s live player rows are now %s, were %s', _v112_fact('seed_live'), v_seed));
     PERFORM _as(U_TM);
@@ -49119,7 +49716,7 @@ $m130$;
     ids   jsonb;
     U_DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (§61's U_SARAH)
     U_KEY uuid := '88888888-0000-0000-0000-000000000022';   -- superadmin, every capability
-    U_KID uuid := '88888888-0000-0000-0000-000000000001';   -- a pupil: player at Hilton
+    U_KID uuid := '88888888-0000-0000-0000-000000000173';   -- a pupil: player at Hilton (mate@, db/173)
     U_OFF uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's registrar (guardian.link.manage)
     A uuid; Bu uuid; D uuid; L uuid; E uuid; KID uuid; MUM uuid;
     v text; n int; r record; codes text[]; i int;
@@ -50039,8 +50636,8 @@ $m130$;
   --               principal do, and so does he
   --   (noboy)     A: a `player` naming no boy is closed, reads its own rows
   --               only; named, with a yes, it opens; the grant door refuses
-  --               to make one; the seeded test account (spectator@) alone
-  --               is not closed, by its id
+  --               to make one; the seeded test account (spectator@) holds
+  --               no pupil's role since db/173 (§148 (gate))
   --   (form)      D, optional until counsel: who signed the form and the
   --               day, when given, are checked and kept; a refusal records
   --               nothing; without them the tick is recorded; the office
@@ -50552,6 +51149,40 @@ $m130$;
   PERFORM _v172_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/172 (section 147) ─────────────────────────────────────────
+  -- ┌── db/173 (section 148) ─────────────────────────────────────────
+  -- ── 148. A first date of birth: the office's when it makes a boy 18; first dates recorded; Coming of age; the carry-over's guard; the test account gated (db/173; Kameel, 25 Nov 2026) ──
+  -- Each case seeds its own boys and runs as scrbrd_app under each person's
+  -- session (_v173_case, an invoker). Labels:
+  --   (first)   a first date of 18 today: the director's refused, by INSERT
+  --             and by filling none, with one answer whether or not an ID
+  --             number is on file; 18 tomorrow, a minor's, the office's, the
+  --             owner's and the import's pass; each writes one row
+  --   (idnum)   a first ID number: the director's refused, by INSERT and by
+  --             filling none; the office's passes
+  --   (coming)  born_unconfirmed(): 30 and 59 days listed, 61 not; the
+  --             owner's listed, the office's not; only the office reads and
+  --             confirms; a confirm takes him off, a write puts him back, a
+  --             move asks the new office; the audit log names both rows
+  --   (carry)   the carry-over: a stamp since db/169's first paste not
+  --             carried, one from before carried; F1 (stamped at 19,
+  --             re-dated to 15) not carried
+  --   (gate)    the seeded test account: no pupil's role; given one, closed;
+  --             the gate does not name it; the seed's team-mate open
+  --   (account) Q3: his guardian reads the three fields and no more, never
+  --             an email; another boy's guardian, one not agreed, the office,
+  --             the account and a pupil nothing; a held claim reads as none
+  --             and her yes does not open it, while a control's yes does
+  --   (grants)  ACLs and definer/invoker
+  PERFORM _v173_case('first');
+  PERFORM _v173_case('idnum');
+  PERFORM _v173_case('coming');
+  PERFORM _v173_case('carry');
+  PERFORM _v173_case('gate');
+  PERFORM _v173_case('account');
+  PERFORM _v173_case('ownchild');
+  PERFORM _v173_case('grants');
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/173 (section 148) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE '%', pg_temp._v_section_summary();
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

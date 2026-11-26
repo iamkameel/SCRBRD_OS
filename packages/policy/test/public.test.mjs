@@ -445,6 +445,8 @@ const HAND_WRITTEN_SINCE_47 = {
   pupil_signin_consent: {},
   // db/172: every change to a boy's date of birth is never public as a whole (N1).
   player_born_change: {},
+  // db/173: who wrote a boy's ID number, and when, is never public as a whole (N1).
+  player_id_number_change: {},
 };
 
 /** The db/NN files from 47 on, which is where hand-written pupil tables are held to this. */
