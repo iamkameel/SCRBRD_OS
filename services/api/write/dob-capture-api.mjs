@@ -51,6 +51,26 @@ export function bornRefusal(e) {
            error: e.message };
 }
 
+/**
+ * born_links_to_review()'s columns (db/176), the days as the database writes
+ * them (YYYY-MM-DD), never a Date: pg would read a date at local midnight.
+ */
+const LINK_COLS = `l.player_id, l.full_name, l.team_code, l.link_id, l.guardian_name,
+                   to_char(l.ends_on, 'YYYY-MM-DD') as ends_on, l.why,
+                   to_char(l.old_of_age_on, 'YYYY-MM-DD') as old_of_age_on,
+                   to_char(l.of_age_on, 'YYYY-MM-DD') as of_age_on, l.corrected_at`;
+
+/**
+ * One row of born_links_to_review() (db/176), in the route's words.
+ * @param {any} r
+ */
+export const linkRow = (r) => ({
+  playerId: r.player_id, fullName: r.full_name, teamCode: r.team_code ?? null,
+  linkId: r.link_id, guardianName: r.guardian_name ?? null,
+  endsOn: r.ends_on ?? null, why: r.why, oldOfAgeOn: r.old_of_age_on ?? null, ofAgeOn: r.of_age_on ?? null,
+  correctedAt: r.corrected_at ?? null,
+});
+
 /** @param {RouteDeps} deps @returns {Record<string, Handler>} */
 export function dobCaptureRoutes({ pool, secret }) {
   return {
@@ -123,13 +143,24 @@ export function dobCaptureRoutes({ pool, secret }) {
           const { rows } = await client.query(
             `select ok, reason, to_char(was, 'YYYY-MM-DD') as was, to_char(born, 'YYYY-MM-DD') as born
                from player_born_correct($1::uuid, $2::date, $3::text)`, [id, dob.born, why]);
-          return rows[0];
+          const r = rows[0];
+          // db/176 (the re-dating design §3.2, Q4; Kameel, 25 Nov 2026): the
+          // guardian links whose end date the old date set, listed for the
+          // office to act on, in the same transaction as the change. Nothing
+          // about them is changed here.
+          if (r?.ok && r.reason !== "unchanged") {
+            const links = (await client.query(
+              `select ${LINK_COLS} from player_masked p cross join lateral born_links_to_review(p.school_id, p.id) l where p.id = $1::uuid`,
+              [id])).rows;
+            return { ...r, links: links.map(linkRow) };
+          }
+          return r;
         });
         if (!out?.ok) {
           const reason = out?.reason || "refused";
           throw err(reason, reason === "not_permitted" ? 403 : 422);
         }
-        res.json({ id, born: out.born, was: out.was, unchanged: out.reason === "unchanged" });
+        res.json({ id, born: out.born, was: out.was, unchanged: out.reason === "unchanged", links: out.links ?? [] });
       } catch (/** @type {any} */ e) {
         const named = bornRefusal(e);
         if (named) return res.status(named.status).json({ error: named.error });
@@ -154,6 +185,29 @@ export function dobCaptureRoutes({ pool, secret }) {
                     how, written_at from born_unconfirmed($1::uuid)`, [school]);
           return rows.map((r) => ({ playerId: r.player_id, fullName: r.full_name, teamCode: r.team_code, born: r.born,
                                     ofAgeOn: r.of_age_on, how: r.how ?? null, writtenAt: r.written_at ?? null }));
+        });
+        if (!out) throw err("not_permitted", 403);
+        res.json({ rows: out });
+      } catch (/** @type {any} */ e) {
+        const status = e.code === "42501" ? 403 : (e.status || 500);
+        res.status(status).json({ error: e.code === "42501" ? "not_permitted" : (e.message || "error") });
+      }
+    },
+
+    // GET /api/schools/:id/date-of-birth/links
+    // db/176 (the re-dating design §3.2, Q4; Kameel, 25 Nov 2026): every
+    // guardian link at the school whose end date a since-corrected date of
+    // birth set, for the office to reopen or end by its own act. The school's
+    // office alone; anyone else is refused.
+    linksToReview: async (req, res) => {
+      try {
+        const school = String(req.params.id ?? "");
+        if (!UUID.test(school)) throw err("not_found", 404);
+        const out = await runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
+          const [o] = (await client.query(`select player_born_office($1::uuid) as office`, [school])).rows;
+          if (o?.office !== true) return null;
+          const { rows } = await client.query(`select ${LINK_COLS} from born_links_to_review($1::uuid) l`, [school]);
+          return rows.map(linkRow);
         });
         if (!out) throw err("not_permitted", 403);
         res.json({ rows: out });

@@ -21,6 +21,8 @@ export const DECIDE_WORDS = {
   grant_required: "That answer was not understood. Try Grant or Decline again.",
   player_invalid: "That player was not understood. Choose the player again.",
   team_code_invalid: "That side was not understood. Choose the side again.",
+  // db/176: a pupil's account takes a scorer's or a side's role once it is his own roster row's.
+  pupil_needs_his_roster_row: "This is a pupil's account, not yet linked to his row on the roster. Link it to him first, then grant it.",
   missing_token: "You were signed out. Sign in again to answer requests.",
   token_expired: "You were signed out. Sign in again to answer requests.",
   // db/169 (Q12): the office's tick, "The signed consent form is on file".

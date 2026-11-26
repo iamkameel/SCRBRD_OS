@@ -49,6 +49,8 @@ export const ENROL_MESSAGE = {
   player_date_of_birth_required: "Capture this person's date of birth first — guardian access is worked out from it.",
   team_required: "Choose the side this person coaches or manages. A pupil's side is his own on the roster: give him one there first.",
   team_code_invalid: "That is not a side this platform knows.",
+  // db/176: a pupil's account takes a scorer's or a side's role once it is his own roster row's.
+  pupil_needs_his_roster_row: "This is a pupil's account, not yet linked to his row on the roster. Link it to him first, through his claim or as a pupil, then give the role.",
   platform_role_needs_no_school: "That role belongs to no school, so it cannot be given at one.",
   not_requestable: "That role cannot be given this way.",
   already_pending: "A request for this is already waiting for an answer.",

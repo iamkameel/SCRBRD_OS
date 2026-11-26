@@ -163,8 +163,10 @@ export async function sessionProfile(pool, secret, bearer) {
     // db/169: a pupil's account whose own sign-in is not in force holds
     // nothing the API will honour (app_can() refuses every assignment), so
     // its workspace is drawn as the account with no school's: his basic view.
+    // db/176: so is an account the gate closes for a pupil's claim no yes has
+    // opened, which is not yet a roster boy's (`pupil` false).
     const { rows: [own] } = await client.query(`select pupil, open from my_own_signin()`);
-    const closed = own?.pupil === true && own?.open === false;
+    const closed = own?.open === false;
     const { rows: assignments } = closed ? { rows: [] } : await client.query(
       `select a.id, a.role, a.school_id, s.name as school_name, a.team_code,
               a.season, a.fixture_id, a.valid_from, a.valid_until, a.expires_at,
