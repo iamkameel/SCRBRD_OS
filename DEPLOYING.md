@@ -2651,7 +2651,8 @@ To paste:
 - It can be pasted again: CREATE OR REPLACE throughout and one `CREATE INDEX IF
   NOT EXISTS`. It resets `lock_timeout` with its last statement.
 
-Not pasted yet. Hash to check: `sha256 05e2fa904ea6283f6cffc1c78195abb1df1fde47a70acb6368e2753231bcf40a`.
+Pasted on the demo and production, 25 Nov 2026, from ee5cbd42. Hash-checked:
+`sha256 05e2fa904ea6283f6cffc1c78195abb1df1fde47a70acb6368e2753231bcf40a`.
 <!-- ── end db/171 ── -->
 <!-- ── db/172: a date of birth, corrected by the office ── -->
 #### A date of birth: the office corrects it, every change is recorded (db/172)
@@ -2702,7 +2703,8 @@ To paste:
   superuser login can do. On the managed host it is skipped and says so; it runs
   locally and on CI.
 
-Not pasted yet. Hash to check: `sha256 273369f0c7f68464f33493b461f24a5ec4562d406dc09a0c36111102a136f68a`.
+Pasted on the demo and production, 25 Nov 2026, from df3c9433. Hash-checked:
+`sha256 273369f0c7f68464f33493b461f24a5ec4562d406dc09a0c36111102a136f68a`.
 <!-- ── end db/172 ── -->
 
 ### 5 · Cloud Run, the first time
