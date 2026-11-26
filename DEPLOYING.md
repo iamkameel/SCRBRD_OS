@@ -2891,6 +2891,12 @@ chases, then Kameel's word):
 - It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, policies made
   only where missing, and the carry-over into the record only for links not
   yet on it.
+- **The way back, tested before the paste:** `tools/terms-gate-rollback.sql`,
+  as the owner, `psql -1 -v ON_ERROR_STOP=1 -f`, only on Kameel's word. It puts
+  the nine bodies back to the ones db/175 replaced (each held to its md5, all
+  or none) and drops the two notice policies; it keeps the agreement record,
+  its trigger and `my_terms_due()` (the API asks it), so the API keeps running.
+  Safe twice; a later paste of db/175 puts the gate back on.
 
 Not pasted yet. Hash to check: `sha256 84de5b81cf952f2a11e18e446cab9c1688e6371cb813ffe6234c5ab81c699e5c`.
 <!-- ── end db/175 ── -->
