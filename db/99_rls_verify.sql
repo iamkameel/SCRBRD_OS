@@ -37725,6 +37725,9 @@ $v49$;
     v_child uuid[];
     k2   int;
     FXS  uuid[];
+    FRD  uuid[];
+    FR   uuid[];
+    FRM  jsonb := '{}';
   BEGIN
     FX := ARRAY[(z->>'f1')::uuid, (z->>'f2')::uuid, (z->>'f3')::uuid, (z->>'f4')::uuid,
                 (z->>'f5')::uuid, (z->>'f6')::uuid, (z->>'f7')::uuid, (z->>'f8')::uuid];
@@ -37819,12 +37822,23 @@ $v49$;
     END LOOP;
 
     -- (literal): the build is §2.5's text, for everyone, everywhere staged or scored
+    --
+    -- fixture_reach('fixture.read', f), some 16 ms a call, is asked here and
+    -- again at (shape) of the same person and fixtures, with nothing written
+    -- between. So it is asked once a person of every fixture either label
+    -- asks it of (FRD: the staged and seed fixtures, the scored ones, every
+    -- trip's and every toss's), and his set kept for (shape) (FRM). It is an
+    -- EXISTS, never NULL, so "f is in his set" is its answer exactly.
     FXS := FX || _v106_seed_matches();
+    FRD := ARRAY(SELECT DISTINCT x FROM unnest(FXS || BM || ARRAY(SELECT t.match_id FROM _v106_trips() t) || _v106_toss_matches()) x);
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
+      FR := ARRAY(SELECT x FROM unnest(FRD) x WHERE fixture_reach('fixture.read', x));
+      FRM := FRM || jsonb_build_object(u::text, to_jsonb(FR));
       SELECT string_agg(format('%s/%s', x.f, x.cap), ' ') INTO bad
         FROM (SELECT f0 AS f, c.cap FROM unnest(FXS) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
-       WHERE fixture_reach(x.cap, x.f) IS DISTINCT FROM _v117_lit_fixture(x.cap, x.f);
+       WHERE (CASE x.cap WHEN 'fixture.read' THEN x.f = ANY (FR) ELSE fixture_reach(x.cap, x.f) END)
+             IS DISTINCT FROM _v117_lit_fixture(x.cap, x.f);
       PERFORM _assert(bad IS NULL, format('§83 (literal): for %s fixture_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(format('%s/%s', s.school, s.team), ' ') INTO bad
         FROM _v106_sides() s
@@ -37840,12 +37854,17 @@ $v49$;
     -- match_read to fixture_reach() on every one of them.
     -- Each side of the comparison is read once a person, as he reads it, and
     -- both differences and the count are taken from those two (the log under
-    -- his row security was read three times a person, and the scored
-    -- fixtures asked again on every row of match, before 26 Nov 2026).
+    -- his row security was read three times a person before 26 Nov 2026).
+    -- The fixtures whose balls he reads are asked fixture by fixture, an
+    -- EXISTS under his row security over each scored fixture (BM, every
+    -- match_id the log holds, read as the owner): the same set as DISTINCT
+    -- match_id over every ball he reads, since each ball he reads is a row of
+    -- the log and so of a fixture in BM; a fixture he reads stops at its
+    -- first ball he reads instead of reading the rest.
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
-      v_seen := ARRAY(SELECT DISTINCT b.match_id FROM ball_event b);
+      v_seen := ARRAY(SELECT y FROM unnest(BM) y WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = y));
       v_mr := ARRAY(SELECT m.id FROM match m WHERE m.id = ANY (BM) AND NOT trip_fixture_driver_only(m.id));
       SELECT string_agg(x::text, ' ') INTO bad
         FROM ((SELECT unnest(v_seen)) EXCEPT (SELECT unnest(v_mr))) d(x);
@@ -37906,18 +37925,21 @@ $v49$;
     -- admits, for every person, on every row of the table (db/106 header,
     -- THE SHAPE). match also opens to the driver of a trip to it (db/41);
     -- trip is narrowed for a driver by db/41's restrictive policy.
+    -- fixture_reach('fixture.read', …) is his set from (literal) (FRM): every
+    -- fixture asked below is in FRD.
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
+      FR := ARRAY(SELECT jsonb_array_elements_text(FRM->(u::text))::uuid);
       SELECT string_agg(_v106_label(z, x) || '?' || x::text, ' ') INTO bad
         FROM unnest(FX || BM) x
        WHERE EXISTS (SELECT 1 FROM match m WHERE m.id = x)
-             IS DISTINCT FROM (fixture_reach('fixture.read', x) OR x IN (SELECT trip_driven_matches()));
+             IS DISTINCT FROM (x = ANY (FR) OR x IN (SELECT trip_driven_matches()));
       PERFORM _assert(bad IS NULL, format('§83 (shape): for %s match_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(coalesce(_v106_label(z, t.id), t.id::text), ' ') INTO bad
         FROM _v106_trips() t
        WHERE EXISTS (SELECT 1 FROM trip v WHERE v.id = t.id)
              IS DISTINCT FROM (((fixture_end_reach('transport.read', t.match_id, t.school_id, t.team_code)
-                                 AND (fixture_reach('fixture.read', t.match_id) OR t.match_id IN (SELECT trip_driven_matches())))
+                                 AND (t.match_id = ANY (FR) OR t.match_id IN (SELECT trip_driven_matches())))
                                 OR (coalesce(t.driver_id = app_user_id(), false)
                                     AND app_can('transport.read', t.school_id, t.team_code, ZERO, t.match_id)))
                                AND (coalesce(t.driver_id = app_user_id(), false) OR NOT trip_fixture_driver_only(t.match_id)));
@@ -37930,7 +37952,7 @@ $v49$;
       SELECT string_agg(coalesce(_v106_label(z, x), x::text), ' ') INTO bad
         FROM unnest(_v106_toss_matches()) x
        WHERE EXISTS (SELECT 1 FROM match_toss v WHERE v.match_id = x)
-             IS DISTINCT FROM fixture_reach('fixture.read', x);
+             IS DISTINCT FROM (x = ANY (FR));
       PERFORM _assert(bad IS NULL, format('§83 (shape): for %s match_toss_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
     END LOOP;
     PERFORM _assert(cardinality(_v106_toss_matches()) >= 3 AND (SELECT count(*) FROM _v106_trips()) >= 7
@@ -39743,7 +39765,10 @@ $v49$;
       v_child := my_child_fixtures();
       PERFORM _assert(cardinality(my_own_sheet_fixtures()) = 0,
         format('§89 (guardians): the guardian %s has fixtures on the new branch', u));
-      v_seen := ARRAY(SELECT DISTINCT b.match_id FROM ball_event b);
+      -- the fixtures whose balls he reads, as §83 (agree) asks them: an
+      -- EXISTS under his row security over each fixture of BM, the same set
+      -- as DISTINCT match_id over every ball he reads
+      v_seen := ARRAY(SELECT y FROM unnest(BM) y WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = y));
       v_want := ARRAY(SELECT y FROM unnest(BM) y WHERE _v112_db100(y, v_child));
       SELECT string_agg(x::text, ' ') INTO bad FROM (
         ((SELECT unnest(v_seen)) EXCEPT (SELECT unnest(v_want)))
@@ -39759,17 +39784,22 @@ $v49$;
     -- whose rows disagree are the ones earlier sections staged that way (an
     -- account handed a side its boy is not on, a stage's shortcut), and no
     -- more.
-    PERFORM _assert(_v112_fact('disagree_boys') = v_base,
+    -- (Each player_assignment_disagreements() is some 17 s by here: a
+    -- message's own facts are asked only when its check fails.)
+    got := _v112_fact('disagree_boys');
+    PERFORM _assert(got = v_base,
+      CASE WHEN got = v_base THEN '' ELSE
       format('§89 (idempotent): after the moves the boys out of step are [%s], before them [%s]: %s',
-             _v112_fact('disagree_boys'), v_base, _v112_fact('disagree_names')));
+             got, v_base, _v112_fact('disagree_names')) END);
     -- Moves made before this file: tm moved with the carry off; mb given a
     -- second row on his old side by hand; nb, on no side, given one by hand.
     PERFORM _v112_move_untracked(TM, 'U15E');
     PERFORM _v112_grant(U_MB, 'U14E');
     PERFORM _v112_grant(U_NB, 'U14E');
-    PERFORM _assert((SELECT count(*) FROM unnest(string_to_array(_v112_fact('disagree_boys'), ',')) x
-                      WHERE x::uuid IN (TM, MB, NB)) = 3,
-      format('§89 (idempotent): the stale state staged [%s]', _v112_fact('disagree_names')));
+    n := (SELECT count(*) FROM unnest(string_to_array(_v112_fact('disagree_boys'), ',')) x
+           WHERE x::uuid IN (TM, MB, NB));
+    PERFORM _assert(n = 3,
+      CASE WHEN n = 3 THEN '' ELSE format('§89 (idempotent): the stale state staged [%s]', _v112_fact('disagree_names')) END);
     j := _v112_correct();
     PERFORM _assert(j->>TM::text = '1:1' AND j->>MB::text = '1:0' AND j->>NB::text = '1:0'
                     AND (SELECT count(*) FROM jsonb_object_keys(j)) = 3 + coalesce(cardinality(string_to_array(nullif(v_base, ''), ',')), 0),
@@ -39800,7 +39830,7 @@ $v49$;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       v_child := my_child_fixtures();
-      v_seen := ARRAY(SELECT DISTINCT b.match_id FROM ball_event b);
+      v_seen := ARRAY(SELECT y FROM unnest(BM) y WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = y));
       -- each fixture's two answers asked once; MATERIALIZED, because the set
       -- and the count both read them, and a subquery flattened into both
       -- would ask each again
