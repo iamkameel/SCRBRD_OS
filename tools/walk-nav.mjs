@@ -56,6 +56,16 @@ export async function destLocator(page, key, wait = 900) {
   const direct = page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first();
   if (await direct.count()) return direct;
   if (key === "notifications") return page.locator('[data-testid="topbar-alerts"]').first();
+  // Settings is under the person's name (DESIGN_DIRECTION §2.1): the rail's foot on a laptop (found above), and on a
+  // phone the header's name, whose short sheet holds it.
+  if (key === "settings") {
+    const name = page.locator('[data-testid="header-account"]').first();
+    if (await name.count()) {
+      if ((await name.getAttribute("aria-expanded")) !== "true") await name.click({ timeout: 4000 }).catch(() => {});
+      await page.waitForTimeout(250);
+    }
+    return page.locator('[data-testid="nav-settings"]').first();
+  }
   // Not a home's section nor under one: its own entry, perhaps in the phone's More drawer.
   const folded = homeOf(key) !== key;
   if (!folded && !UNDER[key]) return (await (HOMES[key] ? entryOf(page, key) : entryAmong(page, [key]))) ?? direct;

@@ -194,7 +194,7 @@ const PIN = new Map([
   ["Show [name] on public match pages", { in: ["views/publicname.jsx"], part: "Show \\{label\\} on public match pages" }],
   ["On", { in: ["views/publicname.jsx"] }],                   // the switch's two states
   ["Off", { in: ["views/publicname.jsx"] }],
-  ["Raise a concern", { in: ["shell/PersonaBar.jsx", "views/SafeguardingView.jsx"] }],  // the bar's aria-label, then the button
+  ["Raise a concern", { in: ["shell/AppHeader.jsx", "views/SafeguardingView.jsx"] }],  // the header's aria-label, then the button
   ["Safeguarding", { in: ["views/SafeguardingView.jsx"] }],
   ["Your DSO", { in: ["views/SafeguardingView.jsx"] }],
   // The office's sheet: Settings, the importer, enrolment, claims, Staff, the public-name and publication panels.

@@ -53,6 +53,35 @@ group("Settings, taken apart (§1.6): a person's own Settings is theirs");
   ok("a family keeps it on the child's file", /<PassportTab role=\{role\} only=\{\[child\]\}\/>/.test(src("../src/views/family/childfile.jsx")));
 }
 
+group("Settings for a pupil, a parent and a coach (DESIGN_DIRECTION §5 Q4 (a), slice 12)");
+{
+  const settings = src("../src/views/SettingsView.jsx");
+  const between = (a, b) => settings.slice(settings.indexOf(a), settings.indexOf(b, settings.indexOf(a)));
+  const persona = between("function PersonaMe(", "\nfunction MeTab(");
+  const staff = between("function StaffMe(", "// What each school holds on ME");
+  const me = between("function MeTab(", "\nfunction StaffMe(");
+  ok("Me is the persona's for a pupil or a parent, everybody else's otherwise", /const persona = personaOf\(role\);\s*if \(persona\) return <PersonaMe /.test(me) && /return <StaffMe /.test(me));
+  const order = ["<Appearance/>", "<AlertsSection role={role}/>", "<AlertPrefsSection role={role}/>", "<WaysToSignInRow/>", "<SignOutEverywhere "];
+  ok("a pupil's and a parent's Me: Appearance, Alerts and quiet hours, Ways to sign in, Sign out everywhere, in that order",
+     order.every((t) => persona.includes(t)) && order.map((t) => persona.indexOf(t)).every((at, i, a) => i === 0 || at > a[i - 1]), persona.slice(0, 300));
+  ok("...with no access list, no boundaries and no profile card",
+     !/My access|BoundariesSection|assignments\.map|<Avatar /.test(persona));
+  ok("...the lift club for a parent alone, where she offers to drive",
+     /\{persona === "family" && <LiftDeclarationPanel onDeclared=\{onDeclared\}\/>\}/.test(persona));
+  ok("...and her clearances only once a declaration stands for her (the standing's declaration)",
+     /const drives = persona === "family" && Object\.values\(declared\)\.some\(Boolean\);/.test(persona) && /\{drives && <MyClearancesSection role=\{role\}\/>\}/.test(persona)
+     && (persona.match(/MyClearancesSection/g) ?? []).length === 1
+     && /const declared = !!standing\?\.declaration;/.test(src("../src/views/lifts.jsx")) && /onDeclared\?\.\(school\.id, declared\)/.test(src("../src/views/lifts.jsx")));
+  ok("Ways to sign in, for them, is one line and then More, and reads nothing until it is opened",
+     /function WaysToSignInRow\(/.test(settings) && /\{open && <div id="ways-to-sign-in-more"[^>]*><WaysToSignIn bare\/><\/div>\}/.test(settings));
+  ok("a coach's Me: his clearances near the top, before Appearance", staff.indexOf("<MyClearancesSection role={role}/>") > 0
+     && staff.indexOf("<MyClearancesSection role={role}/>") < staff.indexOf("<Appearance/>"));
+  const bounds = between("function BoundariesSection(", "\nfunction Appearance(");
+  ok("...and Where your access stops behind one link, closed until it is opened",
+     /useState\(false\)/.test(bounds) && /aria-expanded=\{open\}/.test(bounds) && /data-testid="boundaries-open"/.test(bounds) && /\{open && \(/.test(bounds));
+  ok("...said in words: no capability code on the screen", !/\{b\.capability\}<\/div>/.test(bounds) && !/MONO\(\)/.test(bounds));
+}
+
 group("The School and Platform homes keep each part's gate (or the home's, never wider)");
 {
   ok("Record: user.read, or a capability one of its panels is drawn under", NAV_CAPABILITY.record === "user.read"

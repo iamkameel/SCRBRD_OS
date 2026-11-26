@@ -384,6 +384,15 @@ try {
             }
             for (const l of await links(page)) { await go(page, n); await go(page, l); await judge(`${area}/${l.split("-link-")[1]}`); }
           }
+          // On a phone Settings is under the name in the header (DESIGN_DIRECTION §2.1): its short sheet, measured
+          // open, and then Settings itself. At 1366 the rail's foot carries it, and the sweep above reached it.
+          if (await page.locator('[data-testid="header-account"]').count()) {
+            await page.locator('[data-testid="header-account"]').click({ timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(300);
+            await judge("account-sheet");
+            await go(page, "nav-settings");
+            await judge("settings");
+          }
           ok(`@${width} ${who}: the walk reached ${seen.length} screens (at least ${p.min})`, seen.length >= p.min, seen.map(([k]) => k).join(", "));
         } catch (e) {
           ok(`@${width} ${who}: the tap-floor walk threw`, false, /** @type {any} */ (e).message);

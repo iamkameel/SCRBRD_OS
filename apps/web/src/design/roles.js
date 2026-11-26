@@ -337,8 +337,9 @@ const groupNav = (keys) =>
    removed. Each gets a fixed bar of four, drawn here and still checked
    against capabilities (a destination whose read the roles cannot make is
    left out), so a persona's menu is only ever narrower than the capability
-   map, never wider. Four items and no "More": Settings, raising a concern
-   and signing out sit behind the person's name at the top (§2.0).
+   map, never wider. Four items and no "More": the bell, raising a concern
+   and the person's name, with Settings and signing out under it, sit in the
+   one header at the top (§2.0; DESIGN_DIRECTION §2.1).
 
    A persona is decided by the SET of roles a person holds, never by one
    badge: only somebody who is a guardian and nothing else is the family
@@ -365,7 +366,7 @@ const PERSONA_NAV = {
 };
 /** Destinations that belong to a persona's app and never to a staff menu on capability alone. */
 const PERSONA_ONLY = new Set(Object.values(PERSONA_NAV).flatMap((p) => p.bar));
-/** Screens a persona reaches from its header rather than its bar (§2.0). */
+/** Screens a persona reaches from its header rather than its bar (§2.0): under its name, and its concern button. */
 const PERSONA_ASIDE = ["settings", "safeguarding"];
 
 /** "family", "pupil", or null for everybody else — from the SET of roles held. */
@@ -457,7 +458,7 @@ const navFor = (role) => navForRoles([role, ...(ROLE_IDENTITY[role]?.also ?? [])
 */
 
 /** Identity on the policy vocabulary — kept as a function because every call
- *  site names it, not what it does; TopBar and SettingsView both compare a
+ *  site names it, not what it does; AppHeader and SettingsView both compare a
  *  role against `canonicalRole(other)` rather than the role itself. */
 const canonicalRole = (r) => r;
 

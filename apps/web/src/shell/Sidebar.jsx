@@ -10,7 +10,7 @@ import { Icon } from "../ui/icons.jsx";
 // ══════════════════════════════════════════════════════
 //  SIDEBAR
 // ══════════════════════════════════════════════════════
-function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut, persona = null }) {
+function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites = 0, userName, onSignOut, persona = null, home = "dashboard" }) {
   // The role's destinations, narrowed by the modules this school has on.
   // Narrowed only — useMenuItems() (useNav, with each home drawn once) cannot add a destination the role did not hold.
   // `active` is the open page; the entry lit is its home's (design/homes.js entryFor).
@@ -34,10 +34,14 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
       {/* §3.5: the toggle is 44 × 44 (T.floor.target); it was a bare 5×16 glyph. Collapsed, the rail is 58 wide,
           so the mark and the toggle stack rather than squeeze into one row. */}
       <div style={{padding:collapsed?"8px 7px":"8px 14px",borderBottom:`1px solid ${D.border}`,display:"flex",flexDirection:collapsed?"column":"row",alignItems:"center",gap:collapsed?"4px":"10px",minHeight:"60px"}}>
-        {collapsed
-          ? <div style={{width:"30px",height:"30px",borderRadius:D.md,background:D.gradMain,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",flexShrink:0}}><Icon name="bat"/></div>
-          : <img src={SCRBRD_LOGO} alt="SCRBRD" style={{height:"28px",objectFit:"contain",filter:"brightness(1.1)",flexShrink:0,maxWidth:"120px"}}/>
-        }
+        {/* The mark goes to the first screen, as the header's does on a phone (DESIGN_DIRECTION §2.1). */}
+        <button type="button" onClick={()=>onNav(home)} className="pressBtn" data-testid="rail-mark" aria-label="SCRBRD, home"
+          style={{minWidth:px(T.floor.target),minHeight:px(T.floor.target),padding:0,display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",cursor:"pointer",flexShrink:0}}>
+          {collapsed
+            ? <span aria-hidden="true" style={{width:"30px",height:"30px",borderRadius:D.md,background:D.gradMain,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",flexShrink:0}}><Icon name="bat"/></span>
+            : <img src={SCRBRD_LOGO} alt="" style={{height:"28px",objectFit:"contain",filter:"brightness(1.1)",flexShrink:0,maxWidth:"120px"}}/>
+          }
+        </button>
         <button onClick={onToggle} className="pressBtn" data-testid="sidebar-toggle" aria-label={collapsed?"Expand navigation":"Collapse navigation"} aria-expanded={!collapsed} style={{marginLeft:collapsed?0:"auto",minWidth:px(T.floor.target),minHeight:px(T.floor.target),padding:0,display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",cursor:"pointer",color:D.textMuted,fontSize:"14px",flexShrink:0}}>
           {collapsed?"›":"‹"}
         </button>
@@ -129,21 +133,29 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
           tablet that is not a missing convenience, it is the previous person's
           session still standing. */}
       <div style={{borderTop:`1px solid ${D.border}`,padding:collapsed?"8px 0":"10px 10px"}}>
-        {!collapsed&&(
-          <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"6px 8px",marginBottom:"6px"}}>
-            <span aria-hidden="true" style={{fontSize:"14px",flexShrink:0}}><Icon name={rc.icon}/></span>
-            <div style={{minWidth:0,flex:1}}>
-              {/* The NAME first and the role under it. The top bar carries the
-                  same pair the other way up, because there it is a control for
-                  changing role and the role is the subject; here it is a
-                  statement of who is signed in. */}
-              <div style={{fontFamily:T.type.body,fontSize:"12px",fontWeight:600,color:T.content.primary,
-                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName || rc.label}</div>
-              <div style={{fontFamily:T.type.body,fontSize:"12px",color:rc.color,
-                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rc.label}</div>
-            </div>
-          </div>
-        )}
+        {/* The person's name opens their Settings (DESIGN_DIRECTION §2.1): at this width the rail holds the name and
+            the way out, and the header does not repeat them. On a phone the same two are the header's name and its
+            short sheet (AppHeader.jsx). `nav-settings` is a destination, like the menu's entries above. */}
+        <button onClick={()=>onNav("settings")} className="pressBtn os-state" data-testid="nav-settings"
+          aria-label={`${userName || rc.label}: Settings`} aria-current={active==="settings"?"page":undefined} data-selected={active==="settings"}
+          style={{
+            width:collapsed?"100%":"calc(100% - 4px)", margin:collapsed?"0 0 6px":"0 2px 6px", minHeight:px(T.floor.target),
+            padding:collapsed?"12px 0":"6px 8px", display:"flex", alignItems:"center", justifyContent:collapsed?"center":"flex-start", gap:"8px",
+            background:active==="settings"?T.surface.interactive:"transparent", border:"1px solid transparent", borderRadius:T.radius.md,
+            cursor:"pointer", textAlign:"left",
+          }}>
+          <span aria-hidden="true" style={{fontSize:"14px",flexShrink:0,color:T.content.secondary}}><Icon name={collapsed?"user":rc.icon}/></span>
+          {!collapsed&&(
+            <span style={{minWidth:0,flex:1}}>
+              {/* The NAME first and the role under it: a statement of who is signed in. */}
+              <span style={{display:"block",fontFamily:T.type.body,fontSize:"12px",fontWeight:600,color:T.content.primary,
+                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName || rc.label}</span>
+              <span style={{display:"block",fontFamily:T.type.body,fontSize:"12px",color:rc.color,
+                           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rc.label}</span>
+            </span>
+          )}
+          {!collapsed&&<span aria-hidden="true" style={{display:"flex",fontSize:"14px",color:T.content.tertiary,flexShrink:0}}><Icon name="settings"/></span>}
+        </button>
         {/* sidebar-signout, NOT nav-signout. `nav-<key>` means a navigation
             DESTINATION: the screen sweep in tools/smoke-browser-read.mjs
             enumerates them by that prefix and visits each one. Named nav-*,

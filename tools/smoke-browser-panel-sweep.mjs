@@ -179,7 +179,8 @@ const shownPage = (/** @type {any} */ page) => tid(page, "os-main").getAttribute
 
 /** Opens a destination at either width: the rail, the bar, or the bar's More drawer. */
 async function goTo(/** @type {any} */ page, /** @type {string} */ key, /** @type {string} */ width) {
-  if (width === "desktop") {
+  // Settings on a phone is under the name in the header (DESIGN_DIRECTION §2.1), which destLocator opens.
+  if (width === "desktop" || key === "settings") {
     await (await destLocator(page, key)).click({ timeout: 6000 }).catch(() => {});
   } else if (await tid(page, `mnav-${key}`).count()) {
     await tid(page, `mnav-${key}`).click({ timeout: 6000 }).catch(() => {});
@@ -195,7 +196,7 @@ async function goTo(/** @type {any} */ page, /** @type {string} */ key, /** @typ
 // What a sweep must never press: a write, a takeover, a way out.
 const SKIP = /save|submit|delete|retire|revoke|withdraw|publish|send|sign out|log out|remove|cancel|approve|reject|start|scor|declare|record|add |new |confirm|agree|accept|decline|dispute|finish|finalise|lift|pause|resume|undo|reset|clear|mark|claim|link|unlink|request|invite|raise|report|close|end |sign|\+/i;
 // ...nor open the pad, which takes the whole screen (resume-practice-open).
-const SKIP_ID = /^(availability-set|sidebar-|mnav-|nav-|drawer-|topbar-|role-option|persona-|panel-error|skip-link|demo-banner|resume-|pad-|scorer-)/;
+const SKIP_ID = /^(availability-set|sidebar-|rail-|mnav-|nav-|drawer-|topbar-|header-|role-option|persona-|panel-error|skip-link|demo-banner|resume-|pad-|scorer-)/;
 
 /**
  * The controls on this screen that change what it shows without writing:
@@ -321,6 +322,8 @@ async function sweepAccount(who, width, matches) {
       await s.page.keyboard.press("Escape").catch(() => {});
       keys = [...new Set([...bar, ...drawer])].filter((k) => !/signout|close|toggle/.test(k));
     }
+    // On a phone the name's sheet holds Settings, which no nav- id names until it is opened (§2.1).
+    if (!keys.includes("settings") && await tid(s.page, "header-account").count()) keys.push("settings");
     s.here.page = await shownPage(s.page) ?? "home";
     await scan(s, who, width);
     for (const k of keys) {

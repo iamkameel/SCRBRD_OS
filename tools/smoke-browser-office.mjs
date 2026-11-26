@@ -233,13 +233,25 @@ try {
     s.page.on("request", (r) => asked.push(r.url()));
     await signIn(s.page, "parent@example.invalid");
     const before = asked.length;
+    // Her name opens a short sheet, Settings and Sign out (DESIGN_DIRECTION §2.1); Settings is in it.
+    await tap(s.page, "header-account", 400);
+    ok("her name opens a short sheet: Settings, Sign out", (await inner(s.page, "header-account-menu")).replace(/\s+/g, " ").trim() === "Settings Sign out");
     await tap(s.page, "nav-settings", 2500);
     const read = asked.slice(before).filter((u) => /\/api\/read\/(users|staff|coaches|dob_gaps|sign_in_claims)\b/.test(u));
     ok("her name opens her own Settings", await pageNow(s.page) === "settings" && await tid(s.page, "own-settings").count() === 1);
     ok("...with no People tab, and no accounts, roster or claims part", await s.page.locator("#settings-tab-users, #settings-tab-roles, #settings-tab-school, #settings-tab-import").count() === 0
        && await tid(s.page, "part-people").count() === 0 && !/\bPeople\b/.test(await inner(s.page, "own-settings")));
     ok("...and reads nobody else's accounts to draw it", read.length === 0, read.join(" "));
-    ok("...Me is there: appearance, ways to sign in", await tid(s.page, "appearance").count() === 1);
+    // DESIGN_DIRECTION §5 Q4 (a): Appearance with Colours, Alerts and quiet hours, Ways to sign in, Sign out
+    // everywhere; no access list, no boundaries, and no clearances until she offers to drive (the seed's lift club is off).
+    await s.page.waitForSelector('[data-testid="alert-prefs"]', { timeout: 6000 }).catch(() => {});
+    const mine = await s.page.$$eval('[data-testid="own-settings"] [data-testid]', (els) => els.map((e) => e.getAttribute("data-testid")));
+    ok("...Me is hers: appearance with colours, alerts and quiet hours, ways to sign in, sign out everywhere",
+       ["appearance", "appearance-colours", "alert-prefs", "ways-to-sign-in", "sign-out-everywhere"].every((t) => mine.includes(t)), mine.join());
+    ok("...and nothing else: no access list, no boundaries, no clearances",
+       !["my-clearances", "boundaries-open", "boundaries-section"].some((t) => mine.includes(t)) && !/My access|Where your access stops|My clearances/.test(await inner(s.page, "own-settings")));
+    ok("...Ways to sign in is one line, then More, which opens the list", await tid(s.page, "sign-ins").count() === 0
+       && await (async () => { await tap(s.page, "ways-to-sign-in-more-toggle", 1200); return await tid(s.page, "sign-ins").count() === 1; })());
     ok("no console errors for the parent", s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
     const c = await open();
