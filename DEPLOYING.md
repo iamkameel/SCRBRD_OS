@@ -2936,8 +2936,9 @@ on db/175, which is live). Each change rests on a rule Kameel has decided
   opens his account only on another person's decision: the one who recognised
   him, if that is someone else and still holds the right, or another office
   person's Open from the claims list (`own_child` until then; she is told
-  another person at the office opens him). "The signed consent form is on file"
-  for her own child is refused to her (`own_child`).
+  another person at the office opens him). She may still record "The signed
+  consent form is on file" for her own son; it opens him only on another
+  person's decision, the same way.
 - **The terms gate's test said plainly** (Kameel, 20 Nov 2026, Q1): db/175's
   nine gate bodies and `my_terms_due()` read a guardian's link as agreed when
   it is `granted`, or `withdrawn` with the time she agreed; never "not pending".
@@ -2999,7 +3000,7 @@ To paste:
 - **After db/175** (and db/174, db/173, db/169). It replaces
   `pupil_signin_open()`, `pupil_signin_after_yes()` and
   `guardian_terms_record_append_only()` whole; patches `role_request_grant_as()`,
-  `audit_log()`, `pupil_claims()` and `pupil_signin_office_set()` by needle;
+  `audit_log()` and `pupil_claims()` by needle;
   creates `player_born_refusal` and its two doors; re-emits db/175's nine gate
   bodies and `my_terms_due()` from the catalog; and replaces the notice policy
   `notification_terms_gate`. Each only over the body the file before it left,
@@ -3029,7 +3030,7 @@ To paste:
   deploy the API from before db/175's (PR #404); an older API runs on a database
   ahead of it (`services/api/schema-guard.mjs`).
 
-Not pasted yet. Hash to check: `sha256 c31e4ef699b46b93cb5cf9909bdccc289faeb5170558e4f85ed2e5ce136ffb7b`.
+Not pasted yet. Hash to check: `sha256 518725205d9070b3985a59a004d330c0b5dd7fb258bb6969e44a72f1930343b8`.
 <!-- ── end db/176 ── -->
 
 ### 5 · Cloud Run, the first time

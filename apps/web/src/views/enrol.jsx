@@ -65,7 +65,6 @@ export const ENROL_MESSAGE = {
   form_not_permitted: FORM_ON_FILE.form_not_permitted,
   form_form_signer_invalid: FORM_ON_FILE.form_form_signer_invalid,
   form_form_date_invalid: FORM_ON_FILE.form_form_date_invalid,
-  form_own_child: FORM_ON_FILE.form_own_child,
 };
 const UNSAID = "This was not saved. The server refused it for a reason that has no words yet, and nothing was changed.";
 /** The words for a refusal code; a sentence even for a code nobody has written one for. */

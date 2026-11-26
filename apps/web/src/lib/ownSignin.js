@@ -102,8 +102,6 @@ export const FORM_ON_FILE = Object.freeze({
   form_not_permitted: "Only the school office and the principal can record the signed form.",
   form_form_signer_invalid: "Who signed the form needs two letters or more, as written on it, or leave it blank.",
   form_form_date_invalid: "The date the form was signed cannot be after today, or before he was born.",
-  // db/176 (Kameel, 26 Nov 2026, Q7): her yes for her own child is a guardian's.
-  form_own_child: "He is your own child: another person at the school office records his signed form. Your own yes is given with Allow, as his guardian.",
 });
 
 /**

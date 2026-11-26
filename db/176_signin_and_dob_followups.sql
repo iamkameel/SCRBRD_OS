@@ -66,11 +66,9 @@
 --       list asks of its uploader) and is not the caller. Otherwise nothing is
 --       granted and the door answers own_child (the caller is the office, and
 --       his guardian) or recogniser_lapsed: the yes stands, and another office
---       person's retry opens him as its own act.
---   ~ pupil_signin_office_set() (db/169), patched by one needle, guarded:
---       "The signed consent form is on file" is refused (own_child) to an
---       office person who is his own guardian; her yes is a guardian's, given
---       by "Allow". A withdrawal is anyone's at the office, as before.
+--       person's retry opens him as its own act. "The signed consent form is
+--       on file" stays hers to record for her own son (Kameel, 26 Nov 2026,
+--       Q7 read narrowly); it is the deciding that is another's.
 --   + born_links_to_review(school, player)  the office's list after a
 --       correction: each guardian link of a boy at the school whose end date
 --       the rule worked out from a date of birth since corrected (his 18th
@@ -188,9 +186,7 @@ INSERT INTO _v176_bodies VALUES
   ('my_terms_due()',                                   '1e79db6a87ff52f351bb1b5fb5ecd3c7', 'd986b6ccc09d014e82df046a0396399b', 'db/175'),
   ('guardian_terms_record_append_only()',              '5d636289abb7edf3170f720dd54cfd84', '31b27e7573c1484217e18c7d53b0959c', 'db/175'),
   -- db/169's, as it re-emitted db/168's: the office's claims list (§5e).
-  ('pupil_claims(uuid)',                               'bcc0557a1a5bb474114cc9f9d8f77b05', 'baf25e11b3396a4ec46e2ddb472a5a4b', 'db/169'),
-  -- db/169's: the office's signed form (§5g).
-  ('pupil_signin_office_set(uuid,boolean,text,date)',  '0d691221817949d8f9e6841753fd9b70', '1e3d1c6df6626fbf8678fb044f4aeb7f', 'db/169');
+  ('pupil_claims(uuid)',                               'bcc0557a1a5bb474114cc9f9d8f77b05', 'baf25e11b3396a4ec46e2ddb472a5a4b', 'db/169');
 DO $bodies$
 DECLARE r record; v text; n_mine int := 0; n_was int := 0;
 BEGIN
@@ -628,22 +624,7 @@ SELECT pg_temp._v176_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,i
   || E'          LEFT JOIN role_request yq ON yq.assignment_id = ra.id AND yq.note = \'His own sign-in: a yes on record\'\n');
 
 
--- ── 5g · The office's signed form is not his own guardian's ────────
--- Kameel, 26 Nov 2026 (Q7): an office person who is the boy's own guardian
--- (player_born_own_child(), the re-dating design's Q8) gives her yes as a
--- guardian's, by "Allow" on the family screen, under the terms she agreed.
--- "The signed consent form is on file" for him is another office person's to
--- record. By exact needle, over db/169's body or this file's (§0).
-SELECT pg_temp._v176_patch('pupil_signin_office_set(uuid,boolean,text,date)',
-  E'    -- D: optional until counsel (TODO(counsel), §1); checked when given.\n',
-  E'    -- db/176 (Q7): his own guardian\'s yes is a guardian\'s, by "Allow".\n'
-  || E'    IF player_born_own_child(p_player) THEN\n'
-  || E'      RETURN QUERY SELECT false, \'own_child\'::text, pupil_signin_in_force(p_player), NULL::text; RETURN;\n'
-  || E'    END IF;\n'
-  || E'    -- D: optional until counsel (TODO(counsel), §1); checked when given.\n');
-
-
--- ── 5h · "Record it": three refused tries a day for a boy ──────────
+-- ── 5g · "Record it": three refused tries a day for a boy ──────────
 -- Kameel, 26 Nov 2026 (Q2): "Record it" (a missing date of birth, written
 -- through services/api/write/dob-capture-api.mjs) stays open to a caller who
 -- may manage the boy (player.profile.manage, the row's own update policy). A
@@ -735,9 +716,7 @@ BEGIN
      OR has_function_privilege('scrbrd_app', 'guardian_terms_record_append_only()', 'EXECUTE')
      OR has_function_privilege('scrbrd_app', 'pupil_signin_open(uuid)', 'EXECUTE')
      OR has_function_privilege('scrbrd_app', 'pupil_signin_after_yes(uuid,text)', 'EXECUTE')
-     OR has_function_privilege('scrbrd_app', 'role_request_grant_as(uuid,uuid,text,uuid,text)', 'EXECUTE')
-     OR NOT has_function_privilege('scrbrd_app', 'pupil_signin_office_set(uuid,boolean,text,date)', 'EXECUTE')
-     OR has_function_privilege('public', 'pupil_signin_office_set(uuid,boolean,text,date)', 'EXECUTE') THEN
+     OR has_function_privilege('scrbrd_app', 'role_request_grant_as(uuid,uuid,text,uuid,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'db/176: a door''s rights are not as this file leaves them';
   END IF;
   IF (SELECT md5(pg_get_expr(p.polqual, p.polrelid)) FROM pg_policy p

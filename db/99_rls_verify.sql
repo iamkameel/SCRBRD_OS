@@ -20359,12 +20359,11 @@ BEGIN
     -- own guardian gives her yes as a guardian's; another office person, or
     -- the one who recognised him, decides. She recognised his claim herself:
     -- her "Allow" is kept as a guardian's yes and opens nothing (own_child),
-    -- nor does her retry; her signed form for him is refused, nothing written;
-    -- the office reads the claim as a yes waiting, and another office
-    -- person's retry opens him on his own decision. Recognised by another
-    -- office person still holding the right: her "Allow" opens him, she the
-    -- asker and the recogniser the decider. An office person who is not his
-    -- guardian records a signed form (the control).
+    -- nor does her retry; her signed form for him is hers to record (Q7 read
+    -- narrowly) and opens nothing either; the office reads the claim as a yes
+    -- waiting, and another office person's retry opens him on his own
+    -- decision. Recognised by another office person still holding the right:
+    -- her "Allow" opens him, she the asker and the recogniser the decider.
     O2 := _v176_office('v176mother');
     K := _v168_account('v176mother'); B := _v168_boy(HIL, 'v176mother', 15);
     PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Mother', 'Grade 10');
@@ -20378,9 +20377,9 @@ BEGIN
     PERFORM _assert(_v176_yeses(B) = '1|guardian:' || O2, format('§151 (mother): her yes is not kept as a guardian''s: %s', _v176_yeses(B)));
     SELECT x.ok, x.held INTO ok_, held_ FROM pupil_signin_retry(B) x;
     PERFORM _assert(ok_ AND held_ = 'own_child' AND NOT _v169_open(K), format('§151 (mother): her retry: %s %s', ok_, held_));
-    SELECT x.ok, x.reason INTO ok_, why FROM pupil_signin_office_set(B, true, 'V176 Mother', NULL) x;
-    PERFORM _assert(NOT coalesce(ok_, false) AND why = 'own_child' AND _v176_yeses(B) = '1|guardian:' || O2,
-                    format('§151 (mother): her signed form for him: %s %s, his yeses %s', ok_, why, _v176_yeses(B)));
+    SELECT x.ok, x.reason, x.held INTO ok_, why, held_ FROM pupil_signin_office_set(B, true, 'V176 Mother', NULL) x;
+    PERFORM _assert(ok_ AND held_ = 'own_child' AND NOT _v169_open(K) AND _v176_yeses(B) = '2|office:' || O2,
+                    format('§151 (mother): her signed form for him: %s %s %s, his yeses %s', ok_, why, held_, _v176_yeses(B)));
     PERFORM _as(REG);
     SELECT x.state INTO v FROM pupil_claims(HIL) x WHERE x.id = _v168_claim_id(K);
     PERFORM _assert(v = 'yes_waits', format('§151 (mother): the office reads his claim as %s', v));
@@ -20397,9 +20396,18 @@ BEGIN
                     format('§151 (mother): recognised by another office person, her yes: %s %s %s', ok_, inf, held_));
     PERFORM _assert(_v176_record(K2) = O2 || '|' || REG || '|' || REG,
                     format('§151 (mother): recognised by another office person, the record reads %s', _v176_record(K2)));
-    BOY := _v168_boy(HIL, 'v176mother3', 15);
-    SELECT x.ok, x.reason INTO ok_, why FROM pupil_signin_office_set(BOY, true, 'V176 Signer', NULL) x;
-    PERFORM _assert(ok_, format('§151 (mother): she could not record the signed form for a boy not hers (%s)', why));
+    -- Her signed form for her own son, recognised by another office person:
+    -- it opens him, on the recogniser's decision, never hers.
+    K := _v168_account('v176mother3'); B := _v168_boy(HIL, 'v176mother3', 15);
+    PERFORM _as(K); PERFORM pupil_claim_send(HIL, 'Verify Mother Three', 'Grade 10');
+    PERFORM _as(REG); PERFORM pupil_claim_recognise(_v168_claim_id(K), B);
+    PERFORM _v176_mother(O2, B);
+    PERFORM _as(O2);
+    SELECT x.ok, x.reason, x.held INTO ok_, why, held_ FROM pupil_signin_office_set(B, true, 'V176 Mother', NULL) x;
+    PERFORM _assert(ok_ AND held_ IS NULL AND _v169_open(K) AND _v176_yeses(B) = '1|office:' || O2,
+                    format('§151 (mother): her signed form for her own son, recognised by another: %s %s %s, his yeses %s', ok_, why, held_, _v176_yeses(B)));
+    PERFORM _assert(_v176_record(K) = O2 || '|' || REG || '|' || REG,
+                    format('§151 (mother): her signed form opened him, the record reads %s', _v176_record(K)));
 
   ELSIF p_case = 'tries' THEN
     -- (tries) Kameel, 26 Nov 2026 (Q2): "Record it" stays open to one who may
@@ -20458,9 +20466,14 @@ BEGIN
     PERFORM _assert(NOT has_table_privilege('scrbrd_app', 'player_born_refusal', 'SELECT, INSERT, UPDATE, DELETE')
                     AND (SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = 'player_born_refusal'::regclass),
                     '§151 (grants): the record of refused tries is open to the application, or its row security is off');
-    -- Q7: the office's signed form keeps its rights.
-    PERFORM _assert(_v168_acl('pupil_signin_office_set(uuid,boolean,text,date)') = 'scrbrd_app:EXECUTE',
-                    format('§151 (grants): pupil_signin_office_set() is granted %s', _v168_acl('pupil_signin_office_set(uuid,boolean,text,date)')));
+    -- ...nor to Supabase's three roles, on its own grants and not only db/157's
+    -- revoked defaults (where the roles are there: on the host, and in the
+    -- full run once §135 has staged the host).
+    FOREACH v IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname = v)
+                      OR NOT has_table_privilege(v, 'player_born_refusal', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'),
+                      format('§151 (grants): the record of refused tries is open to %s', v));
+    END LOOP;
 
   ELSE
     RAISE EXCEPTION '§151: no case %', p_case;
@@ -53492,14 +53505,15 @@ $m130$;
   --             is refused
   --   (mother)  Q7: an office person who is his own guardian: her yes is a
   --             guardian's and opens nothing on her decision (own_child), nor
-  --             her retry; her signed form for him is refused; another office
-  --             person's retry opens him; recognised by another, her yes opens
-  --             him on the recogniser's decision; a boy not hers, her form goes in
+  --             her retry, nor her signed form for him (hers to record);
+  --             another office person's retry opens him; recognised by
+  --             another, her yes opens him on the recogniser's decision
   --   (tries)   Q2: "Record it"'s refused tries, recorded (who, which boy, the
   --             office or not; no date), three a day from anyone but the
   --             office; the office's not counted, yesterday's not today's;
   --             nobody else counts or records; none at a date on record
-  --   (grants)  ACLs, and the record of refused tries nobody's
+  --   (grants)  ACLs, and the record of refused tries nobody's, Supabase's
+  --             three roles included
   -- And §150 (notices): a system notice about him is held from a parent who
   -- has not agreed, by the notice's own policy.
   -- Broken by hand (26 Nov 2026), each went red for its own reason:
@@ -53523,11 +53537,10 @@ $m130$;
   --   the claims list without yes_waits           → (asked) red: the office reads recognised
   --   the count without the office's test         → (asked) red: a coach reads the count
   --   the audit log without the yes's request     → (asked) red: the grant is not said to come on her yes
-  -- And on Kameel's answers of 26 Nov 2026 (Q2, Q4, Q7), eight more:
+  -- And on Kameel's answers of 26 Nov 2026 (Q2, Q4, Q7), seven more:
   --   the log's dates without the departure test  → (log) red: left Hilton without moving, the director reads his dates
   --   the office arm without the own-child test   → (mother) red: her own yes, at the office, opened him
   --   the recogniser arm without "not the caller" → (mother) red: her own yes, as his recogniser, opened him
-  --   the signed form without its own-child test  → (mother) red: her form for him recorded as the office's yes
   --   the count without the school's day          → (tries) red: yesterday's counted today
   --   the count with the office's own             → (tries) red: the office's refused try counted against him
   --   the two doors without the manage test       → (tries) red: a coach counts and records a try
