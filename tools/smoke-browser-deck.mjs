@@ -355,7 +355,12 @@ try {
   const day = '[data-testid="showcase-day"]';
   ok("a laptop frame at this width, holding the day sheet",
      (await page.locator(day).getAttribute("data-kind")) === "laptop" && (await count(`${day} [data-testid="day-sheet"]`)) === 1);
-  ok("it is the coach's, and says it is a demonstration", /Coach/.test(await page.locator(`${day} h1`).innerText())
+  // Today is titled with the date, never the role (DESIGN_DIRECTION §2.1, slice 12); the coach's is the sheet with his
+  // side's fixtures and readiness chips, and it says it is a demonstration.
+  ok("it is the coach's, titled with the date, and says it is a demonstration",
+     /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2}\b/.test((await page.locator(`${day} [data-testid="day-title"]`).innerText()).trim())
+     && !/Coach/.test(await page.locator(`${day} h1`).innerText())
+     && (await count(`${day} [data-testid="day-next"]`)) === 1 && (await count(`${day} [data-testid="ready-squad"]`)) === 1
      && /demo\s*·\s*invented fixtures and players/i.test(await page.locator(`${day} [data-testid="day-sheet"]`).innerText()));
   ok("Now: the live fixture is on the board, from the fold of the demonstration chase",
      (await count(`${day} [data-testid="day-now"] [data-testid="day-board"]`)) === 1
