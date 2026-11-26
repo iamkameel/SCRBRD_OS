@@ -6,7 +6,7 @@ import { useLive } from "../lib/live.js";
 import { profile } from "../lib/session.js";
 import {
   KINDS, RELATIONSHIPS, REQUEST_STATE_WORDS, STAFF_ROLES,
-  EXTRA_MAX, CHILD_MAX, YEAR_MAX, buildRequest, joinWords, sentWords, spectatorAsk, withdrawWords, withdrew,
+  EXTRA_MAX, CHILD_MAX, YEAR_MAX, BORN_FIELD, buildRequest, familyWords, joinWords, sentWords, spectatorAsk, withdrawWords, withdrew,
 } from "../lib/joinSchool.js";
 // "I am a pupil here" (SCRBRD-140 honesty model, Migration A; db/168): the claim form, and the basic view.
 import { CLAIM_FORM, NAME_MAX, YEAR_MAX as CLAIM_YEAR_MAX, buildClaim, claimWords } from "../lib/pupilClaim.js";
@@ -144,7 +144,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
   const [schoolId, setSchoolId] = useState(schools.length === 1 ? schools[0].id : null);
   const [q, setQ] = useState("");
   const [kind, setKind] = useState(kindFirst === "parent" ? "parent" : null);
-  const [form, setForm] = useState({ role: "", extra: "", child: "", relationship: "", year: "", adult: "", name: "", pyear: "" });
+  const [form, setForm] = useState({ role: "", extra: "", child: "", relationship: "", year: "", adult: "", name: "", pyear: "", born: "", pborn: "" });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const [sent, setSent] = useState(null);
@@ -191,8 +191,9 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
     if (!r.ok) { setProblem(r.problem); return; }
     setBusy(true); setProblem("");
     try {
-      await post("/api/requests", { method: "POST", body: r.body });
-      setSent({ kind, school: school?.name ?? "" });
+      const out = await post("/api/requests", { method: "POST", body: r.body });
+      // db/174: the family list linked her (or let a pupil of 18 in) at once.
+      setSent({ kind, school: school?.name ?? "", linked: familyWords(out?.family) });
       onSent?.();
     } catch (e) { setProblem(joinWords(e)); }
     setBusy(false);
@@ -201,7 +202,7 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
   // Q3 (db/168): a pupil under 18 says who he is. It asks for nothing and opens nothing;
   // the screen becomes his basic view (onClaimed).
   const claimIt = async () => {
-    const c = buildClaim(schoolId, { name: form.name, year: form.pyear });
+    const c = buildClaim(schoolId, { name: form.name, year: form.pyear, born: form.pborn });
     if (!c.ok) { setProblem(c.problem); return; }
     setBusy(true); setProblem("");
     try {
@@ -235,12 +236,24 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
     );
   }
 
+  // db/174: linked from the family list. She reads the terms next; he opens the school.
+  if (sent?.linked) {
+    return (
+      <div role="status" data-testid="join-linked" style={card()}>
+        <div style={{ fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary, marginBottom: "6px" }}>{sent.linked.title}</div>
+        <div style={text(14)}>{sent.linked.text}</div>
+        <Btn kind="primary" data-testid="join-linked-continue" disabled={entering} onClick={enter} style={{ marginTop: "14px" }}>{entering ? "Opening the school…" : "Continue"}</Btn>
+        {enterProblem && <div role="alert" data-testid="join-linked-problem" style={{ ...text(13, T.semantic.criticalText), marginTop: "8px" }}>{enterProblem}</div>}
+      </div>
+    );
+  }
+
   if (sent) {
     return (
       <div role="status" data-testid="join-sent" style={card()}>
         <div style={{ fontFamily: FONT.head, fontSize: "16px", fontWeight: 800, color: T.content.primary, marginBottom: "6px" }}>Request sent</div>
         <div style={text(14)}>{sentWords(sent.kind, sent.school)}</div>
-        <Btn style={{ marginTop: "14px" }} data-testid="join-another" onClick={() => { setSent(null); setKind(null); setForm({ role: "", extra: "", child: "", relationship: "", year: "", adult: "", name: "", pyear: "" }); }}>Ask for something else</Btn>
+        <Btn style={{ marginTop: "14px" }} data-testid="join-another" onClick={() => { setSent(null); setKind(null); setForm({ role: "", extra: "", child: "", relationship: "", year: "", adult: "", name: "", pyear: "", born: "", pborn: "" }); }}>Ask for something else</Btn>
       </div>
     );
   }
@@ -331,6 +344,9 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
             </select>)}</Field>
           <Field label="Your child's year or team (optional)">{(id) => (
             <input id={id} value={form.year} maxLength={YEAR_MAX} onChange={(e) => set("year", e.target.value)} style={input()} autoComplete="off"/>)}</Field>
+          {/* db/174 (Q2): optional. Sent beside the request, never in its note; checked and not kept. */}
+          <Field label={BORN_FIELD.parent} hint={BORN_FIELD.hint}>{(id) => (
+            <input id={id} type="date" value={form.born} onChange={(e) => set("born", e.target.value)} style={input()} autoComplete="off" data-testid="join-born"/>)}</Field>
           {/* SCRBRD-092 / SCRBRD-110 §7: health monitoring is a separate yes, given later. */}
           <div role="note" data-testid="join-health-note" style={{ ...text(13), padding: "12px 14px", borderRadius: "10px", border: `1px solid ${T.line.normal}`, background: T.surface.base, marginBottom: "14px" }}>
             <strong style={{ color: T.content.primary }}>Health monitoring is separate, and off.</strong> It is not part of joining. Once the school has checked that you are your child's parent, you can turn it on, or leave it off, on your child's file under Family.
@@ -354,13 +370,19 @@ export function JoinSchool({ schools, onSent, onJoined, post = api, kindFirst = 
                 <input id={id} value={form.name} maxLength={NAME_MAX} onChange={(e) => set("name", e.target.value)} style={input()} autoComplete="name" data-testid="join-pupil-name"/>)}</Field>
               <Field label="Your year or team (optional)">{(id) => (
                 <input id={id} value={form.pyear} maxLength={CLAIM_YEAR_MAX} onChange={(e) => set("pyear", e.target.value)} style={input()} autoComplete="off" data-testid="join-pupil-year"/>)}</Field>
+              <Field label={BORN_FIELD.pupil} hint={BORN_FIELD.hint}>{(id) => (
+                <input id={id} type="date" value={form.pborn} onChange={(e) => set("pborn", e.target.value)} style={input()} autoComplete="off" data-testid="join-pupil-born"/>)}</Field>
               <div role="note" data-testid="join-pupil-keep" style={{ ...text(13), marginBottom: "14px" }}>{CLAIM_FORM.keep}</div>
-              <Btn kind="primary" data-testid="join-pupil-send" disabled={busy || !buildClaim(schoolId, { name: form.name, year: form.pyear }).ok} onClick={claimIt}>{busy ? "Sending…" : "Send to the school"}</Btn>
+              <Btn kind="primary" data-testid="join-pupil-send" disabled={busy || !buildClaim(schoolId, { name: form.name, year: form.pyear, born: form.pborn }).ok} onClick={claimIt}>{busy ? "Sending…" : "Send to the school"}</Btn>
             </div>
           )}
           {form.adult === "yes" && (
             <Field label="Your year or team (optional)" hint="The office uses this to match you to the school's list.">{(id) => (
               <input id={id} value={form.extra} maxLength={EXTRA_MAX} onChange={(e) => set("extra", e.target.value)} style={input()} autoComplete="off"/>)}</Field>
+          )}
+          {form.adult === "yes" && (
+            <Field label={BORN_FIELD.pupil} hint={BORN_FIELD.hint}>{(id) => (
+              <input id={id} type="date" value={form.born} onChange={(e) => set("born", e.target.value)} style={input()} autoComplete="off" data-testid="join-adult-born"/>)}</Field>
           )}
         </div>
       )}

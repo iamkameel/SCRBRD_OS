@@ -932,7 +932,9 @@ function asRoleRequest(r) {
   return { id: r.id, personId: r.person_id, name: r.name, email: r.email, role: r.role, school: r.school_id,
            schoolName: r.school_name, team: r.team_code, playerId: r.player_id, note: r.note, state: r.state,
            requestedAt: r.requested_at, decidedAt: r.decided_at, decidedNote: r.decided_note, decidedBy: r.decided_by_name,
-           mine: r.mine === true, decidable: r.decidable === true, askedUnverified: r.asked_unverified === true, live: true };
+           mine: r.mine === true, decidable: r.decidable === true, askedUnverified: r.asked_unverified === true,
+           // db/174: the office's line on a request the family list did not link (a code; never her typed date).
+           familyLine: r.family_line ?? null, live: true };
 }
 // db/158 (Q22): a request to add a school. The asker's own, or every one for
 // the platform. `state` is as read: "lapsed" after ninety days unanswered.

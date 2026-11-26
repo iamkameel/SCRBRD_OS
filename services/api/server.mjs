@@ -111,6 +111,7 @@ import { requestRoutes } from "./write/requests-api.mjs";
 // SCRBRD-140 phase 2 (db/92–93): the school staff register, and the
 // request cooldown's lift.
 import { registerRoutes } from "./write/register-api.mjs";
+import { familyRegisterRoutes } from "./write/family-register-api.mjs";
 import { newsRoutes } from "./write/news-api.mjs";
 import { kitRoutes } from "./write/kit-api.mjs";
 import { workloadRoutes } from "./write/workload-api.mjs";
@@ -507,6 +508,8 @@ const colours = coloursRoutes({ pool, secret: SECRET });
 const competitions = competitionRoutes({ pool, secret: SECRET });
 const requests = requestRoutes({ pool, secret: SECRET });
 const staffRegister = registerRoutes({ pool, secret: SECRET });
+// The family list (db/174, SCRBRD-140 Migration C): the office's, read and written through db/174's functions.
+const familyList = familyRegisterRoutes({ pool, secret: SECRET });
 const pupilClaims = pupilClaimRoutes({ pool, secret: SECRET });
 const ownSignin = pupilSigninRoutes({ pool, secret: SECRET });
 // Sign-up with Google (SCRBRD-140 phase 1, db/81). Google's keys for
@@ -568,6 +571,8 @@ NO_STORE_ROUTES.add(follows.list);
 NO_STORE_ROUTES.add(follows.today);
 NO_STORE_ROUTES.add(pupilClaims.state);
 NO_STORE_ROUTES.add(pupilClaims.list);
+NO_STORE_ROUTES.add(familyList.list);
+NO_STORE_ROUTES.add(familyList.redactDue);
 NO_STORE_ROUTES.add(ownSignin.state);
 // The key is read once, here, and goes nowhere but Google's header. Unset,
 // the hint answers 503 weather_unavailable and the scorer picks by hand.
@@ -935,6 +940,13 @@ const PLAYER_ROUTES = [
   [/^\/api\/register\/([0-9a-f-]{36})\/redact$/,     "GET",  staffRegister.redactDue],
   [/^\/api\/register\/([0-9a-f-]{36})\/redact$/,     "POST", staffRegister.redact],
   [/^\/api\/join\/register-claim$/,                   "POST", staffRegister.claim],
+  // The family list (db/174): the office uploads and reads it; a parent's
+  // request (POST /api/requests with `born`) is what claims a row.
+  [/^\/api\/family-list\/([0-9a-f-]{36})$/,          "POST", familyList.upload],
+  [/^\/api\/family-list\/([0-9a-f-]{36})$/,          "GET",  familyList.list],
+  [/^\/api\/family-list\/rows\/([0-9a-f-]{36})\/withdraw$/, "POST", familyList.withdraw],
+  [/^\/api\/family-list\/([0-9a-f-]{36})\/redact$/,  "GET",  familyList.redactDue],
+  [/^\/api\/family-list\/([0-9a-f-]{36})\/redact$/,  "POST", familyList.redact],
   // db/93: a DSO at one of its schools lifts a request cooldown.
   [/^\/api\/cooldowns\/([0-9a-f-]{36})\/lift$/,       "POST", staffRegister.liftCooldown],
   // The newsfeed. Which tier a post needs is decided by its ANCHOR, inside the
@@ -1510,6 +1522,9 @@ const PLATFORM_LOGGED = new Map(/** @type {[unknown, import("./read/platform-rea
   [colours.list,              { resource: "colours_nominations" }],
   // Migration A: the office's list of pupils who said "I am a pupil here" (under-18 accounts).
   [pupilClaims.list,          { resource: "pupil_claims" }],
+  // Migration C (db/174): the office's family list, which names children by their roster name.
+  [familyList.list,           { resource: "family_register" }],
+  [familyList.redactDue,      { resource: "family_register_due" }],
   // Migration B (db/169): a boy's own sign-in, yes or no and who gave it, read by
   // his family and the office (neither door answers the key; logged all the same).
   [ownSignin.state,           { resource: "pupil_own_signin" }],

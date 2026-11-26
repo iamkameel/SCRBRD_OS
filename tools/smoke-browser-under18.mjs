@@ -242,7 +242,11 @@ try {
     const form = sentence(await tid(P, "join-pupil-under18").innerText());
     ok("...which promises nothing, and says what sending does and how long it is kept",
        /Nothing about you is opened/.test(form) && /pupil under 18/.test(form) && /30 days/.test(form) && /removed/.test(form), form);
-    ok("...and asks no date of birth", (await P.locator('[data-testid="join-pupil-under18"] input[type="date"]').count()) === 0 && !/birth/i.test(form));
+    // db/174 (Kameel, 18 Nov 2026, Q2): one optional date of birth, compared
+    // with the school's family list and not kept; left blank it is not sent.
+    ok("...and asks his date of birth only as one optional field, compared and not kept",
+       (await P.locator('[data-testid="join-pupil-under18"] input[type="date"]').count()) === 1
+       && /lets the school's list confirm you at once/.test(form) && /not kept/.test(form), form);
     const fl = await floors(P, '[data-testid="join-school"]');
     ok("the form: nothing under 12px, nothing under 44px", fl.small.length === 0 && fl.tiny.length === 0, [...fl.small, ...fl.tiny].join(" | "));
     h.bodies.length = 0;

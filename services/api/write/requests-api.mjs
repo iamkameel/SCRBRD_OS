@@ -22,6 +22,7 @@
 import { runAsPrincipal, issueLoginCode } from "../auth/auth-db.mjs";
 import { COOLDOWN_WORDS, PUPIL_WAITING_WORDS } from "./register-api.mjs";
 import { formOf, recordFormOnFile } from "./pupil-signin-api.mjs";
+import { bornOf, familyClaim } from "./family-register-api.mjs";
 /** @import { RouteDeps, ApiRequest, ApiResponse, Handler } from "../api-types.mjs" */
 // A caught error is `any` to the checker (CaughtError in api-types.mjs):
 // pg's carry a SQLSTATE `code`, this module's own carry an HTTP `status`.
@@ -142,19 +143,31 @@ export function requestRoutes({ pool, secret }) {
     // GET /api/schools — id and name, for choosing one.
     schools: handle(async () => ({ rows: (await pool.query(`select * from public_schools()`)).rows })),
 
-    // POST /api/requests { role, schoolId, teamCode?, playerId?, note? } — a signed-in person asks for another role
+    // POST /api/requests { role, schoolId, teamCode?, playerId?, note?, born? } — a signed-in person asks for another role
+    //
+    // THE FAMILY LIST (db/174, SCRBRD-140 Q1, Q2). A parent's guardian request,
+    // or a pupil's own `player` request, may carry `born`: the child's date of
+    // birth as she typed it. Right after the request is filed it is tried
+    // against the school's family list, in the same transaction, and dropped:
+    // it is never stored, never logged and never in the note. `family` is
+    // 'linked' (her link is written, consent pending: she reads and agrees to
+    // the terms next), 'in' (a pupil of 18 given `player`), or 'sent' for
+    // everything else, whatever the reason, so the answer says nothing about
+    // whether a child is on a list.
     request: handle(async (req) => {
       const b = req.body || {};
       const f = fields(b);
       refusePlatformRole(f.role);
       const player = b.playerId == null ? null : String(b.playerId);
       if (player && !UUID.test(player)) throw err("player_invalid");
+      const born = bornOf(b.born);
       return runAsPrincipal(pool, secret, req.headers?.authorization, async (client) => {
         const { rows } = await client.query(
           `insert into role_request (person_id, role, school_id, team_code, player_id, note)
            values (app_user_id(), $1, $2, $3, $4, $5) returning id, state`, [f.role, f.school, f.team, player, f.note]);
         if (!rows.length) throw err("not_permitted", 403);
-        return { id: rows[0].id, state: rows[0].state };
+        const family = await familyClaim(client, rows[0].id, f.role, born);
+        return { id: rows[0].id, state: family === "sent" ? rows[0].state : "granted", family };
       });
     }),
 

@@ -33,6 +33,7 @@
  * answers as any account that is not a claim does, in words that tell
  * whoever holds his phone nothing (re-review S3(a)).
  */
+import { bornField } from "./joinSchool.js";
 
 export const NAME_MAX = 80;
 export const YEAR_MAX = 20;
@@ -49,11 +50,12 @@ export const CLAIM_FORM = Object.freeze({
 
 /**
  * What his claim sends, or why not yet. The name and the year are what he
- * typed, tidied; no date of birth is asked for (nothing compares it until
- * the family list exists, design §2.3, and a child is asked only what is used).
+ * typed, tidied. His date of birth is optional (db/174, Q2): sent as `born`
+ * only when he typed a real day, compared with the school's family list for
+ * his verified address and dropped by the server, never kept.
  * @param {string | null} schoolId
- * @param {{ name?: string, year?: string }} f
- * @returns {{ ok: true, body: { schoolId: string, name: string, year: string | null } } | { ok: false, problem: string }}
+ * @param {{ name?: string, year?: string, born?: string }} f
+ * @returns {{ ok: true, body: { schoolId: string, name: string, year: string | null, born?: string } } | { ok: false, problem: string }}
  */
 export function buildClaim(schoolId, f = {}) {
   if (!schoolId) return { ok: false, problem: "Choose your school first." };
@@ -62,13 +64,15 @@ export function buildClaim(schoolId, f = {}) {
   if (name.length > NAME_MAX) return { ok: false, problem: "Keep your name to 80 letters or fewer." };
   const year = clean(f.year);
   if (year.length > YEAR_MAX) return { ok: false, problem: CLAIM_WORDS.year_too_long };
-  return { ok: true, body: { schoolId, name, year: year || null } };
+  const born = bornField(f.born);
+  return { ok: true, body: { schoolId, name, year: year || null, ...(born ? { born } : {}) } };
 }
 
 /** Each refusal of POST /api/pupil/claim, in the screen's words. None says anything about the school's list. */
 export const CLAIM_WORDS = Object.freeze({
   name_required: "Type your name, as the school would have it.",
   year_too_long: "Keep your year or team to 20 letters or fewer.",
+  born_invalid: "That date of birth cannot be a pupil's. Check it, or leave it out.",
   no_such_school: "That school could not be chosen. Choose it again from the list.",
   request_cooldown: "This account can't send anything to a school yet. Ask the school office.",
   ask_your_school_office: "This account cannot send a pupil's claim. Ask your school office.",
