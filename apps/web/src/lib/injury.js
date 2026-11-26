@@ -180,16 +180,16 @@ const hasLeftSchool = (injury) => injury?.leftSchool === true;
 
 /**
  * What a Home may hold of an injury row (redesign slice 8; Kameel's question 6
- * (a), 19 Nov: "Injured · back Fri", no diagnosis on Home). The row the
- * `injuries` read maps (lib/live.js asInjury) carries the injury's name, its
- * severity, the notes and the physio, for his health history; the Home keeps
- * only whose it is, whether it is open, and the return date. Nothing else of
- * the row reaches the Home's line.
+ * (a), 19 Nov: "Injured · back Fri", no diagnosis on Home): whose it is,
+ * whether it is open, the return date, and whether he has left the injury's
+ * school. The Home reads `injury_status` (lib/live.js asInjuryStatus), which
+ * carries nothing more and only open rows; a full `injuries` row is cut to the
+ * same four, open judged by isOpenInjury.
  * @param {any[]} rows
- * @returns {{player: any, phase: any, restricted: any, rtw: any, leftSchool: any}[]}
+ * @returns {{player: any, open: boolean, rtw: any, leftSchool: any}[]}
  */
 function homeInjuryRows(rows) {
-  return (rows ?? []).filter(Boolean).map((i) => ({ player: i.player, phase: i.phase ?? null, restricted: i.restricted ?? null,
+  return (rows ?? []).filter(Boolean).map((i) => ({ player: i.player, open: typeof i.open === "boolean" ? i.open : isOpenInjury(i),
     rtw: i.rtw ?? null, leftSchool: i.leftSchool ?? null }));
 }
 
@@ -198,8 +198,8 @@ function homeInjuryRows(rows) {
  * (redesign slice 8; the role reviews' direction §3.2 Flow A, Kameel's
  * question 6 (a)): "Injured · back Fri 4 Dec", or "Injured" with no return
  * date read. No diagnosis: the injury's name stays in his health history (his
- * parent's Family card, his own Me), which the line opens. Read from the same
- * `injuries` rows, cut to homeInjuryRows() and narrowed to the one boy. Null
+ * parent's Family card, his own Me), which the line opens. Read from the
+ * `injury_status` rows, cut to homeInjuryRows() and narrowed to the one boy. Null
  * when nothing is open, or he has left the injury's school.
  *
  * What the availability buttons do while he is injured (question 6's pre-filled
@@ -207,7 +207,7 @@ function homeInjuryRows(rows) {
  * @param {any[]} rows  @param {{id: string}} child  @param {(iso: string) => string} fmt  the date as a person reads it
  */
 function injuredLine(rows, child, fmt) {
-  const open = homeInjuryRows(rows).filter((i) => i.player === child.id && isOpenInjury(i) && !hasLeftSchool(i))
+  const open = homeInjuryRows(rows).filter((i) => i.player === child.id && i.open && !hasLeftSchool(i))
     // The one he will be back from last: the line says when he is back.
     .sort((a, b) => String(b.rtw ?? "9999").localeCompare(String(a.rtw ?? "9999")));
   const i = open[0];
@@ -233,15 +233,16 @@ function injuredLine(rows, child, fmt) {
  * date says "Injured" on his Home and suggests nothing: when he is back is
  * not known, so the screen does not guess it for a fixture.
  *
- * Read from the same rows as his Home's line, cut to homeInjuryRows() (whose,
- * open, the return date): the injury's name never reaches the answer.
+ * Read from the same `injury_status` rows as his Home's line, cut to
+ * homeInjuryRows() (whose, open, the return date): the injury's name never
+ * reaches the answer.
  * @param {any[]} rows  @param {{id: string}} child  @param {string | null | undefined} fixtureDay  the fixture's South African day, YYYY-MM-DD
  * @returns {{status: "unavailable", back: string} | null}
  */
 function injuredAnswer(rows, child, fixtureDay) {
   const day = day10(fixtureDay);
   if (!day) return null;
-  const open = homeInjuryRows(rows).filter((i) => i.player === child.id && isOpenInjury(i) && !hasLeftSchool(i));
+  const open = homeInjuryRows(rows).filter((i) => i.player === child.id && i.open && !hasLeftSchool(i));
   if (!open.length || open.some((i) => !day10(i.rtw))) return null;
   const back = open.map((i) => /** @type {string} */ (day10(i.rtw))).sort().at(-1);
   return back && day < back ? { status: "unavailable", back } : null;

@@ -215,6 +215,8 @@ try {
   const PILLAY = "aaaaaaaa-0000-0000-0000-000000000005";
   const parent = await open();
   const ptid = (id) => parent.page.locator(`[data-testid="${id}"]`);
+  const parentAsked = [];
+  parent.page.on("request", (r) => { if (r.url().includes("/api/read/")) parentAsked.push(new URL(r.url()).pathname.replace(/^.*\/api\/read\//, "")); });
   ok("the guardian signs in", await signIn(parent.page, /Parent|Guardian/));
   ok("...and lands on the family's Home, not the staff dashboard", await ptid("os-main").getAttribute("data-page") === "children");
   const rail = await parent.page.$$eval('[data-testid^="nav-"]:not([data-testid^="nav-group-"])', (els) => els.map((e) => e.getAttribute("data-testid")));
@@ -225,6 +227,16 @@ try {
   ok("Home is about her child", /R Pillay/.test(home) && await ptid("family-home-body").getAttribute("data-child") === PILLAY);
   ok("...and names no other child", !OTHERS.test(home), home.match(OTHERS)?.[0]);
   ok("...with one child, no switcher", await ptid("child-switcher").count() === 0);
+  // Kameel's question 6 (a): his open injury is "Injured · back …" on her Home,
+  // drawn from the narrow `injury_status` read; the clinical `injuries` read
+  // is his Health history's, and the Home never asks for it.
+  {
+    const line = (await ptid("home-injury").first().innerText({ timeout: 4000 }).catch(() => "")).replace(/\s+/g, " ").trim();
+    ok("his open injury on her Home: 'Injured', with the return date, no diagnosis",
+       /^Injured( · back \w{3} \d{1,2} \w{3})?$/.test(line.replace(/\s*Health$/, "")) && !/hamstring|strain|grade/i.test(home), line);
+    ok("...read from `injury_status`, and the Home never asks for the clinical `injuries` read",
+       parentAsked.includes("injury_status") && !parentAsked.includes("injuries"), parentAsked.join());
+  }
   ok("the next fixture comes first", await ptid("next-fixture").count() === 1
      && (await parent.page.locator('[data-testid="family-home-body"] section').first().getAttribute("data-testid")) === "next-fixture");
   ok("the Family screen opens", await nav(parent.page, /^Family$/));
@@ -1566,9 +1578,11 @@ try {
       // fixture.read and competition.read; no team.read and no
       // medical.status.read. "This week" still draws — its fixtures half
       // needs only fixture.read — but nothing about who is out.
+      // Redesign slice 15: his Today is titled with the date and is matches and results, not the staff sheet: no
+      // "Next fixture", no readiness chips, no "This week" card of staff, and no empty Alerts card.
       { who: /watcher@example\.invalid/, role: "spectator",
-        sees:   ["day-next", "day-week", "day-alerts"],
-        cannot: ["day-out"] },
+        sees:   ["day-title"],
+        cannot: ["day-out", "day-next", "day-week", "ready-squad"] },
       // A pupil (step 4): not the day sheet at all — his own Home, with his
       // next fixture first. Since db/55 (K3, CSA p52) no medical.status.read,
       // so who is out on his side is not on it; his own injury is on Me.

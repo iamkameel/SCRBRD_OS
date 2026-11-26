@@ -79,6 +79,29 @@ group("A. PII/clinical resources read the MASKED views (not base tables)");
   ok("injuries query uses injury_masked", /from injury_masked/.test(READ_QUERIES.injuries.text));
   ok("players flagged masked:true", READ_QUERIES.players.masked === true && READ_QUERIES.injuries.masked === true);
   ok("matches is NOT masked (no PII)", !READ_QUERIES.matches.masked);
+  // The Home's line and the answer card's suggestion (Kameel's question 6 (a)):
+  // whose, the return date, whether he left; no clinical column is selected.
+  const home = READ_QUERIES.injury_status.text;
+  const selected = home.slice(home.indexOf("select") + 6, home.indexOf("from injury_masked"));
+  ok("injury_status reads injury_masked under the caller's own row security", /from injury_masked/.test(home) && READ_QUERIES.injury_status.masked === true);
+  ok("...and selects only whose, the return date and whether he left",
+     selected.replace(/\s+/g, " ").trim() === "player_id, school_id, rtw_date, (injury_left_on(player_id, school_id) is not null) as left_school");
+  ok("...never a watched column of `injuries`", RESTRICTED_FIELDS.injuries.every((c) => !new RegExp(`\\b${c}\\b`).test(selected)));
+  ok("...so nothing it returns is logged as a clinical read", !Object.hasOwn(RESTRICTED_FIELDS, "injury_status"));
+}
+
+group("A. match_duties names the scorer only at his school, a pupil in initials (the other-phone screen)");
+{
+  const t = READ_QUERIES.match_duties.text;
+  const arm = t.slice(t.indexOf("select 'scoring'"), t.indexOf("from scoring_session"));
+  ok("the scoring row's name is decided in the read, never a bare u.name", !/coalesce\(u\.name/.test(arm) && /when u\.id = app_user_id\(\) then u\.name/.test(arm));
+  ok("...none for a reader who may not read the holder's account at his school",
+     /when not app_can\('user\.read', u\.school_id, null::text, u\.id,[^)]*\) then null/.test(arm.replace(/\s+/g, " ")));
+  ok("...a pupil (a player account, or a player or selfaccess role) in initials",
+     /u\.player_id is not null or u\.role in \('player', 'selfaccess'\)/.test(arm) && /broadcast_name\(btrim\(u\.name\), 'initials'\)/.test(arm));
+  ok("...and the checks come in that order: himself, his school, a pupil, then an adult in full",
+     arm.indexOf("app_user_id()") < arm.indexOf("'user.read'") && arm.indexOf("'user.read'") < arm.indexOf("u.player_id")
+     && arm.indexOf("u.player_id") < arm.lastIndexOf("else u.name end"));
 }
 
 group("A. The handler does no RBAC of its own");
@@ -498,6 +521,30 @@ group("A. The physio's half is null, not false, for a reader without medical.sta
   ok("readiness: no other coalesce of the clinical half", (r.match(/coalesce\(c\.restricted/g) ?? []).length === 1);
   ok("availability: exists() only where the tier fills it",
      a.includes(`(case when my_feature_enabled('injuries') and ${gate} then exists (select 1 from injury_masked i where i.player_id = p.id and i.restricted) end) as clinically_restricted`));
+}
+
+group("An answer's reason and note are its writer's and the staff's (Kameel, 25 Nov)");
+{
+  // The live proof is tools/smoke-availability.mjs: the boy does not read his mother's note, nor she his.
+  const flat = (/** @type {string} */ t) => t.replace(/\s+/g, " ");
+  const seen = (/** @type {string} */ row, /** @type {string} */ school, /** @type {string} */ team, /** @type {string} */ fixture) =>
+    `(${row}.declared_by = app_user_id() or app_can('availability.read', ${school}, ${team}, null::uuid, ${fixture}))`;
+  const a = flat(READ_QUERIES.availability.text), h = flat(READ_QUERIES.availability_history.text), r = flat(READ_QUERIES.readiness.text);
+  const live = seen("a", "m.school_id", "m.team_code", "m.id"), old = seen("h", "match_school(h.match_id)", "match_team(h.match_id)", "h.match_id");
+  ok("availability: the reason and the note only to their writer and a staff reader",
+     a.includes(`(case when ${live} then a.reason_kind end) as reason_kind`) && a.includes(`(case when ${live} then a.note end) as note`));
+  ok("availability_history: the same, for the answers replaced",
+     h.includes(`(case when ${old} then h.reason_kind end) as reason_kind`) && h.includes(`(case when ${old} then h.note end) as note`));
+  ok("readiness: its reason the same way", r.includes(`(case when ${live} then a.reason_kind end) as reason_kind`));
+  ok("...and none of the three returns the raw column anywhere else",
+     ![a, h, r].some((t) => /[ah]\.(note|reason_kind)\s*,/.test(t.replace(/then [ah]\.(note|reason_kind) end/g, ""))));
+  // The staff test names no person: app_can() refuses a guardian's, a pupil's and an enquirer's assignment when no
+  // person is given (db/50's person clause), and passes an assignment that names nobody: the school's and the side's.
+  const can = flat((await import("node:fs")).readFileSync(new URL("../../../db/50_pad_resume.sql", import.meta.url), "utf8"));
+  ok("app_can(): a person-scoped role must be given a person (null fails), an unscoped one need not",
+     can.includes("WHEN a.role = ANY (ARRAY['guardian', 'selfaccess', 'enquiry']::text[]) THEN")
+     && can.includes("AND (p_person = '00000000-0000-0000-0000-000000000000'::uuid OR (p_person IS NOT NULL AND EXISTS (")
+     && can.includes("NOT EXISTS (SELECT 1 FROM assignment_subject g WHERE g.assignment_id = a.id) OR p_person"));
 }
 
 group("A. The cockpit's reads (SCRBRD-136/137 phase B §5, §1.4): the lead's fixes and bowler_day, held in the text");

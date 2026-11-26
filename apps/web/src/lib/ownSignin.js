@@ -136,6 +136,9 @@ export function officeSigninWords(s, name) {
 export const OFFICE_WITHDRAW = Object.freeze({
   button: "Record a withdrawal",
   says: "Recording a withdrawal closes his own sign-in now, whoever said yes before. It does not hold against a yes given afterwards: any of his verified parents or guardians who has agreed to the school's terms may allow it again. To keep him out whatever is said later, end his roles or disable his account.",
+  // D1 (Kameel, 25 Nov): the case the line above covers in general, said once more where it is easiest to miss: one
+  // parent withdraws, and the other, still linked, says yes that evening.
+  otherParent: "Also end the other parent's link, or their yes reopens it.",
   done: "Withdrawal recorded. His own sign-in is closed.",
   retry: "Open his account now",
 });

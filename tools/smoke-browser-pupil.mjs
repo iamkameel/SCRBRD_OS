@@ -322,6 +322,9 @@ try {
        own.length > 0 ? /^Injured( · back \w{3} \d{1,2} \w{3})?\b/.test(line) : await tid(s.page, "home-injury").count() === 0, [own.length, line]);
     ok("...and no diagnosis on Home: not the injury's name, anywhere on it",
        own.every((r) => !r.injury_type || !new RegExp(String(r.injury_type).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(homeNow)) && !/hamstring|strain|Grade 2/i.test(homeNow), homeNow.match(/hamstring|strain|Grade 2/i)?.[0]);
+    const reads = asked.filter((u) => u.includes("/api/read/")).map((u) => u.replace(/^.*\/api\/read\//, ""));
+    ok("...read from `injury_status`, and his Home never asks for the clinical `injuries` read",
+       reads.includes("injury_status") && !reads.includes("injuries"), reads.join());
   }
   const fh = await floors(s.page);
   ok(`Home at phone width: nothing read under 12px (${fh.small.length})`, fh.small.length === 0, fh.small.slice(0, 4).join(" · "));
@@ -422,6 +425,31 @@ try {
   const fixtureText = await inner(s.page, "os-main");
   ok("...and no team-mate's injury, fitness or return date anywhere on it (K3)", !HEALTH.test(fixtureText), fixtureText.match(HEALTH)?.[0]);
   ok("...nor a team-mate's answer or its reason", await tid(s.page, `availability-state-${WHITFIELD}`).count() === 0 && !/funeral|family/i.test(fixtureText));
+  {
+    // Kameel, 25 Nov: a note for the coach is its writer's and the staff's. His mother answers, with a reason and a
+    // note; his screen says she answered, and neither offers her words again nor sends them under his name.
+    const motherId = (await q(`select id from app_user where email = 'parent@example.invalid'`))[0].id;
+    await q(`update match_availability set status = 'unavailable', reason_kind = 'family', note = 'For the coach: a family matter at home', declared_by = $3, declared_at = now()
+              where match_id = $1 and player_id = $2`, [NEXT, PILLAY, motherId]);
+    const mine = (await readRows(await devToken("pillay@example.invalid"), `availability?matchId=${NEXT}`)).find((r) => r.player_id === PILLAY) ?? null;
+    ok("his mother's answer, read as him: 'unavailable, said by D Pillay', with no reason and no note", mine?.status === "unavailable" && mine?.declared_by_name === "D Pillay"
+       && mine?.reason_kind === null && mine?.note === null, JSON.stringify(mine));
+    // Away and back, so his Home and the fixture read again.
+    await go(s.page, "mymatches");
+    await go(s.page, "myhome");
+    await afterReads(s.page, 1200);
+    await tid(s.page, "next-fixture-open").click({ timeout: 4000 }).catch(() => {});
+    await afterReads(s.page, 1500);
+    ok("...his fixture says she answered: 'Said by D Pillay'", /Said by D Pillay/.test(await inner(s.page, `availability-by-${PILLAY}`)), await inner(s.page, `availability-by-${PILLAY}`));
+    const why = tid(s.page, `availability-why-${PILLAY}`);
+    ok("...offers to add a reason, not to change hers", (await why.innerText().catch(() => "")).trim() === "Add a reason for the coach", await why.innerText().catch(() => ""));
+    await why.click({ timeout: 4000 }).catch(() => {});
+    const reasonNow = await s.page.locator(`[data-testid="availability-reason-${PILLAY}"]`).inputValue().catch(() => null);
+    const noteNow = await s.page.locator(`[data-testid="availability-note-${PILLAY}"]`).inputValue().catch(() => null);
+    ok("...and its form is empty: her reason and her note are not his to send", reasonNow === "" && noteNow === "", JSON.stringify([reasonNow, noteNow]));
+    ok("...her words are nowhere on his screen", !/a family matter at home/i.test(await inner(s.page, "os-main")));
+    await tid(s.page, `availability-why-cancel-${PILLAY}`).click({ timeout: 4000 }).catch(() => {});
+  }
   // He changes the answer he sent from Home: one tap, then a reason for the coach.
   await tid(s.page, `availability-set-${PILLAY}-doubtful`).click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1200);

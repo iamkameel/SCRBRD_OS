@@ -96,6 +96,25 @@ try {
   ok("a guardian can answer for their own child", mine.status === 200);
   ok("...and it is recorded as unavailable", mine.body?.status === "unavailable");
 
+  // Kameel, 25 Nov: an answer's reason and note are its writer's and the staff's. Whoever may read the answer reads
+  // its status and who gave it; the boy does not read his mother's note, and so cannot send it again as his.
+  group("An answer's reason and note are its writer's and the staff's");
+  {
+    const rowOf = async (token) => (await sheet(m, token)).find((r) => r.player_id === CHILD) ?? null;
+    const hers = await rowOf(parent);
+    ok("the guardian who wrote it reads her reason and her note", hers?.reason_kind === "family" && /grandmother/.test(hers?.note ?? ""));
+    const his = await rowOf(boy);
+    ok("the boy reads the answer and who gave it", his?.status === "unavailable" && his?.self_declared === false && his?.declared_by_name === "D Pillay");
+    ok("...but not her reason, nor her note", his !== null && his.reason_kind === null && his.note === null);
+    const coachSees = await rowOf(coach), headSees = await rowOf(head);
+    ok("the coach of the side reads both", coachSees?.reason_kind === "family" && /grandmother/.test(coachSees?.note ?? ""));
+    ok("...and so does the director of sport", headSees?.reason_kind === "family" && /grandmother/.test(headSees?.note ?? ""));
+    const ready = async (token) => ((await api(`/api/read/readiness?matchId=${m}`, { token })).body?.rows ?? []).find((r) => r.player_id === CHILD) ?? null;
+    const boyReady = await ready(boy), coachReady = await ready(coach);
+    ok("the readiness read keeps the same rule: the coach reads her reason, the boy never does",
+       coachReady?.reason_kind === "family" && (boyReady === null || boyReady.reason_kind === null));
+  }
+
   // The person anchor doing its work. Without it a guardian holding
   // availability.declare at a school could answer for every boy in it.
   const other = squad.find((p) => p.id !== CHILD);
@@ -277,6 +296,21 @@ try {
        (await hist(parent)).every((r) => r.player_id === CHILD));
     ok("...nor does a spectator read any", (await hist(watcher)).length === 0);
     ok("the coach reads his side's", (await hist(coach)).some((r) => r.player_id !== CHILD));
+
+    // The answers it replaced keep the same rule: the guardian's first answer, with her note, is hers and the staff's.
+    const herFirst = async (token) => (await hist(token)).find((r) => r.player_id === CHILD && r.status === "unavailable") ?? null;
+    ok("her replaced answer: she and the coach read its note; the boy reads the answer and not her words",
+       /grandmother/.test((await herFirst(parent))?.note ?? "") && /grandmother/.test((await herFirst(coach))?.note ?? "")
+       && (await herFirst(boy))?.reason_kind === null && (await herFirst(boy))?.note === null && (await herFirst(boy))?.status === "unavailable");
+
+    // And the other way: the boy's own note is his and the staff's, never his guardian's.
+    ok("the boy answers doubtful, with a reason and a note of his own",
+       (await declare(m, boy, { playerId: CHILD, status: "doubtful", reasonKind: "academic", note: "Exam on Saturday morning" })).status === 200);
+    const live = async (token) => (await sheet(m, token)).find((r) => r.player_id === CHILD) ?? null;
+    ok("...he reads his own words", (await live(boy))?.note === "Exam on Saturday morning" && (await live(boy))?.reason_kind === "academic");
+    ok("...his guardian reads 'doubtful, said by him', and not his reason or note",
+       (await live(parent))?.status === "doubtful" && (await live(parent))?.self_declared === true && (await live(parent))?.note === null && (await live(parent))?.reason_kind === null);
+    ok("...the coach reads both", (await live(coach))?.note === "Exam on Saturday morning" && (await live(coach))?.reason_kind === "academic");
   }
 
 } catch (e) {
