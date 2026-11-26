@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import pkg from "../../package.json";
 import { ROLES, ROLE_FAMILIES, ROLE_IDENTITY } from "../design/roles.js";
 import { boundaries, ROLE_CAPABILITIES, SUBJECT_SCOPED_ROLES, TEAM_SCOPED_ROLES } from "@scrbrd/policy/roles";
@@ -71,7 +71,7 @@ import { StateLabel } from "../ui/stateLabel.jsx";
 // has one (a pupil's self-access link; under eighteen his guardian decides,
 // and he may take a school's name back himself).
 const OWN_TABS = [
-  { id: "me",       label: "Me",       hint: "My access, this device, my clearances" },
+  { id: "me",       label: "Me",       hint: "This device, what reaches you, and how you sign in" },
   { id: "passport", label: "Passport", hint: "Where my record may travel", offered: () => ownRecordsOf().size > 0 },
 ];
 
@@ -162,7 +162,7 @@ function OwnSettings({ role, onSignOut }) {
   return (
     <div className="os-page" data-testid="own-settings">
       <SectionHeader title="Settings"
-        sub="Yours: who you are here, this device, how you sign in, and what reaches you."
+        sub={personaOf(role) ? "This device, what reaches you, and how you sign in." : "Yours: who you are here, this device, how you sign in, and what reaches you."}
         color={D.violet}/>
       {tabs.length > 1 && (
         <div role="tablist" aria-label="Settings sections"
@@ -751,14 +751,27 @@ function RolesTab({ users, grantable }) {
  * boundaries() itself, with the reason.
  */
 const ASK_SHOWN = 4;
+// Behind one link, in words (DESIGN_DIRECTION §5 Q4 (a), slice 12): the row says what is behind it, and the list
+// names each thing and who to ask, never the capability's code.
 function BoundariesSection({ role }) {
   const bounds = boundaries(role);
+  const [open, setOpen] = useState(false);
   if (bounds.length === 0) return null;     // the owner's key holds everything
   return (
-    <Panel data-testid="boundaries-section">
-      <CardHead title="Where your access stops"
-        sub="What this role deliberately cannot reach, and who to ask instead. Read from the same policy the database enforces, so it is what would actually happen rather than a description of it."/>
-      <div style={{ display: "grid", gap: "8px" }}>
+    <Panel>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="boundaries-list"
+        className="pressBtn os-state" data-testid="boundaries-open"
+        style={{ width: "100%", minHeight: px(T.floor.target), display: "flex", alignItems: "center", gap: T.space.md, padding: `${T.space.xs} 0`,
+          background: "transparent", border: "none", cursor: "pointer", textAlign: "left", borderRadius: T.radius.md }}>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ ...H(), display: "block" }}>Where your access stops</span>
+          <span style={{ ...SUB(), display: "block", marginTop: "3px" }}>What you cannot see here, and who to ask instead.</span>
+        </span>
+        <span aria-hidden="true" style={{ ...T.role.body, color: T.content.secondary, flexShrink: 0 }}>{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+      <div id="boundaries-list" data-testid="boundaries-section" style={{ display: "grid", gap: "8px", marginTop: T.space.md }}>
+        <div style={{ ...SUB(), maxWidth: "62ch" }}>Read from the same rules the database keeps, so it is what would happen if you asked.</div>
         {bounds.map((b) => {
           const shown = b.askInstead.slice(0, ASK_SHOWN).map((r) => ROLES[r]?.label ?? r);
           const rest = b.askInstead.length - shown.length;
@@ -771,16 +784,98 @@ function BoundariesSection({ role }) {
                 Ask <span style={{ color: D.textSecondary }}>{shown.join(", ")}</span>
                 {rest > 0 ? ` or ${rest} other${rest === 1 ? "" : "s"}` : ""}.
               </div>
-              <div style={{ ...MONO(), marginTop: "3px" }}>{b.capability}</div>
             </div>
           );
         })}
+      </div>
+      )}
+    </Panel>
+  );
+}
+
+/**
+ * The device's look (DESIGN_DIRECTION §3.1, §3.9): the theme, and the colours beside it. It belongs to the device,
+ * not the account, and is the one setting here somebody changes standing in the sun.
+ */
+function Appearance() {
+  return (
+    <Panel data-testid="appearance">
+      <CardHead title="Appearance"
+        sub="Daylight for the sun, Floodlit under lights. System follows this device's own light or dark setting, and changes with it."/>
+      <div style={{ maxWidth: "420px" }}><ThemeChoice/></div>
+      {/* Colours sit beside the theme: the same device-only kind of choice, and one a person makes once. */}
+      <div style={{ maxWidth: "420px", marginTop: T.space.lg }} data-testid="appearance-colours">
+        <div style={{ ...T.role.label, color: T.content.secondary, marginBottom: T.space.sm }}>Colours</div>
+        <VisionChoice/>
       </div>
     </Panel>
   );
 }
 
+/**
+ * Ways to sign in for a pupil or a parent (DESIGN_DIRECTION §2.5): one line, then "More", which opens the list and
+ * the way to add Google. Nothing is read until it is opened.
+ */
+function WaysToSignInRow() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div data-testid="ways-to-sign-in">
+      <div style={{ display: "flex", alignItems: "center", gap: T.space.md, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <div style={H()}>Ways to sign in</div>
+          <div style={{ ...SUB(), marginTop: "3px" }}>The code from your school office always works. Google too, once you add it.</div>
+        </div>
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="ways-to-sign-in-more"
+          className="pressBtn os-state" data-testid="ways-to-sign-in-more-toggle"
+          style={{ minHeight: px(T.floor.target), minWidth: px(T.floor.target), padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, cursor: "pointer",
+            background: "transparent", border: `1px solid ${T.line.strong}`, color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>
+          {open ? "Less" : "More"}
+        </button>
+      </div>
+      {open && <div id="ways-to-sign-in-more" style={{ marginTop: T.space.md }}><WaysToSignIn bare/></div>}
+    </div>
+  );
+}
+
+/**
+ * A pupil's and a parent's Me (DESIGN_DIRECTION §5 Q4 (a), decided; slice 12): Appearance with Colours, Alerts and
+ * quiet hours, Ways to sign in, and Sign out everywhere. No access list, no boundaries and no clearances: those were
+ * forty rows of codes on a child's phone. A parent's lift club is drawn where it is live at her child's school, as
+ * it was, since it is where she offers to drive; her clearances appear once she has: once a yearly driver's
+ * declaration stands for her at one of her schools (GET /api/lifts/standing's `declaration`, my_lift_standing()'s
+ * declaration_id, db/70).
+ */
+function PersonaMe({ role, onSignOut, persona }) {
+  const live = signedIn();
+  const [declared, setDeclared] = useState(/** @type {Record<string, boolean>} */ ({}));
+  const onDeclared = useCallback((/** @type {string} */ schoolId, /** @type {boolean} */ has) =>
+    setDeclared((m) => (m[schoolId] === has ? m : { ...m, [schoolId]: has })), []);
+  const drives = persona === "family" && Object.values(declared).some(Boolean);
+  return (
+    <div style={{ display: "grid", gap: "16px" }} data-testid="me-persona">
+      <Appearance/>
+      <AlertsSection role={role}/>
+      {/* NOTIFICATIONS D20, D21: which alerts reach the phone, a parent's per child, and the quiet hours. */}
+      <AlertPrefsSection role={role}/>
+      {live && <Panel><WaysToSignInRow/></Panel>}
+      {live && onSignOut && <Panel><SignOutEverywhere onSignedOut={onSignOut}/></Panel>}
+      {persona === "family" && <LiftDeclarationPanel onDeclared={onDeclared}/>}
+      {drives && <MyClearancesSection role={role}/>}
+    </div>
+  );
+}
+
 function MeTab({ role, onSignOut }) {
+  const persona = personaOf(role);
+  if (persona) return <PersonaMe role={role} onSignOut={onSignOut} persona={persona}/>;
+  return <StaffMe role={role} onSignOut={onSignOut}/>;
+}
+
+/**
+ * Everybody else's Me (Q4 (a), slice 12): who you are here, then your clearances near the top, then this device,
+ * how you sign in, your appointments, and "Where your access stops" behind one link, in words.
+ */
+function StaffMe({ role, onSignOut }) {
   const me = profile();
   // Q16's one exception: a pupil outside the pupil's app (he also holds a staff
   // role) keeps his own row and the eighteen card here, or he would lose them.
@@ -810,26 +905,20 @@ function MeTab({ role, onSignOut }) {
       {keepConsent && <EighteenCard role={role} nonce={consentNonce} onChanged={consentChanged}/>}
       {keepConsent && <HealthConsentSection role={role} selfOnly nonce={consentNonce} onChanged={consentChanged}/>}
 
-      {/* This device's theme (DESIGN_DIRECTION §3.1): second, under who you
-          are, because it is the one setting here somebody changes standing
-          in the sun. It belongs to the device, not the account. */}
-      <Panel data-testid="appearance">
-        <CardHead title="Appearance"
-          sub="Daylight for the sun, Floodlit under lights. System follows this device's own light or dark setting, and changes with it."/>
-        <div style={{ maxWidth: "420px" }}><ThemeChoice/></div>
-        {/* Colours sit beside the theme (DESIGN_DIRECTION §3.9): the same
-            device-only kind of choice, and one a person makes once. */}
-        <div style={{ maxWidth: "420px", marginTop: T.space.lg }} data-testid="appearance-colours">
-          <div style={{ ...T.role.label, color: T.content.secondary, marginBottom: T.space.sm }}>Colours</div>
-          <VisionChoice/>
-        </div>
-      </Panel>
+      {/* Clearances near the top (Q4 (a)): what the school has checked, and when it will ask again. */}
+      <MyClearancesSection role={role}/>
+
+      <Appearance/>
 
       {/* SCRBRD-140: the Google accounts on this account, and adding another. */}
       {live && <Panel><WaysToSignIn/></Panel>}
 
       {/* GA-I03: every sign-in this person holds, ended in one act. */}
       {live && onSignOut && <Panel><SignOutEverywhere onSignedOut={onSignOut}/></Panel>}
+
+      <AlertsSection role={role}/>
+      {/* NOTIFICATIONS D20, D21: which alerts reach the phone, a parent's per child. */}
+      <AlertPrefsSection role={role}/>
 
       <Panel>
         <CardHead title="My access"
@@ -856,16 +945,12 @@ function MeTab({ role, onSignOut }) {
           )}
       </Panel>
 
-      {/* SCRBRD-124: lift clubs — where she stands, and her yearly
-          declaration. The family's own page until STEP 4's Family exists.
-          Drawn only where the module is live at her son's school. */}
-      <LiftDeclarationPanel/>
-
+      {/* "Where your access stops", behind one link, in words. */}
       <BoundariesSection role={role}/>
-      <AlertsSection role={role}/>
-      {/* NOTIFICATIONS D20, D21: which alerts reach the phone, a parent's per child. */}
-      <AlertPrefsSection role={role}/>
-      <MyClearancesSection role={role}/>
+
+      {/* SCRBRD-124: lift clubs — where she stands, and her yearly
+          declaration. Drawn only where the module is live at her son's school. */}
+      <LiftDeclarationPanel/>
     </div>
   );
 }

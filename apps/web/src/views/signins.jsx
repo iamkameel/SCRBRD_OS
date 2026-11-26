@@ -82,7 +82,9 @@ export function SignInRow({ row, accountEmail, confirming, last, busy, onAskRemo
  * included (GA-I03, db/85); the server answers with a fresh token for this
  * device, which `adopt` keeps in memory as every other token is kept.
  */
-export function WaysToSignIn({ post = api, getToken = googleIdToken, available = googleAvailable(), adopt = setToken }) {
+// `bare`: opened under a row that already names it (a pupil's or a parent's Settings, "More"), so its own title and
+// line are not said twice.
+export function WaysToSignIn({ post = api, getToken = googleIdToken, available = googleAvailable(), adopt = setToken, bare = false }) {
   const [rows, setRows] = useState(null);       // null = asking
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(null);       // "add" | an id being removed
@@ -123,10 +125,10 @@ export function WaysToSignIn({ post = api, getToken = googleIdToken, available =
   const list = ordered(rows ?? []);
   return (
     <div data-testid="sign-ins">
-      <div style={{ fontFamily: D.head, fontSize: "14px", fontWeight: 700, color: D.textPrimary }}>Ways to sign in</div>
-      <div style={{ ...sub(), margin: "3px 0 12px", maxWidth: "62ch" }}>
+      {!bare && <div style={{ fontFamily: D.head, fontSize: "14px", fontWeight: 700, color: D.textPrimary }}>Ways to sign in</div>}
+      {!bare && <div style={{ ...sub(), margin: "3px 0 12px", maxWidth: "62ch" }}>
         The code from your school office always works. Add Google here and you can sign in with it as well.
-      </div>
+      </div>}
 
       {rows === null && <div style={sub()}>Reading your sign-in methods…</div>}
       {loadError && <div role="alert" style={{ ...sub(), color: textOn(D.rose) }}>{loadError}</div>}

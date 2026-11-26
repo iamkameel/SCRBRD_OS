@@ -1058,7 +1058,6 @@ button{touch-action:manipulation}
   .os-shell{--g-side-r:minmax(0,1fr);--g-side-l:minmax(0,1fr);--g-4:repeat(2,1fr);--g-5:repeat(2,1fr);
     --g-league:1.7fr repeat(6,minmax(28px,1fr))}
   .os-main{padding:14px 12px calc(92px + env(safe-area-inset-bottom))!important}
-  .os-kbd,.os-username{display:none!important}
   .os-bottomnav{display:flex}
   .os-modal{align-items:flex-end!important;padding:0!important}
   .os-modal-card{max-width:100%!important;max-height:92vh!important;
@@ -1067,31 +1066,30 @@ button{touch-action:manipulation}
 }
 @media(max-width:640px){
   .os-shell{--g-2:1fr;--g-3:1fr}
-  /* The search is its icon on a phone, still named by its aria-label, so the bar's other three controls keep their 44px (I32). */
-  .os-search{flex:0 0 auto!important;justify-content:center}
-  .os-search-text{display:none}
-  /* The header carries the bell, "Raise a concern", the name and the role on every screen (EXPERIENCE_PASS §1.2). */
-  .os-topbar{gap:6px!important;padding:0 8px!important}
-  /* "Raise a concern" keeps its words on a phone, on two lines ("Raise a" over "concern"), so the bar still fits 320. */
-  .os-concern{padding:0 4px!important;gap:4px!important}
-  .os-concern-text{white-space:normal!important;width:min-content}
+  /* The header on a phone (DESIGN_DIRECTION §2.1): the mark, the bell, "Raise a concern" and the name, closer up. */
+  .os-hdr{gap:6px!important;padding:0 8px!important}
 }
-/* The narrower phones: the live chip is its pulsing dot alone, still named "Live matches", the role button its icon
-   (aria-haspopup still says it opens a menu), and the header's gaps close up, so its six 44px controls and the words
-   of "Raise a concern" keep their room. */
-@media(max-width:399px){
-  .os-topbar{gap:4px!important}
-  .os-topbar-live{padding:0!important;min-width:44px;justify-content:center}
-  .os-topbar-live-text,.os-role-caret{display:none}
+/* "Raise a concern" keeps its words on one line at every width: the name gives way to its initials first, where it
+   would be cut off (AppHeader.jsx useInitials), then the gaps close up, and on the staff's row, which carries the
+   search as well, the mark is the rail's small one (§2.1). */
+.os-hdr-init,.os-hdr-mark-glyph{display:none}
+.os-hdr-account[data-short="true"] .os-hdr-name{display:none}
+.os-hdr-account[data-short="true"] .os-hdr-init{display:inline}
+@media(max-width:379px){
+  .os-hdr{gap:4px!important}
+  .os-concern{padding:0 8px!important}
+  .os-hdr--staff .os-hdr-mark-word{display:none}
+  .os-hdr--staff .os-hdr-mark-glyph{display:flex}
 }
 @media(max-width:359px){
-  .os-topbar{gap:2px!important;padding:0 6px!important}
-  .os-concern{padding:0!important}
+  .os-hdr{gap:2px!important;padding:0 6px!important}
+  .os-concern{padding:0 6px!important;gap:4px!important}
+  .os-hdr-account{padding:0 6px!important}
 }
 /* A phone at 200% zoom is under 200px wide: the bars wrap into a second row rather than run off the screen, and the
    page leaves room under the taller bottom bar (I32). */
 @media(max-width:300px){
-  .os-topbar{height:auto!important;flex-wrap:wrap;padding:4px 8px!important;gap:4px 8px!important}
+  .os-hdr{flex-wrap:wrap;padding:4px 8px!important;gap:4px 8px!important}
   .os-bottomnav{flex-wrap:wrap}
   .os-main{padding-bottom:calc(172px + env(safe-area-inset-bottom))!important}
   /* A scorecard's six columns do not fit 188px: the table scrolls inside its own box instead of the names going to nothing. */

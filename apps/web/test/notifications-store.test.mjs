@@ -216,7 +216,7 @@ group("Signed out: the demo, read in memory, nothing sent");
 group("Every badge and notice screen reads the store; none keeps its own read state");
 {
   const sites = {
-    "TopBar": "../src/shell/TopBar.jsx", "App": "../src/App.jsx", "Notifications": "../src/views/NotificationsView.jsx",
+    "Header": "../src/shell/AppHeader.jsx", "App": "../src/App.jsx", "Notifications": "../src/views/NotificationsView.jsx",
     "Day sheet": "../src/views/DashboardView.jsx", "Family notices": "../src/views/family/family.jsx",
     "Family card": "../src/views/family/cards.jsx", "Pitch deck": "../src/views/PitchDeckView.jsx",
   };
@@ -226,7 +226,7 @@ group("Every badge and notice screen reads the store; none keeps its own read st
     ok(`...and not its own read of "notifications"`, !/use(Live|Rows)\("notifications"/.test(text));
   }
   ok("no screen counts a badge from the list's length",
-    !/NOTIFICATIONS\.filter\(n=>!n\.read\)\.length/.test(src("../src/shell/TopBar.jsx"))
+    !/NOTIFICATIONS\.filter\(n=>!n\.read\)\.length/.test(src("../src/shell/AppHeader.jsx"))
     && !/notifications\.filter\(n=>!n\.read\)\.length/.test(src("../src/App.jsx")));
   ok("Notices keeps no read state of its own (readIds is gone)", !/readIds/.test(src("../src/views/NotificationsView.jsx")));
   ok("the Sidebar and MobileNav badges are handed the store's count by App",

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { deriveMatch, fromRow } from "@scrbrd/scoring";
-import { ROLES } from "../design/roles.js";
 import { D, T } from "../design/tokens.js";
 import { addDays, dateStr, humanDate, today } from "../lib/format.js";
 import { api, signedIn } from "../lib/api.js";
@@ -242,7 +241,6 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
   // director of sport keeps the sections the second role reaches (GA-I07). Presentation only. A sheet drawn
   // for a role that is not the viewer's (the pitch deck's coach, `held` false) answers from that role alone.
   const holds = (capability) => holdsAsHeld(role, capability, held ? undefined : []);
-  const rc = ROLES[role];
   // Redesign slice 15 (DESIGN_DIRECTION §3.5): a signed-in spectator's Today, titled with the date, is matches and
   // results he can open, not a staff day sheet with the staff parts greyed. Drawn from the rows this sheet is
   // already given; it reads nothing more, and what a staff role sees is unchanged.
@@ -290,22 +288,12 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
   return (
     <div className="os-page" data-testid="day-sheet">
       <div style={{ marginBottom: T.space.lg }}>
-        {fan ? (
-          // Titled with the date, never "Spectator" (§3.5).
-          <h1 data-testid="day-title" style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
-            {humanDate(dayNow)}
-            {!live && <StateLabel kind="demo" compact why={demoNote}/>}
-          </h1>
-        ) : (<>
-        <h1 style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", alignItems: "center", gap: T.space.sm }}>
-          <Icon name={rc?.icon ?? "layout-dashboard"} style={{ color: rc?.color }}/>
-          {rc?.label ?? "Today"}
-        </h1>
-        <div style={{ ...T.role.body, color: T.content.secondary, display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
-          <span>{new Date().toLocaleDateString("en-ZA", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
+        {/* Titled with the date for everybody, never with the role ("Spectator", "Coach"): the role left the header
+            and the page title with it (§2.1, §3.5). */}
+        <h1 data-testid="day-title" style={{ ...T.role.title.lg, color: T.content.primary, marginBottom: "3px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: `0 ${T.space.sm}` }}>
+          {humanDate(dayNow)}
           {!live && <StateLabel kind="demo" compact why={demoNote}/>}
-        </div>
-        </>)}
+        </h1>
       </div>
 
       {lead}

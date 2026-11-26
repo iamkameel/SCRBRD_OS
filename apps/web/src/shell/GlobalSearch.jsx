@@ -20,7 +20,7 @@ function GlobalSearch({ role, onNav, onClose }) {
   const panel = useRef(/** @type {HTMLDivElement | null} */ (null));
 
   // A modal: focus starts in the field, Tab stays inside, Escape closes from anywhere in it (it used to close only from
-  // the field), and what opened it gets focus back (TopBar's closeSearch) (I32).
+  // the field), and what opened it gets focus back (AppHeader's closeSearch) (I32).
   useEffect(()=>{
     inputRef.current?.focus();
     const onKey = (/** @type {KeyboardEvent} */ e) => {
