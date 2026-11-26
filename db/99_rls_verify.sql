@@ -29159,7 +29159,9 @@ select s.player_id, p.full_name, p.known_as, p.team_code,
               and s.verification_state = 'verified'
               and s.valid_from <= sa_today()
               and (s.valid_until is null or s.valid_until > sa_today())
-              and s.consent_state <> 'pending'
+              -- db/176 (Kameel, 20 Nov 2026, Q1): agreed, or agreed and since
+              -- withdrawn, as the database's own gate reads her link.
+              and (s.consent_state = 'granted' or (s.consent_state = 'withdrawn' and s.consent_at is not null))
            union all
            select t.player_id, t.full_name, null, null,
                   t.school_id, t.school_name, null,
