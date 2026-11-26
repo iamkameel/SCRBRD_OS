@@ -98,7 +98,7 @@ const SLIDES = [
   { id: "families", label: "For families" },
   { id: "safeguard",label: "Duty of care, in the product" },
   { id: "school",   label: "Your school, now" },
-  { id: "roadmap",  label: "Built, underneath, planned" },
+  { id: "roadmap",  label: "Built and planned" },
   { id: "close",    label: "See it on your fixtures" },
 ];
 
@@ -289,7 +289,7 @@ function Bars({ rows, max, tone, label }) {
   );
 }
 
-const COVER_LEDE = "SCRBRD is the operating system for a school sports programme: live scoring that survives a lost signal, a squad and medical record the right people can read and nobody else can, safeguarding and consent kept to CSA's policy and POPIA, and a roadmap that is checked against the code rather than promised.";
+const COVER_LEDE = "SCRBRD is the operating system for a school sports programme: live scoring that survives a lost signal, a squad and medical record the right people can read and nobody else can, safeguarding and consent kept to CSA's policy and POPIA, and a roadmap that is checked against the code, not promised.";
 function CoverSlide() {
   return (
     <div style={{ maxWidth: "880px" }}>
@@ -321,7 +321,7 @@ const CARE_LEDE = "School sport is children. The rules that protect them are CSA
 const CARE = [
   { what: "Safeguarding, to CSA's policy", how: "A concern goes to the school's Designated Safeguarding Officer and nobody else: not the coach, not the principal, not the platform's own staff, and never the adult it names." },
   { what: "Adults cleared before they coach", how: "Police clearance, the Child Protection and Sexual Offences Registers and the Safeguarding Awareness Certificate, each held to CSA's maximum age. Pupils never appear on it." },
-  { what: "Consent a parent can see and withdraw", how: "A pupil is named on a public page, or a fast bowler's load is monitored, only with a recorded consent. At eighteen he is asked for his own, and a withdrawal takes effect at once." },
+  { what: "Consent a parent can see and withdraw", how: "A pupil is named on a public page, or a fast bowler's load is monitored, only with a recorded consent. Until counsel has read the naming rule, public pages show a boy by his position, never his name. At eighteen he is asked for his own, and a withdrawal takes effect at once." },
   { what: "The Laws, and your competition's rules", how: "The MCC Laws of Cricket, 4th Edition, from 1 October 2026, and each competition's own playing conditions, frozen for a match at its first ball and cited to the clause they come from." },
 ];
 
@@ -367,12 +367,13 @@ const SHOW = {
       ["The board", "The score is drawn one way everywhere: the pad, the Match Centre and the public page draw it with one component."],
       ["Built for speed and trust", "Nothing read under 12 pixels and nothing tapped under 44. Dot and one are the biggest keys; a wide or a no ball is two taps."],
       ["Where it went", "The area step records a point on the field, stored relative to the batter, so a left-hander and a right-hander read on the same wheel."],
+      ["Result confirmed", "At the end of a match the scorer is told their part is done. The coach confirms the result. It reads Provisional until then."],
     ],
     note: "A demonstration match with invented players. Nothing on this slide can be tapped, and nothing on it is saved.",
   },
   centre: {
     n: 1, kicker: "The Match Centre", title: "Read from the ball log, not typed in afterwards.",
-    lede: "One fixture, followed. The summary, the scorecard, the commentary, the partnerships and the analytics are all folded from the same ball log the scorer writes, by the same replay, so no figure is entered twice.",
+    lede: "One fixture, followed. The summary, the scorecard, the commentary, the partnerships and the analytics are all folded from the same ball log the scorer writes, by the same replay, so no figure is entered twice. A live match opens with one plain sentence under the board saying where the game stands. A scorecard figure opens the balls behind it.",
     points: [
       ["Choose a tab", "The buttons above the screen pick which of the Match Centre's own tabs is drawn. They change the slide and nothing else."],
       ["One replay", "The scorer's pad, this screen and the public page fold one log with one package, so they cannot disagree."],
@@ -391,10 +392,11 @@ const SHOW = {
   },
   families: {
     n: 2, kicker: "For families", title: "A parent decides, and can undo it.",
-    lede: "Health monitoring is off until a parent turns it on, for each child on his own switch. At eighteen the pupil is asked for his own answer, and from then on it is his. These are the cards a family finds on the child's file under Family.",
+    lede: "Health monitoring is off until a parent turns it on, for each child on his own switch. A parent also reads the terms in plain words and agrees to them for each child, and the app keeps which version and when. Under eighteen, a pupil cannot sign in until a guardian has said yes. At eighteen he is asked for his own answer, and from then on it is his. These are the cards a family finds on the child's file under Family.",
     points: [
       ["Asked once", "The first time a parent's link to a child is verified, Me asks yes or no. \"Not now\" hides it on that device only."],
       ["Withdrawn at once", "Turning it off asks once, in plain words, what happens to what was collected, then takes effect immediately."],
+      ["Terms in plain words", "What is kept, who reads it, how long, and how to withdraw or ask for it. Each sentence matches what the product does."],
     ],
     note: "Drawn here and not wired: the switches on these screens do nothing on a slide. Invented children.",
   },
@@ -610,13 +612,13 @@ function SchoolSlide({ role }) {
 }
 
 const CAT_TONE = themed(() => ({ "AI & Analysis": D.violetText, "Integrations": D.cyan, "Comms": D.indigoText, "Fitness": D.emerald, "Admin": D.orange, "Media": D.amber }));
-const ROADMAP_LEDE = "A thing is shipped when a walk would fail if it broke. The middle column is the honest one: data that exists and is permission-scoped, with no screen drawing it yet.";
+const ROADMAP_LEDE = "A thing is shipped when it is built, drawn on a screen, and a named walk covers it. The walk proves the feature is checked, not that it can never break. Nothing is half-built today: what is left is planned.";
 function RoadmapSlide() {
   const [open, setOpen] = useState(null);
   return (
     <div>
       <Kicker>The roadmap</Kicker>
-      <H>Built, built underneath, planned. Every shipped item names the walk that covers it.</H>
+      <H>Built and planned. Every shipped item names the walk that covers it.</H>
       <p className="deck-lede">{ROADMAP_LEDE}</p>
       <div className="deck-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", marginTop: "20px", alignItems: "start" }}>
         {["shipped", "partial", "planned"].map((st, col) => (
