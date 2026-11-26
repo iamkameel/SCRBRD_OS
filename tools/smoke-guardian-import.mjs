@@ -180,6 +180,35 @@ try {
     ok("the would-be count is the one good line", r?.wouldInsert === 1);
   }
 
+  group("3b. Anyone but the office reads one sentence for every address it cannot use (R4, db/176)");
+  {
+    // Kameel, 28 Oct 2026 (R4): a pupil's login address is the office's and
+    // the principal's. The platform account holds user.role.assign and may
+    // grant guardian, so it may send the file; whose an address is, it is
+    // never told: another person's, a pupil's own and another school's
+    // account read the same sentence.
+    const platform = await login("platform@example.invalid");
+    const lines = [HEAD,
+      /* 2 */ "Fake Pupil Alpha,Fake Parent Wrong,coach@example.invalid,parent",
+      /* 3 */ "Fake Pupil Alpha,R Pillay,pillay@example.invalid,parent",
+      /* 4 */ "Fake Pupil Alpha,T Ndlovu,registrar.wes@example.invalid,parent",
+      /* 5 */ "Fake Pupil Alpha,Fake Parent Fourteen,fake.parent.fourteen@example.invalid,parent",
+    ].join("\n");
+    const before = await footprint();
+    const r = await importGuardians(platform, lines);
+    ok("the platform account may send the file", r.status === 200, JSON.stringify(r.body).slice(0, 300));
+    // Each line's words with its own address taken out: what is left is all
+    // the file was told of the account behind it.
+    const emails = ["coach@example.invalid", "pillay@example.invalid", "registrar.wes@example.invalid"];
+    const words = [2, 3, 4].map((l, i) => errAt(r.body, l).map((e) => `${e.column}:${e.message}`).join("|").replace(emails[i], "EMAIL"));
+    ok("another person's, a pupil's own and another school's account: one sentence each, the same",
+       words.every((w) => w.startsWith("guardian_email:")) && new Set(words).size === 1, words.join(" / "));
+    ok("...saying nothing of whose: no pupil, no name, no school",
+       !words.some((w) => /pupil|Hendricks|Pillay|Ndlovu|another school|one email is one person/i.test(w)), words.join(" / "));
+    ok("...the good line is not an error", errAt(r.body, 5).length === 0);
+    ok("...and a dry run wrote nothing", same(before, await footprint()));
+  }
+
   group("4. Nothing grants more than guardian");
   {
     const sneaky = ["player_full_name,guardian_name,guardian_email,relationship,role,team_code",

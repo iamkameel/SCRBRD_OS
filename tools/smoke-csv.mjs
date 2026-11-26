@@ -483,18 +483,26 @@ try {
     const was = await bornOf("K Dlamini");
     const to = `${was.slice(0, 8)}${was.slice(8) === "01" ? "02" : "01"}`;
     const director = await login("sarah@example.invalid");   // player.profile.manage, not the office
+    // db/176: a date for a boy already on the roster, from anyone but the
+    // office, is refused on its line before the database is asked, in one
+    // sentence whatever is on his record.
+    const ONE = "A date of birth for a boy already on the roster is the school office's to record. Leave born blank on this line.";
     const dry = await importCsv("players", director, {
       csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL });
     ok("the director of sport's file that changes his date is refused on its line, on a dry run too",
        dry.body?.committed === false && dry.body?.errors?.[0]?.column === "born"
-         && /Only the school office/.test(dry.body?.errors?.[0]?.message ?? ""), JSON.stringify(dry.body?.errors));
+         && dry.body?.errors?.[0]?.message === ONE, JSON.stringify(dry.body?.errors));
     const byDirector = await importCsv("players", director, {
       csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL, commit: true });
     ok("...and committing it changes nothing", byDirector.body?.committed === false && (await bornOf("K Dlamini")) === was);
     const sameByDirector = await importCsv("players", director, {
       csv: `full_name,team_code,born\nK Dlamini,U16B,${was}\n`, schoolId: HIL, commit: true });
-    ok("...while his file carrying the date already on record goes in", sameByDirector.body?.committed === true,
+    ok("...and his file carrying the date already on record is refused in the same words, so it says nothing of what is on file",
+       sameByDirector.body?.committed === false && JSON.stringify(sameByDirector.body?.errors) === JSON.stringify(dry.body?.errors),
        JSON.stringify(sameByDirector.body?.errors));
+    const namesOnly = await importCsv("players", director, {
+      csv: "full_name,team_code\nK Dlamini,U16B\n", schoolId: HIL, commit: true });
+    ok("...while his file of names and sides goes in", namesOnly.body?.committed === true, JSON.stringify(namesOnly.body?.errors));
 
     // Kameel, 25 Nov 2026: a correction carries its reason, which a file
     // cannot give, so a recorded date is corrected on Edit Profile (db/172
@@ -585,8 +593,35 @@ try {
     const withId = await importCsv("players", director, { csv: `full_name,team_code,born\nNodate Withid,1XI,${adult}\n`, schoolId: HIL });
     const noId = await importCsv("players", director, { csv: `full_name,team_code,born\nNodate Noid,1XI,${adult}\n`, schoolId: HIL });
     const shape = (b) => JSON.stringify({ ...b, adults: { ...b?.adults, lines: (b?.adults?.lines ?? []).map((l) => l.line) } });
+    // db/176: a boy already on the roster, so the line is refused before the
+    // database is asked, in the one sentence.
+    const ONE = "A date of birth for a boy already on the roster is the school office's to record. Leave born blank on this line.";
     ok("the director's report is the same whether or not an ID number is on his record",
-       shape(withId.body) === shape(noId.body) && withId.body?.leftOut?.length === 1, `${shape(withId.body)} / ${shape(noId.body)}`);
+       shape(withId.body) === shape(noId.body) && withId.body?.errors?.length === 1 && withId.body.errors[0].message === ONE,
+       `${shape(withId.body)} / ${shape(noId.body)}`);
+    // And a date under 18: one with an ID number on file that carries it, one
+    // with a number carrying another date, one with none. A dry run of each
+    // date against each boy answers the same, so a file of guesses learns
+    // nothing of the number on file.
+    await pool.query(`alter table player drop constraint if exists player_born_required`);
+    const idMinor = `${minor.slice(2, 4)}${minor.slice(5, 7)}${minor.slice(8, 10)}5176083`;
+    const minorNext = (await q(`select to_char(($1::date) + 1, 'YYYY-MM-DD') d`, [minor]))[0].d;
+    const idOther = `${minorNext.slice(2, 4)}${minorNext.slice(5, 7)}${minorNext.slice(8, 10)}5176083`;
+    await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born, id_number)
+             values ($1, 'U15A', 'Nodate Minorid', 76, 'batter', null, $2), ($1, 'U15A', 'Nodate Otherid', 77, 'batter', null, $3),
+                    ($1, 'U15A', 'Nodate Minornoid', 78, 'batter', null, null)`, [HIL, idMinor, idOther]);
+    await pool.query(`alter table player add constraint player_born_required check (born is not null) not valid`);
+    const answers = [];
+    for (const name of ["Nodate Minorid", "Nodate Otherid", "Nodate Minornoid"])
+      for (const date of [minor, minorNext])
+        answers.push(shape((await importCsv("players", director, { csv: `full_name,team_code,born\n${name},U15A,${date}\n`, schoolId: HIL })).body));
+    ok("the director's dry runs of a date under 18 answer the same, whatever ID number is on his record",
+       answers.every((a) => a === answers[0]) && JSON.parse(answers[0]).errors?.[0]?.message === ONE, answers.join(" / "));
+    ok("...and none of them wrote his date",
+       (await q(`select count(*)::int n from player where school_id = $1 and full_name like 'Nodate Mino%' and born is not null`, [HIL]))[0].n === 0
+         && (await q(`select count(*)::int n from player where school_id = $1 and full_name = 'Nodate Otherid' and born is not null`, [HIL]))[0].n === 0);
+    await q(`update player set born = $2 where school_id = $1 and full_name in ('Nodate Minorid', 'Nodate Minornoid')`, [HIL, minor]);
+    await q(`update player set born = $2 where school_id = $1 and full_name = 'Nodate Otherid'`, [HIL, minorNext]);
     // Their dates, as the owner, so the round trip below reads two whole boys.
     await q(`update player set born = $2 where school_id = $1 and full_name in ('Nodate Withid', 'Nodate Noid')`, [HIL, adult]);
 

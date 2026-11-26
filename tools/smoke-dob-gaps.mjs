@@ -26,6 +26,7 @@
 import { spawn } from "node:child_process";
 import pg from "pg";
 import { bornFromSaId } from "@scrbrd/policy/sa-id";
+import { majorityOn as majorityOf } from "@scrbrd/policy/date-of-birth";
 import { ownerUrl, appUrl, port } from "./db-url.mjs";
 
 const PORT = port(8827);
@@ -293,6 +294,41 @@ try {
   ok("...and he is off the list", !((await coa(registrar)).body?.rows ?? []).some((r) => r.playerId === NAIDOO));
   const twice = await api(`/api/players/${NAIDOO}/date-of-birth/confirm`, { method: "POST", token: registrar, body: {} });
   ok("...a second confirm is answered unchanged", twice.status === 200 && twice.body?.unchanged === true, JSON.stringify(twice.body));
+
+  // db/176 (the re-dating design §3.2, Q4; Kameel, 25 Nov 2026): after a
+  // correction, the guardian links whose end date the old date set are
+  // listed for the office, in the correction's answer and on the school's
+  // list, and none is changed. A boy who left school at sixteen and a half:
+  // his parent's link ends on his 18th birthday by the date on record.
+  const LEFT = (await q(`insert into player (school_id, team_code, full_name, squad_no, playing_role, born)
+                         values ($1, 'U16A', 'Fake Leaver Onesevensix', 176, 'batter', (current_date - interval '16 years 6 months')::date)
+                         returning id, to_char(born, 'YYYY-MM-DD') as born`, [HIL]))[0];
+  const MUM = (await q(`insert into app_user (school_id, email, name, role) values ($1, 'fake.leaver.mum@example.invalid', 'Fake Leaver Mum', 'guardian')
+                        returning id`, [HIL]))[0].id;
+  const asg = (await q(`insert into role_assignment (person_id, role, school_id, valid_from) values ($1, 'guardian', $2, current_date - 30) returning id`,
+                       [MUM, HIL]))[0].id;
+  const link = (await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_at,
+                                                         consent_state, consent_version, consent_at, valid_from)
+                         values ($1, $2, 'parent', 'verified', now(), 'granted', 'popia-2026-01', now(), current_date - 30) returning id`,
+                        [asg, LEFT.id]))[0].id;
+  await q(`select guardian_links_close_on_leaving($1, current_date - 10)`, [LEFT.id]);
+  const endsOn = (await q(`select to_char(valid_until, 'YYYY-MM-DD') d from assignment_subject where id = $1`, [link]))[0].d;
+  ok("the fixture: his parent's link ends on his 18th birthday", endsOn === majorityOf(LEFT.born), `${endsOn} / ${LEFT.born}`);
+  const older = `${Number(LEFT.born.slice(0, 4)) - 1}${LEFT.born.slice(4)}`;
+  const redated = await correct(LEFT.id, registrar, { born: older, reason: WHY });
+  const said = redated.body?.links ?? [];
+  ok("the office's correction answers with the link the old date dated",
+     redated.status === 200 && said.length === 1 && said[0].linkId === link && said[0].why === "eighteenth_birthday"
+       && said[0].endsOn === endsOn && said[0].oldOfAgeOn === endsOn && said[0].ofAgeOn === majorityOf(older)
+       && said[0].guardianName === "Fake Leaver Mum", JSON.stringify(redated.body));
+  ok("...and leaves the link as it was", (await q(`select to_char(valid_until, 'YYYY-MM-DD') d from assignment_subject where id = $1`, [link]))[0].d === endsOn);
+  const linksOf = async (token) => api(`/api/schools/${HIL}/date-of-birth/links`, { token });
+  const listedLinks = await linksOf(registrar);
+  ok("the school's list holds it for the office", listedLinks.status === 200
+     && (listedLinks.body?.rows ?? []).some((r) => r.linkId === link && r.playerId === LEFT.id), JSON.stringify(listedLinks.body).slice(0, 300));
+  for (const [who, token] of [["the director of sport", director], ["the principal", principal], ["a coach", coach], ["another school's office", wesOffice]]) {
+    ok(`${who} may not read the list`, (await linksOf(token)).status === 403);
+  }
 
   // B Khumalo now carries 1104075800085: only its own date may stand.
   const offId = await correct(P_U13, registrar, { born: "2011-04-08", reason: WHY });

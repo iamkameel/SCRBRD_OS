@@ -384,9 +384,12 @@ export const IMPORTS = {
                                 '00000000-0000-0000-0000-000000000000'::uuid)
                         and app_may_grant('guardian')) as ok`,
     // Who reads a pupil's login address (Kameel, 28 Oct 2026, R4): the office
-    // and the principal, guardian.link.manage at his school. To anyone else
-    // the import says one thing for every address it cannot use.
-    office: `select pupil_claim_office($1::uuid) as office`,
+    // and the principal, guardian.link.manage at his school, as
+    // app_user_email_seen() (db/118) asks it. To anyone else the import says
+    // one thing for every address it cannot use.
+    office: `select app_can('guardian.link.manage', $1::uuid, '*',
+                            '00000000-0000-0000-0000-000000000000'::uuid,
+                            '00000000-0000-0000-0000-000000000000'::uuid) as office`,
     apply: async (client, school, v, file, line, office) => {
       if (v.relationship !== "parent") {
         return { ok: false, column: "relationship",
