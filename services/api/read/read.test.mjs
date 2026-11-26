@@ -305,6 +305,15 @@ group("A. my_children (step 4 G1): the caller's own live guardian links, and the
   ok("carries the wording and the time her own link's terms were agreed under (GA-I20 A1, R8a)", /s\.consent_version/.test(t) && /s\.consent_at/.test(t));
   ok("takes no parameter a caller could widen it with", !READ_QUERIES.my_children.params && !/\$1/.test(t));
   ok("reads no masked column of the child: no born, no address, no id number", !/\b(born|address|id_number|phone|email)\b/.test(t));
+  // db/175 (slice 5b): a link still waiting for her agreement is not read
+  // through the player join; its row is my_terms_due()'s, 'pending', his name
+  // and school only, so the screen draws the terms card from her link.
+  ok("db/175: the player join reads her agreed (or withdrawn) links only", /and s\.consent_state <> 'pending'/.test(t));
+  ok("...and a waiting link's row is my_terms_due()'s, said 'verified' and 'pending', nothing else of his",
+     /union all\s+select t\.player_id, t\.full_name, null, null,\s+t\.school_id, t\.school_name, null,\s+null, 'verified', 'pending',\s+null, null,\s+null, null\s+from my_terms_due\(\) t/.test(t));
+  ok("my_terms_due is its own read, the definer's five columns and no parameter",
+     READ_QUERIES.my_terms_due?.text === "select link_id, player_id, full_name, school_id, school_name from my_terms_due()"
+     && !READ_QUERIES.my_terms_due.params);
   // db/99 §49 runs the read's own text as a temporary view, as each persona.
   // The two copies are one text, or the proof is about some other query.
   const { readFileSync } = await import("node:fs");

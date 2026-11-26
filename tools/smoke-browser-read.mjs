@@ -3572,8 +3572,18 @@ try {
       const ct = (id) => C.page.locator(`[data-testid="${id}"]`);
       const gate = ct(`family-gate-${CELE}`);
       const nav = async (key) => { await C.page.locator(`[data-testid="mnav-${key}"], [data-testid="nav-${key}"]`).first().click({ timeout: 4000 }).catch(() => {}); await afterReads(C.page, 1200); };
+      // db/175 (slice 5b): what the server itself gives her of him, as the application under her session.
+      const herRows = async () => {
+        const c = await owner.connect();
+        try {
+          await c.query("begin"); await c.query("set local role scrbrd_app");
+          await c.query("select set_config('app.user_id', $1, true)", [celeId]);
+          return (await c.query("select count(*)::int n from player where id = $1", [CELE])).rows[0].n;
+        } finally { await c.query("rollback").catch(() => {}); c.release(); }
+      };
       try {
         ok("N6: the parent whose terms are not agreed signs in", await signInAs(C.page, "parent.cele@example.invalid"));
+        ok("...and the server gives her no row of him until she agrees (db/175)", (await herRows()) === 0);
         await gate.waitFor({ timeout: 8000 }).catch(() => {});
         ok("...Home is one card for him: whose terms, at which school, what opens, and 'Read the terms'",
            (await ct("family-gate-head").innerText().catch(() => "")).trim() === "M Cele · Hilton College"
@@ -3617,6 +3627,7 @@ try {
            await ct("family-terms-agreed").innerText().catch(() => ""));
         ok("...then his section opens, and the card is gone", await ct("family-home-body").count() === 1 && await gate.count() === 0
            && (await ct("family-child").innerText().catch(() => "")).trim() === "M Cele");
+        ok("...and the server gives her his row now", (await herRows()) === 1);
         const rec = (await owner.query(`select s.consent_state, s.consent_version, s.consent_at from assignment_subject s join role_assignment a on a.id = s.assignment_id
                                          where a.person_id = $1 and s.player_id = $2`, [celeId, CELE])).rows[0];
         ok("...and the server holds it: granted, at the version, at the server's time", rec?.consent_state === "granted" && rec.consent_version === "popia-2026-01"

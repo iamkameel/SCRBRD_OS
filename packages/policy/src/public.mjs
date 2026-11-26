@@ -364,6 +364,11 @@ export const NEVER_PUBLIC = Object.freeze({
   // the pupil's own, and what came of its claim: the office's and the
   // principal's alone (guardian.link.manage). Never on a page; the whole table.
   family_register: "N4",
+  // ── db/175, redesign slice 5b: the parent's terms gate ──
+  // N4. Every agreement and withdrawal of a guardian's terms for a child: her
+  // link, her name as it was, the version, the time, who recorded it. The
+  // owner's alone (no policy, no privilege). Never on a page; the whole table.
+  guardian_terms_record: "N4",
   // ── db/172, a date of birth corrected by the office ──
   // N1. Every change to a boy's recorded date of birth: the date before and
   // after, who changed it and how. The office's alone (player_born_changes());

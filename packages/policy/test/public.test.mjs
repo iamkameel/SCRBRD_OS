@@ -447,6 +447,8 @@ const HAND_WRITTEN_SINCE_47 = {
   player_born_change: {},
   // db/174: the family list (which address the office listed for which child) is never public as a whole (N4).
   family_register: {},
+  // db/175: which guardian agreed or withdrew which terms for which boy is never public as a whole (N4).
+  guardian_terms_record: {},
   // db/173: who wrote a boy's ID number, and when, is never public as a whole (N1).
   player_id_number_change: {},
 };

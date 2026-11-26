@@ -2383,9 +2383,12 @@ BEGIN
   INSERT INTO role_assignment (person_id, role, school_id, team_code)
   SELECT (ids->>k)::uuid, 'player', HIL, 'U15A' FROM unnest(ARRAY['u_dan', 'u_ed']) k;
 
-  -- Pat's mother's link is verified and her consent to processing is not yet
-  -- recorded: lifts wait on it (Kameel, 2026-10-01).
-  UPDATE assignment_subject SET consent_state = 'pending', consent_version = NULL, consent_at = NULL
+  -- Pat's mother's link is verified and her consent to processing is not
+  -- granted: lifts wait on it (Kameel, 2026-10-01). She agreed the terms and
+  -- withdrew them, so she keeps sight of him and lifts stop (the approved
+  -- terms, sentence 38; db/175 Q1). A link never agreed reaches nothing of
+  -- him at all since db/175, lifts included.
+  UPDATE assignment_subject SET consent_state = 'withdrawn'
    WHERE assignment_id = (ids->>'a_pmum')::uuid;
 
   -- Who to ring. The driver's own number is on her son's card; it is the one
@@ -8211,9 +8214,12 @@ BEGIN
   PERFORM _v100_link((ids->>'sg')::uuid, HIL, c_s);
   PERFORM _v100_link((ids->>'gd')::uuid, HIL, c_d);
   PERFORM _v100_link((ids->>'drv')::uuid, HIL, c_d2);
-  -- gp's link to C is verified and his processing consent is not on record.
+  -- gp's link to C is verified and his processing consent is not in force:
+  -- he agreed the terms and withdrew them, so he is still C's family (db/175
+  -- Q1) and consents nothing for him. (A link never agreed is no family's at
+  -- all since db/175.)
   PERFORM _v100_link((ids->>'gp')::uuid, HIL, c_c);
-  UPDATE assignment_subject g SET consent_state = 'pending', consent_version = NULL, consent_at = NULL
+  UPDATE assignment_subject g SET consent_state = 'withdrawn'
     FROM role_assignment a WHERE a.id = g.assignment_id AND a.person_id = (ids->>'gp')::uuid AND g.player_id = c_c;
   -- Y is eighteen, so db/62 would close his guardian's link today; it is
   -- staged open for thirty days, and the section ends it.
@@ -16500,11 +16506,13 @@ BEGIN
     PERFORM _assert(_v169_record(B) ~ 'no/terms_withdrawn/V164 Mother Terms/', format('§142 (terms): the record reads %s', _v169_record(B)));
     PERFORM pupil_signin_consent_set(B, true);
     PERFORM _assert(_v169_in_force(B), '§142 (terms): her new tap did not reopen him');
-    -- Not agreed at all: her yes is refused, and she must agree first.
+    -- Not agreed at all: her yes is refused, and she must agree first. Since
+    -- db/175 a link waiting for her agreement is not hers to use at all, so
+    -- the refusal is the gate's own (not_permitted), as for an ended link.
     K2 := _v169_pupil('terms2', 14); G2 := _v169_guardian(_v169_boy(K2), 'terms2', false);
     PERFORM _as(G2);
     SELECT x.ok, x.reason INTO ok_, why FROM pupil_signin_consent_set(_v169_boy(K2), true) x;
-    PERFORM _assert(NOT ok_ AND why = 'terms_not_agreed', format('§142 (terms): a guardian who has not agreed said yes (%s)', why));
+    PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§142 (terms): a guardian who has not agreed said yes (%s)', why));
 
   ELSIF p_case = 'revoked' THEN
     -- (revoked) The office revokes her link (guardian_link_revoke(), db/109; a
@@ -16739,7 +16747,7 @@ BEGIN
     G2 := _v169_guardian(B, 'carry2', false);
     PERFORM _as(G2);
     SELECT x.reason INTO why FROM pupil_signin_consent_set(B, false) x;
-    PERFORM _assert(why = 'terms_not_agreed' AND _v169_open(K), format('§142 (carry): a guardian who has not agreed closed the school''s yes (%s)', why));
+    PERFORM _assert(why = 'not_permitted' AND _v169_open(K), format('§142 (carry): a guardian who has not agreed closed the school''s yes (%s)', why));
     G := _v169_guardian(B, 'carry', true);
     PERFORM _as(G);
     SELECT s.yes_how || '|' || s.can_stop || '|' || s.yours INTO v FROM pupil_signin_state(B) s;
@@ -16998,10 +17006,19 @@ BEGIN
     -- only that: no state of his sign-in, no Allow, no Stop.
     K := _v169_pupil('agreed', 15); B := _v169_boy(K); G := _v169_guardian(B, 'agreed', false);
     PERFORM _as(REG); PERFORM pupil_signin_office_set(B, true, 'V164 Signer', sa_today() - 7);
+    -- Since db/175 a link waiting for her agreement reads nothing of his at
+    -- all, not even that much: the terms card is all she sees.
     PERFORM _as(G);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pupil_signin_state(B)),
+      '§142 (agreed): a guardian who has not agreed reads a row of his sign-in');
+    -- A guardian who agreed and withdrew keeps her link (db/175, Q1) and is
+    -- told only that she has not agreed: no state, no Allow, no Stop.
+    PERFORM set_config('app.user_id', '', true);
+    G := _v169_guardian(B, 'agreedw', true);
+    PERFORM _as(G); PERFORM guardian_consent_withdraw(G, B);
     SELECT s.agreed || '|' || coalesce(s.in_force::text, '-') || '|' || coalesce(s.yes_how, '-') || '|' || s.can_allow || '|' || s.can_stop
       INTO v FROM pupil_signin_state(B) s;
-    PERFORM _assert(v = 'false|-|-|false|false', format('§142 (agreed): a guardian who has not agreed reads %s', v));
+    PERFORM _assert(v = 'false|-|-|false|false', format('§142 (agreed): a guardian who withdrew reads %s', v));
 
   ELSIF p_case = 'staffboy' THEN
     -- (staffboy) N13: an account that is both a boy and staff (a coach's role
@@ -17101,6 +17118,16 @@ BEGIN
     -- never a child's own account (pupil_signin_child_account());
     -- player_born_own_child() answers only whether the caller is the boy's
     -- own guardian (Q8's refusal), and only about the caller.
+    -- db/175 adds four definers, reviewed here and none on the list, each
+    -- asking for itself: my_terms_due() reads only the caller's own guardian
+    -- links (a.person_id = app_user_id(), no pad, no closed pupil) and asks the
+    -- gate itself (pupil_signin_open()), so it is not counted; terms_gate_mine()
+    -- and terms_gate_schools() read nothing but my_terms_due(), never
+    -- app_user_id() of their own; guardian_terms_recorded() is the trigger's,
+    -- not the application's (no EXECUTE). §150 (due), (open) and (grants)
+    -- prove each. The four re-emitted bodies db/175 gates (my_alert_choices(),
+    -- my_health_consents(), public_name_consent_set(),
+    -- health_monitoring_consent_set()) keep the place they had.
     PERFORM _assert(v = 'auth_identity_sign_in(text,text,text,text),captain_nominate(uuid,uuid,jsonb),'
          || 'colours_decide(uuid,text,text),colours_nominate(uuid,text,text),colours_nominations(),'
          -- db/174 (25 Nov): the family list's three join it. Each asks the office's own question
@@ -19349,6 +19376,427 @@ BEGIN
   PERFORM set_config('app.user_id', '', true);
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/174 (section 149) ─────────────────────────────────────────────
+
+-- ┌── db/175 (section 150): the parent's terms gate ─────────────────────
+-- Helpers, as the owner. Every name is invented; every date relative to today.
+
+-- A guardian of a boy, at the boy's school: an account, `guardian`, a link in
+-- the state asked: 'pending' (verified, not agreed), 'granted', 'withdrawn'
+-- (agreed, then withdrawn), 'old' (agreed under an older version), or
+-- 'unverified' (the office has not verified it). Her id.
+CREATE OR REPLACE FUNCTION _v175_guardian(p_boy uuid, p_tag text, p_state text) RETURNS uuid AS $$
+DECLARE u uuid;
+BEGIN
+  INSERT INTO app_user (school_id, email, name, role)
+  VALUES ((SELECT school_id FROM player WHERE id = p_boy), 'v175.g.' || p_tag || '@example.invalid', 'V175 Mother ' || initcap(p_tag), 'guardian')
+  RETURNING id INTO u;
+  PERFORM _v175_link(u, p_boy, p_state);
+  RETURN u;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A link of hers to another boy, on her guardian assignment at his school
+-- (made if she has none there), in the state asked. Its id.
+CREATE OR REPLACE FUNCTION _v175_link(p_guardian uuid, p_boy uuid, p_state text) RETURNS uuid AS $$
+DECLARE a uuid; g uuid; v_school uuid := (SELECT school_id FROM player WHERE id = p_boy);
+BEGIN
+  SELECT x.id INTO a FROM role_assignment x
+   WHERE x.person_id = p_guardian AND x.role = 'guardian' AND x.school_id = v_school AND x.active LIMIT 1;
+  IF a IS NULL THEN
+    INSERT INTO role_assignment (person_id, role, school_id, valid_from)
+    VALUES (p_guardian, 'guardian', v_school, sa_today() - 30) RETURNING id INTO a;
+  END IF;
+  INSERT INTO assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                  consent_state, consent_version, consent_at, created_by, valid_from)
+  VALUES (a, p_boy, 'parent',
+          CASE WHEN p_state = 'unverified' THEN 'pending' ELSE 'verified' END,
+          CASE WHEN p_state <> 'unverified' THEN '88888888-0000-0000-0000-00000000000c'::uuid END,
+          CASE WHEN p_state <> 'unverified' THEN now() END,
+          CASE WHEN p_state IN ('granted', 'withdrawn', 'old') THEN 'granted' ELSE 'pending' END,
+          CASE p_state WHEN 'old' THEN 'popia-2025-01' WHEN 'granted' THEN 'popia-2026-01' WHEN 'withdrawn' THEN 'popia-2026-01' END,
+          CASE WHEN p_state IN ('granted', 'withdrawn', 'old') THEN now() - interval '1 day' END,
+          '88888888-0000-0000-0000-00000000000c', sa_today() - 30)
+  RETURNING id INTO g;
+  IF p_state = 'withdrawn' THEN
+    UPDATE assignment_subject SET consent_state = 'withdrawn' WHERE id = g;
+  END IF;
+  RETURN g;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Her link to a boy (owner): its id.
+CREATE OR REPLACE FUNCTION _v175_link_of(p_guardian uuid, p_boy uuid) RETURNS uuid AS $$
+  SELECT g.id FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id
+   WHERE a.person_id = p_guardian AND a.role = 'guardian' AND g.player_id = p_boy ORDER BY g.created_at DESC LIMIT 1
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A notice about a boy, to one recipient (owner): kind 'availability' as the
+-- fixture's "please answer again" is, or 'safeguarding' (a DSO's, naming no
+-- child), or 'system'. Its id.
+CREATE OR REPLACE FUNCTION _v175_notice(p_boy uuid, p_recipient uuid, p_kind text) RETURNS uuid AS $$
+  INSERT INTO notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability,
+                            subject_person_id, recipient_id, published_at)
+  SELECT p.school_id, CASE WHEN p_kind = 'availability' THEN p.team_code END,
+         CASE WHEN p_kind = 'availability' THEN 'team' ELSE 'school' END, p_kind, 'medium',
+         'V175 ' || p_kind, 'Verify 175.', CASE WHEN p_kind = 'availability' THEN 'availability.read' ELSE 'news.read' END,
+         CASE WHEN p_kind = 'safeguarding' THEN NULL ELSE p_boy END, p_recipient, now() - interval '1 minute'
+    FROM player p WHERE p.id = p_boy
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A notice route added later that forgets the gate (owner): a permissive
+-- read of every notice addressed to the reader, on or off. db/99 runs in one
+-- transaction that is rolled back, so it never outlives the case.
+CREATE OR REPLACE FUNCTION _v175_route_added_later(p_on boolean) RETURNS void AS $$
+BEGIN
+  IF p_on THEN
+    CREATE POLICY _v175_later ON notification FOR SELECT USING (recipient_id = app_user_id());
+  ELSE
+    DROP POLICY IF EXISTS _v175_later ON notification;
+  END IF;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The record of a link's agreements, oldest first (owner): "state/version/how;…".
+CREATE OR REPLACE FUNCTION _v175_record(p_link uuid) RETURNS text AS $$
+  SELECT coalesce(string_agg(r.state || '/' || coalesce(r.version, '-') || '/' || r.how, ';' ORDER BY r.seq), '')
+    FROM guardian_terms_record r WHERE r.link_id = p_link
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- How many capabilities the guardian role holds (owner).
+CREATE OR REPLACE FUNCTION _v175_guardian_caps() RETURNS int AS $$
+  SELECT count(*)::int FROM role_capability WHERE role = 'guardian'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- What the caller reaches of one boy, run as the caller (scrbrd_app, under
+-- each person's session): his row; how many of the guardian's capabilities
+-- app_can() grants on him; is_family_of(); his health-consent row; his alert
+-- choices; and the rows with no person in them at his school (a fixture).
+-- "player:0 caps:0 family:f health:0 alerts:0 school:f" is a boy she does
+-- not reach at all.
+CREATE OR REPLACE FUNCTION _v175_reach(p_boy uuid) RETURNS text AS $$
+DECLARE v_school uuid := '11111111-1111-1111-1111-111111111111'; v_team text := 'U16A'; c text; n int := 0;
+BEGIN
+  SELECT p.school_id, p.team_code INTO v_school, v_team FROM player p WHERE p.id = p_boy;
+  IF v_school IS NULL THEN
+    -- His row is not readable: ask at the school and side every staged boy is on.
+    v_school := coalesce((SELECT x.school_id FROM _v175_where(p_boy) x), '11111111-1111-1111-1111-111111111111');
+    v_team := coalesce((SELECT x.team_code FROM _v175_where(p_boy) x), 'U16A');
+  END IF;
+  FOR c IN SELECT * FROM unnest(_v175_caps()) LOOP
+    IF app_can(c, v_school, v_team, p_boy, '00000000-0000-0000-0000-000000000000'::uuid) THEN n := n + 1; END IF;
+  END LOOP;
+  RETURN 'player:' || (SELECT count(*) FROM player WHERE id = p_boy)
+      || ' caps:' || n
+      || ' family:' || CASE WHEN is_family_of(p_boy) THEN 't' ELSE 'f' END
+      || ' health:' || (SELECT count(*) FROM my_health_consents() h WHERE h.player_id = p_boy)
+      || ' alerts:' || (SELECT count(*) FROM my_alert_choices() a WHERE a.subject_player_id = p_boy)
+      || ' school:' || CASE WHEN app_can('fixture.read', v_school, '*', '00000000-0000-0000-0000-000000000000'::uuid,
+                                         '00000000-0000-0000-0000-000000000000'::uuid) THEN 't' ELSE 'f' END;
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- His school and side, past row security (owner).
+CREATE OR REPLACE FUNCTION _v175_where(p_boy uuid) RETURNS TABLE (school_id uuid, team_code text) AS $$
+  SELECT p.school_id, p.team_code FROM player p WHERE p.id = p_boy
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The guardian role's capabilities (owner).
+CREATE OR REPLACE FUNCTION _v175_caps() RETURNS text[] AS $$
+  SELECT array_agg(capability ORDER BY capability) FROM role_capability WHERE role = 'guardian'
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The notices the caller reads, of those given (as the caller).
+CREATE OR REPLACE FUNCTION _v175_reads(p_ids uuid[]) RETURNS int AS $$
+  SELECT count(*)::int FROM notification n WHERE n.id = ANY (p_ids)
+$$ LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of §150, run as the caller (scrbrd_app, under each person's session).
+CREATE OR REPLACE FUNCTION _v175_case(p_case text) RETURNS void AS $$
+DECLARE
+  HIL    uuid := '11111111-1111-1111-1111-111111111111';
+  WES    uuid := '22222222-2222-2222-2222-222222222222';
+  NIL    uuid := '00000000-0000-0000-0000-000000000000';
+  REG    uuid := '88888888-0000-0000-0000-00000000000c';   -- Hilton's office (schooladmin)
+  COACH  uuid := '88888888-0000-0000-0000-000000000004';   -- a Hilton coach (1XI)
+  NONE_  text := 'player:0 caps:0 family:f health:0 alerts:0 school:f';
+  ALL_   text;
+  B uuid; B2 uuid; P1 uuid; P2 uuid; P3 uuid; P4 uuid; P5 uuid; P6 uuid; P7 uuid; PU uuid; K uuid;
+  L uuid; n1 uuid; n2 uuid; n3 uuid; n4 uuid;
+  v text; ok_ boolean; why text; r record; n int;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+  ALL_ := 'player:1 caps:' || _v175_guardian_caps() || ' family:t health:1 alerts:';
+
+  IF p_case = 'gate' THEN
+    -- (gate) §5.4 cases 1, 6, 7, 12: P1, verified and not agreed, reaches
+    -- nothing of him: not his row, not one of the guardian's capabilities on
+    -- him, not is_family_of(), not his health or alert rows, not even the rows
+    -- with no person in them at his school (his side's fixtures went with
+    -- him). P2, his other guardian, agreed; P3 agreed and withdrew (Q1); an
+    -- older version (Q2): each reads him as before. The office and a coach of
+    -- his side read him whatever his parents have agreed.
+    B := _v168_boy(HIL, 'v175gate', 14);
+    P1 := _v175_guardian(B, 'gate1', 'pending');
+    P2 := _v175_guardian(B, 'gate2', 'granted');
+    P3 := _v175_guardian(B, 'gate3', 'withdrawn');
+    P4 := _v175_guardian(B, 'gate4', 'old');
+    K  := _v169_bare('v175gatecoach'); PERFORM _v169_give_role(K, 'coach', 'U16A');
+    PERFORM _as(P1);
+    v := _v175_reach(B);
+    PERFORM _assert(v = NONE_, format('§150 (gate): P1, not agreed, reaches %s', v));
+    PERFORM _as(P2);
+    v := _v175_reach(B);
+    PERFORM _assert(v LIKE ALL_ || '%' AND v NOT LIKE '%alerts:0 %' AND v LIKE '%school:t', format('§150 (gate): P2, agreed, reaches %s', v));
+    PERFORM _as(P3);
+    v := _v175_reach(B);
+    PERFORM _assert(v LIKE ALL_ || '%' AND v LIKE '%school:t', format('§150 (gate): P3, withdrawn, reaches %s (Q1: she keeps sight of him)', v));
+    PERFORM _as(P4);
+    v := _v175_reach(B);
+    PERFORM _assert(v LIKE ALL_ || '%' AND v LIKE '%school:t', format('§150 (gate): P4, agreed under an older version, reaches %s (Q2)', v));
+    PERFORM _as(REG);
+    PERFORM _assert((SELECT count(*) FROM player WHERE id = B) = 1 AND app_can('player.profile.read', HIL, 'U16A', B, NIL),
+      '§150 (gate): the office no longer reads a boy whose parent has not agreed');
+    PERFORM _as(K);
+    PERFORM _assert((SELECT count(*) FROM player WHERE id = B) = 1 AND app_can('team.read', HIL, 'U16A', B, NIL),
+      '§150 (gate): his side''s coach no longer reads a boy whose parent has not agreed');
+
+  ELSIF p_case = 'writes' THEN
+    -- (writes) §5.4 case 2: what she does for him rides the same link, and is
+    -- refused as an ended link is (not_permitted): "Allow his own sign-in",
+    -- the public-name and the health-monitoring answers. His other guardian,
+    -- agreed, is not refused (the control).
+    B := _v168_boy(HIL, 'v175writes', 14);
+    P1 := _v175_guardian(B, 'writes1', 'pending');
+    P2 := _v175_guardian(B, 'writes2', 'granted');
+    PERFORM _as(P1);
+    SELECT x.ok, x.reason INTO ok_, why FROM pupil_signin_consent_set(B, true) x;
+    PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§150 (writes): P1 allowed his own sign-in (%s)', why));
+    SELECT x.ok, x.reason INTO ok_, why FROM public_name_consent_set(B, false, 'popia-2026-01', NULL, NULL, NULL, NULL) x;
+    PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§150 (writes): P1 answered for his public name (%s)', why));
+    SELECT x.ok, x.reason INTO ok_, why FROM health_monitoring_consent_set(B, false, 'health-2026-01', NULL, NULL, NULL) x;
+    PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§150 (writes): P1 answered for his health monitoring (%s)', why));
+    PERFORM _assert(NOT app_can('availability.declare', HIL, 'U16A', B, NIL) AND NOT app_can('player.emergency.manage', HIL, 'U16A', B, NIL)
+                    AND NOT app_can('transport.lift.arrange', HIL, 'U16A', B, NIL),
+      '§150 (writes): P1 may still declare his availability, his contacts or a lift');
+    PERFORM _as(P2);
+    SELECT x.ok, x.reason INTO ok_, why FROM public_name_consent_set(B, false, 'popia-2026-01', NULL, NULL, NULL, NULL) x;
+    PERFORM _assert(ok_, format('§150 (writes): P2, agreed, could not answer for his public name (%s)', why));
+    SELECT x.ok, x.reason INTO ok_, why FROM health_monitoring_consent_set(B, false, 'health-2026-01', NULL, NULL, NULL) x;
+    PERFORM _assert(ok_, format('§150 (writes): P2, agreed, could not answer for his health monitoring (%s)', why));
+    PERFORM _assert(app_can('availability.declare', HIL, 'U16A', B, NIL), '§150 (writes): P2, agreed, may not declare his availability');
+
+  ELSIF p_case = 'agree' THEN
+    -- (agree) §5.4 case 3, and §6's "locked out for good": P1 agrees for
+    -- herself with no capability and reads him on the next statement; the
+    -- record keeps the agreement. She cannot agree P2's link for her, nor may
+    -- a parent whose link the office has not verified agree at all.
+    B := _v168_boy(HIL, 'v175agree', 14);
+    P1 := _v175_guardian(B, 'agree1', 'pending');
+    P2 := _v175_guardian(B, 'agree2', 'pending');
+    PU := _v175_guardian(B, 'agreeu', 'unverified');
+    L := _v175_link_of(P1, B);
+    PERFORM _as(P1);
+    PERFORM _assert(_v175_reach(B) = NONE_, '§150 (agree): P1 reaches him before she agrees');
+    SELECT x.ok, x.reason INTO ok_, why FROM guardian_consent_record(P2, B, 'popia-2026-01') x;
+    PERFORM _assert(NOT ok_ AND why = 'not_permitted', format('§150 (agree): P1 agreed P2''s terms for her (%s)', why));
+    SELECT x.ok, x.reason INTO ok_, why FROM guardian_consent_record(P1, B, 'popia-2026-01') x;
+    PERFORM _assert(ok_, format('§150 (agree): P1 could not agree (%s): the way to agree is behind the gate', why));
+    v := _v175_reach(B);
+    PERFORM _assert(v LIKE ALL_ || '%', format('§150 (agree): agreed, P1 reaches %s', v));
+    PERFORM _assert(_v175_record(L) = 'granted/popia-2026-01/guardian',
+      format('§150 (agree): her agreement is recorded as %s', _v175_record(L)));
+    PERFORM _as(P2);
+    PERFORM _assert(_v175_reach(B) = NONE_, '§150 (agree): P1''s agreement opened P2''s reads');
+    PERFORM _as(PU);
+    SELECT x.ok, x.reason INTO ok_, why FROM guardian_consent_record(PU, B, 'popia-2026-01') x;
+    PERFORM _assert(NOT ok_ AND why = 'no_verified_link', format('§150 (agree): an unverified link agreed (%s)', why));
+    PERFORM _assert(_v175_reach(B) = NONE_, '§150 (agree): an unverified link reaches him');
+    -- The office records P2's agreement from a signed form (Q3): it opens her
+    -- gate, and the record says it was the office's act.
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM guardian_consent_record(P2, B, 'popia-2026-01') x;
+    PERFORM _assert(ok_, format('§150 (agree): the office could not record P2''s agreement (%s)', why));
+    PERFORM _assert(_v175_record(_v175_link_of(P2, B)) = 'granted/popia-2026-01/office',
+      format('§150 (agree): the office''s act is recorded as %s', _v175_record(_v175_link_of(P2, B))));
+    PERFORM _as(P2);
+    PERFORM _assert(_v175_reach(B) LIKE ALL_ || '%', '§150 (agree): the office''s record did not open P2''s reads');
+    -- Withdrawn and agreed again: each kept, in order; the link holds the last.
+    PERFORM _as(P1);
+    PERFORM guardian_consent_withdraw(P1, B);
+    PERFORM guardian_consent_record(P1, B, 'popia-2026-02');
+    PERFORM _assert(_v175_record(L) = 'granted/popia-2026-01/guardian;withdrawn/popia-2026-01/guardian;granted/popia-2026-02/guardian',
+      format('§150 (agree): the record reads %s', _v175_record(L)));
+    -- The record is the owner's: the application reads and writes none of it.
+    BEGIN
+      PERFORM 1 FROM guardian_terms_record LIMIT 1;
+      PERFORM _assert(false, '§150 (agree): the application reads guardian_terms_record');
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+  ELSIF p_case = 'due' THEN
+    -- (due) §5.4 case 4: my_terms_due() answers P1 her own waiting link, his
+    -- name and his school's, and nothing more; P2 (agreed), a coach, a pupil,
+    -- a parent whose link is not verified, and a pad credential get nothing.
+    B := _v168_boy(HIL, 'v175due', 14);
+    P1 := _v175_guardian(B, 'due1', 'pending');
+    P2 := _v175_guardian(B, 'due2', 'granted');
+    PU := _v175_guardian(B, 'dueu', 'unverified');
+    B2 := _v168_boy(HIL, 'v175dueother', 13);
+    P3 := _v175_guardian(B2, 'due3', 'pending');
+    K := _v169_pupil('v175due', 15);
+    PERFORM _as(P1);
+    SELECT count(*), max(t.full_name), max(t.school_name), bool_and(t.player_id = B AND t.school_id = HIL AND t.link_id = _v175_link_of(P1, B))
+      INTO n, v, why, ok_ FROM my_terms_due() t;
+    PERFORM _assert(n = 1 AND v = 'Rostername V175due' AND why = 'Hilton College' AND ok_,
+      format('§150 (due): P1 reads %s rows (%s, %s)', n, v, why));
+    PERFORM _assert((SELECT array_to_string(p.proargnames, ',') FROM pg_proc p WHERE p.oid = 'my_terms_due()'::regprocedure)
+                    = 'link_id,player_id,full_name,school_id,school_name', '§150 (due): my_terms_due() answers more than the five');
+    FOR r IN SELECT * FROM unnest(ARRAY[P2, PU, COACH, REG, K]) x(who) LOOP
+      PERFORM _as(r.who);
+      SELECT count(*) INTO n FROM my_terms_due();
+      PERFORM _assert(n = 0, format('§150 (due): %s reads %s rows', r.who, n));
+    END LOOP;
+    PERFORM _as(P1);
+    PERFORM set_config('app.scope', 'pad', true);
+    SELECT count(*) INTO n FROM my_terms_due();
+    PERFORM set_config('app.scope', '', true);
+    PERFORM _assert(n = 0, format('§150 (due): under a pad credential P1 reads %s rows', n));
+
+  ELSIF p_case = 'open' THEN
+    -- (open) §5.4 case 5: P1 raises a concern at his school and reads its DSO
+    -- card; the DSO's notice to her reads; and the system's own notice that
+    -- the office verified her link (db/161's "The school has answered",
+    -- written by guardian_link_verify() without a version: verified, terms
+    -- still to read) reads, while his terms are due.
+    B := _v168_boy(HIL, 'v175open', 14);
+    P1 := _v175_guardian(B, 'open1', 'unverified');
+    PERFORM _as(REG);
+    SELECT x.ok, x.reason INTO ok_, why FROM guardian_link_verify(P1, B, NULL, 'Verify 175: seen in person.') x;
+    PERFORM _assert(ok_, format('§150 (open): the office could not verify P1''s link (%s)', why));
+    PERFORM set_config('app.user_id', '', true);
+    n1 := _v175_notice(B, P1, 'safeguarding');
+    PERFORM _as(P1);
+    PERFORM _assert(_v175_reach(B) = NONE_ AND (SELECT count(*) FROM my_terms_due() t WHERE t.player_id = B) = 1,
+      format('§150 (open): verified without a version, P1 reaches %s or his terms are not due', _v175_reach(B)));
+    SELECT count(*) INTO n FROM notification x WHERE x.recipient_id = P1 AND x.kind = 'system' AND x.subject_kind = 'system';
+    PERFORM _assert(n = 1, format('§150 (open): P1 reads %s of the system''s notices that the school has answered', n));
+    SELECT x.ok, x.reason INTO ok_, why FROM safeguarding_concern_raise(HIL, 'adult', ARRAY['bullying'], 'suspicion',
+      'Somebody at nets keeps shouting at the boys and pushing them.', 'witness') x;
+    PERFORM _assert(ok_, format('§150 (open): P1 could not raise a concern (%s)', coalesce(why, 'refused')));
+    SELECT count(*) INTO n FROM dso_contacts(HIL);
+    PERFORM _assert(n >= 1, '§150 (open): P1 cannot read her school''s DSO card');
+    PERFORM _assert(_v175_reads(ARRAY[n1]) = 1, '§150 (open): the DSO''s notice to P1 is held by the gate');
+
+  ELSIF p_case = 'children' THEN
+    -- (children) §5.4 case 8: P4, two boys at Hilton, one agreed and one not;
+    -- P5, one boy at Hilton agreed and one at Westville not. Agreeing for one
+    -- child opens nothing of the other; the waiting child's notices are held
+    -- and the agreed child's read; agreeing reads the held one with its date.
+    B := _v168_boy(HIL, 'v175kids1', 14); B2 := _v168_boy(HIL, 'v175kids2', 12);
+    P4 := _v175_guardian(B, 'kids4', 'granted'); PERFORM _v175_link(P4, B2, 'pending');
+    n1 := _v175_notice(B, P4, 'availability'); n2 := _v175_notice(B2, P4, 'availability');
+    PERFORM _as(P4);
+    PERFORM _assert(_v175_reach(B) LIKE ALL_ || '%', format('§150 (children): P4 does not reach her agreed son (%s)', _v175_reach(B)));
+    v := _v175_reach(B2);
+    PERFORM _assert(v LIKE 'player:0 caps:0 family:f health:0 alerts:0 %', format('§150 (children): P4''s agreed son opened his brother: %s', v));
+    PERFORM _assert(_v175_reads(ARRAY[n1]) = 1 AND _v175_reads(ARRAY[n2]) = 0,
+      format('§150 (children): P4 reads %s of the agreed son''s notice and %s of the waiting son''s', _v175_reads(ARRAY[n1]), _v175_reads(ARRAY[n2])));
+    PERFORM guardian_consent_record(P4, B2, 'popia-2026-01');
+    PERFORM _assert(_v175_reads(ARRAY[n2]) = 1, '§150 (children): agreed, P4 does not read the notice held for her');
+    -- Two schools.
+    B := _v168_boy(HIL, 'v175two1', 14); B2 := _v168_boy(WES, 'v175two2', 13);
+    P5 := _v175_guardian(B, 'two5', 'granted'); PERFORM _v175_link(P5, B2, 'pending');
+    n3 := _v175_notice(B2, P5, 'availability');
+    PERFORM _as(P5);
+    PERFORM _assert(_v175_reach(B) LIKE ALL_ || '%', '§150 (children): P5 does not reach her agreed son at Hilton');
+    v := _v175_reach(B2);
+    PERFORM _assert(v = NONE_, format('§150 (children): P5''s Hilton agreement opened her Westville son: %s', v));
+    PERFORM _assert(_v175_reads(ARRAY[n3]) = 0, '§150 (children): the Westville son''s notice reads before she agrees there');
+    SELECT count(*) INTO n FROM my_terms_due() t WHERE t.player_id = B2 AND t.school_name = 'Westville Boys'' High';
+    PERFORM _assert(n = 1 AND (SELECT count(*) FROM my_terms_due()) = 1, '§150 (children): P5''s waiting link is not the one due, under its own school');
+
+  ELSIF p_case = 'notices' THEN
+    -- (notices) §5.4 case 9: P1's notice about him is not readable, so the
+    -- push sender (which reads it as her first) sends nothing; his other
+    -- guardian's reads. ((open) has the system's own notice to her.)
+    B := _v168_boy(HIL, 'v175notice', 14);
+    P1 := _v175_guardian(B, 'notice1', 'pending');
+    P2 := _v175_guardian(B, 'notice2', 'granted');
+    n1 := _v175_notice(B, P1, 'availability'); n2 := _v175_notice(B, P2, 'availability');
+    PERFORM _as(P1);
+    PERFORM _assert(_v175_reads(ARRAY[n1]) = 0, '§150 (notices): P1 reads a notice about him before she agrees');
+    PERFORM _assert((SELECT count(*) FROM my_notifications m WHERE m.id = n1) = 0, '§150 (notices): my_notifications lists it to P1');
+    -- A route added later that reads every notice addressed to her, and asks
+    -- nothing of him: the notice's own policy still holds his from her, and
+    -- still lets her read the agreed boy's (the control: P2's, below).
+    PERFORM _v175_route_added_later(true);
+    PERFORM _assert(_v175_reads(ARRAY[n1]) = 0, '§150 (notices): a route added later reads P1 a notice about him before she agrees');
+    PERFORM _as(P2);
+    PERFORM _assert(_v175_reads(ARRAY[n2]) = 1, '§150 (notices): with the route added later, P2 does not read hers');
+    PERFORM _v175_route_added_later(false);
+    PERFORM _as(P2);
+    PERFORM _assert(_v175_reads(ARRAY[n2]) = 1, '§150 (notices): P2, agreed, does not read the notice about him');
+
+  ELSIF p_case = 'coach' THEN
+    -- (coach) §5.4 case 10: P6 coaches his side and is his parent, not
+    -- agreed. As his coach she reads him as she reads any boy on her side,
+    -- and a notice about him addressed to her; her family list gives one row
+    -- for him, the waiting one, which draws the terms card.
+    B := _v168_boy(HIL, 'v175coach', 14);
+    P6 := _v175_guardian(B, 'coach6', 'pending');
+    PERFORM _v169_give_role(P6, 'coach', 'U16A');
+    n1 := _v175_notice(B, P6, 'availability');
+    PERFORM _as(P6);
+    PERFORM _assert((SELECT count(*) FROM player WHERE id = B) = 1 AND app_can('team.read', HIL, 'U16A', B, NIL),
+      '§150 (coach): P6 does not read him as his coach');
+    PERFORM _assert(NOT is_family_of(B), '§150 (coach): P6''s coaching made her his family');
+    PERFORM _assert((SELECT count(*) FROM my_health_consents() h WHERE h.player_id = B) = 0,
+      '§150 (coach): P6 reads his health consent as a parent');
+    PERFORM _assert(_v175_reads(ARRAY[n1]) = 1, '§150 (coach): P6 does not read a notice about him as his coach');
+    PERFORM _assert((SELECT count(*) FROM my_terms_due() t WHERE t.player_id = B) = 1, '§150 (coach): his terms are not due for P6');
+
+  ELSIF p_case = 'eighteen' THEN
+    -- (eighteen) §5.4 case 11: the parent of an eighteen-year-old still at
+    -- school (db/62: the link stays open) is gated the same, and can agree.
+    B := _v168_boy(HIL, 'v175eighteen', 18);
+    P7 := _v175_guardian(B, 'eighteen7', 'pending');
+    PERFORM _as(P7);
+    PERFORM _assert(_v175_reach(B) = NONE_, format('§150 (eighteen): P7 reaches %s', _v175_reach(B)));
+    SELECT x.ok, x.reason INTO ok_, why FROM guardian_consent_record(P7, B, 'popia-2026-01') x;
+    PERFORM _assert(ok_ AND (SELECT count(*) FROM player WHERE id = B) = 1,
+      format('§150 (eighteen): P7 could not agree, or agreed and reads nothing (%s)', why));
+
+  ELSIF p_case = 'signin' THEN
+    -- (signin) §5.4 case 13: "Allow his own sign-in" answers P1 nothing: not
+    -- that he has an account, not that he asked. Agreed, it answers her.
+    K := _v169_pupil('v175signin', 14); B := _v169_boy(K);
+    P1 := _v175_guardian(B, 'signin1', 'pending');
+    PERFORM _as(P1);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pupil_signin_state(B)), '§150 (signin): P1 reads a row of his own sign-in');
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM pupil_signin_account(B)), '§150 (signin): P1 reads his account');
+    PERFORM guardian_consent_record(P1, B, 'popia-2026-01');
+    PERFORM _assert((SELECT s.agreed AND s.can_allow FROM pupil_signin_state(B) s), '§150 (signin): agreed, P1 may not allow his sign-in');
+
+  ELSIF p_case = 'self' THEN
+    -- (self) The gate is the guardian's: a pupil's own self link waiting for
+    -- consent is db/169's, not this file's. An adult boy's own link reads him.
+    K := _v169_pupil('v175self', 19); B := _v169_boy(K);
+    PERFORM _as(K);
+    PERFORM _assert(is_family_of(B) AND (SELECT count(*) FROM player WHERE id = B) = 1,
+      '§150 (self): an adult boy''s own pending self link no longer reads him');
+
+  ELSIF p_case = 'record' THEN
+    -- (record) The paste's carry-over: every guardian link that says anything
+    -- of the terms is on record; the seed's agreed links each have their row.
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v175_unrecorded()), '§150 (record): a guardian link''s terms are not on record');
+
+  ELSIF p_case = 'grants' THEN
+    PERFORM _assert(_v168_acl('my_terms_due()') = 'scrbrd_app:EXECUTE' AND _v168_acl('terms_gate_mine()') = 'scrbrd_app:EXECUTE'
+                    AND _v168_acl('terms_gate_schools()') = 'scrbrd_app:EXECUTE' AND _v168_acl('guardian_terms_recorded()') = '',
+      format('§150 (grants): my_terms_due %s, terms_gate_mine %s, terms_gate_schools %s, guardian_terms_recorded %s',
+             _v168_acl('my_terms_due()'), _v168_acl('terms_gate_mine()'), _v168_acl('terms_gate_schools()'), _v168_acl('guardian_terms_recorded()')));
+  ELSE
+    RAISE EXCEPTION '§150: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.scope', '', true);
+  PERFORM set_config('app.user_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- A guardian link whose terms are not on record (owner).
+CREATE OR REPLACE FUNCTION _v175_unrecorded() RETURNS SETOF uuid AS $$
+  SELECT g.id FROM assignment_subject g JOIN role_assignment a ON a.id = g.assignment_id AND a.role = 'guardian'
+   WHERE g.relationship IS DISTINCT FROM 'self' AND g.relationship IS DISTINCT FROM 'enquiry'
+     AND (g.consent_state <> 'pending' OR g.consent_version IS NOT NULL)
+     AND NOT EXISTS (SELECT 1 FROM guardian_terms_record x WHERE x.link_id = g.id)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- └── db/175 (section 150) ─────────────────────────────────────────────
 
 -- ┌── Section timing (Kameel, 25 Nov 2026) ─────────────────────────────
 -- CI's verifier ran for two to three and a half hours with no output at all,
@@ -26123,6 +26571,13 @@ BEGIN
                     AND (_v62_link(P_RCLUB, U_RCMUM)).until = majority_on(_born_of(P_RCLUB)),
       format('db/62 (request): a granted request wrote the pupil''s link %s and the club member''s %s',
              coalesce((_v62_link(P_RPUP, U_RMUM)).until::text, 'open'), coalesce((_v62_link(P_RCLUB, U_RCMUM)).until::text, 'open')));
+    -- db/175: the grant door leaves each link waiting for her agreement; each
+    -- agrees in the app, as the family screen asks, so what follows is the
+    -- link's dates and nothing else.
+    PERFORM _as(U_RMUM);
+    PERFORM _assert((SELECT ok FROM guardian_consent_record(U_RMUM, P_RPUP, 'popia-2026-01')), 'db/62 (request): the pupil''s mother could not agree');
+    PERFORM _as(U_RCMUM);
+    PERFORM _assert((SELECT ok FROM guardian_consent_record(U_RCMUM, P_RCLUB, 'popia-2026-01')), 'db/62 (request): the club member''s mother could not agree');
     PERFORM _as(U_OFF);
     SELECT ok, reason INTO v_ok, v_reason FROM decide_role_request((ids->>'r_radult')::uuid, true, 'verify db/62');
     PERFORM _assert(NOT v_ok AND v_reason = 'player_is_an_adult' AND _count_guardian_assignments(U_RAMUM) = 0
@@ -27050,8 +27505,13 @@ BEGIN
     PERFORM _assert(_notices_65(M) = want,
       format('db/65 (notice): the move asked %s; expected %s', _notices_65(M), want));
 
-    -- (reach) each reads his own notice and nobody else's
-    FOR r IN SELECT * FROM (VALUES (U_WHIT, P1), (U_BEKK, P2), (U_SARAH, P4), (U_CELE, P4), (U_SELF, P_INJURED)) v(who, boy) LOOP
+    -- (reach) each reads his own notice and nobody else's. N Cele has not
+    -- agreed the terms (db/175): hers is written, and held from her until she
+    -- agrees (Q4), so she reads none of them yet.
+    PERFORM _as(U_CELE);
+    SELECT count(*) INTO n FROM notification WHERE subject_id = M;
+    PERFORM _assert(n = 0, format('db/65 (reach): N Cele, not agreed, reads %s of the fixture''s notices', n));
+    FOR r IN SELECT * FROM (VALUES (U_WHIT, P1), (U_BEKK, P2), (U_SARAH, P4), (U_SELF, P_INJURED)) v(who, boy) LOOP
       PERFORM _as(r.who);
       SELECT string_agg(n.subject_person_id || ':' || (n.body LIKE '%is now%' AND n.body LIKE '%was for%'), ',') INTO got
         FROM notification n WHERE n.subject_id = M;
@@ -28197,7 +28657,15 @@ select s.player_id, p.full_name, p.known_as, p.team_code,
               and s.verification_state = 'verified'
               and s.valid_from <= sa_today()
               and (s.valid_until is null or s.valid_until > sa_today())
-            order by p.full_name, s.player_id
+              and s.consent_state <> 'pending'
+           union all
+           select t.player_id, t.full_name, null, null,
+                  t.school_id, t.school_name, null,
+                  null, 'verified', 'pending',
+                  null, null,
+                  null, null
+             from my_terms_due() t
+            order by full_name, player_id
 -- my_children:end
 $v49$;
 
@@ -28262,13 +28730,20 @@ $v49$;
     PERFORM _assert((SELECT string_agg(player_id::text, ',' ORDER BY player_id::text) FROM _v49_my_children) = _live_guardian_links_49(U_SARAH),
       '§49 (own): Sarah''s family app is not exactly her live links');
 
-    -- (pending) A link the school verified but the parent has not consented
-    -- under is a live link (app_can() reads verification, not consent), and
-    -- says which it is.
+    -- (pending) A link the school verified but the parent has not agreed the
+    -- terms on (db/175, slice 5b) reaches no row of the child: the player
+    -- join drops him, and his row comes from my_terms_due(): his id, his
+    -- name, his school, consent pending, and nothing else of his.
     PERFORM _as(U_CELE);
+    PERFORM _assert(NOT EXISTS (SELECT 1 FROM player WHERE id = P_CELE),
+      '§49 (pending): N Cele reads her son''s row before she has agreed the terms');
     SELECT count(*) INTO n FROM _v49_my_children WHERE player_id = P_CELE AND consent_state = 'pending'
-                                                   AND consent_version IS NULL AND consent_at IS NULL;
-    PERFORM _assert(n = 1, '§49 (pending): N Cele''s verified link is missing, does not say consent is pending, or claims a version or time no one recorded');
+                                                   AND consent_version IS NULL AND consent_at IS NULL
+                                                   AND full_name IS NOT NULL AND school_name IS NOT NULL
+                                                   AND known_as IS NULL AND team_code IS NULL AND school_kind IS NULL
+                                                   AND relationship IS NULL AND valid_from IS NULL AND valid_until IS NULL;
+    PERFORM _assert(n = 1 AND (SELECT count(*) FROM _v49_my_children) = 1,
+      '§49 (pending): N Cele''s waiting link is missing, says more of him than his name and school, or claims a version or time no one recorded');
     -- A link the school has not verified is no link at all.
     PERFORM _assert(NOT EXISTS (SELECT 1 FROM _v49_my_children WHERE verification_state <> 'verified'),
       '§49 (pending): an unverified link is listed');
@@ -52253,6 +52728,60 @@ $m130$;
   PERFORM _v174_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/174 (section 149) ─────────────────────────────────────────
+  -- ┌── db/175 (section 150) ─────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§150 The parent''s terms gate');
+  -- ── 150. The parent's terms gate: her link reaches her child once she has agreed the school's terms (db/175; Kameel, 18 and 20 Nov 2026) ──
+  -- Each case stages its own families (as the owner) and runs as scrbrd_app
+  -- under each person's session (_v175_case, an invoker). Labels:
+  --   (gate)     a parent not agreed reaches nothing of him, nor his side's
+  --              rows; agreed, withdrawn (Q1) and an older version (Q2) read;
+  --              the office and his coach read him whatever
+  --   (writes)   her acts for him refused (not_permitted); agreed, not
+  --   (agree)    the way to agree stays open and opens him on the next
+  --              statement; not another's link, not an unverified one; the
+  --              office's from a form (Q3); every agreement on record
+  --   (due)      my_terms_due(): her link, his name, his school; nobody else's
+  --   (open)     a concern raised, the DSO card, the DSO's notice and her
+  --              system notices, all before she agrees
+  --   (children) one child's agreement opens nothing of another, at one
+  --              school or two; a held notice reads once she agrees (Q4)
+  --   (notices)  his notices held from her, so never pushed; his other
+  --              guardian's read
+  --   (coach)    a parent who coaches his side reads him as his coach; her
+  --              family list still has the waiting row
+  --   (eighteen) the parent of a boy of 18 at school: gated, may agree
+  --   (signin)   "Allow his own sign-in" answers her nothing until she agrees
+  --   (self)     a boy's own link is not this gate's
+  --   (record)   the paste's carry-over left no link unrecorded
+  --   (grants)   ACLs
+  -- Broken by hand (25 Nov 2026), each went red for its own reason:
+  --   the predicate out of app_can()             → (gate) red: P1 reaches 21 capabilities
+  --   the predicate out of is_family_of()        → (gate) red: family
+  --   <> 'pending' read as = 'granted'           → (gate) red: P3, withdrawn, closed
+  --   the role and relationship scoping dropped  → (self) red: an adult's own link closed
+  --   the test on any of her links, not his      → (children) red: one son opened the other
+  --   the consent door behind the gate           → (agree) red: she cannot agree
+  --   my_terms_due() without the caller          → (due) red: another family's rows
+  --   the notice policy off                      → (notices) red: a route added later reads it
+  --   the DSO's notice policy off                → (open) red: the DSO's notice held
+  --   my_alert_choices(), my_health_consents()   → (gate) red: alerts, health
+  --   pupil_signin_my_link() ungated             → (writes) red: terms_not_agreed, not the gate
+  --   the public-name or health writer ungated   → (writes) red: she answered for him
+  PERFORM _v175_case('gate');
+  PERFORM _v175_case('writes');
+  PERFORM _v175_case('agree');
+  PERFORM _v175_case('due');
+  PERFORM _v175_case('open');
+  PERFORM _v175_case('children');
+  PERFORM _v175_case('notices');
+  PERFORM _v175_case('coach');
+  PERFORM _v175_case('eighteen');
+  PERFORM _v175_case('signin');
+  PERFORM _v175_case('self');
+  PERFORM _v175_case('record');
+  PERFORM _v175_case('grants');
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/175 (section 150) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE '%', pg_temp._v_section_summary();
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';

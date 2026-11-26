@@ -3902,6 +3902,13 @@ export const READ_QUERIES = {
    * school's terms her own link was agreed under, and when it was recorded,
    * for "What you have agreed". Her own link's, never another guardian's.
    *
+   * A link still waiting for her agreement (db/175) reaches no row of him, so
+   * it is not read through the player join: its row comes from my_terms_due(),
+   * the child's id, name and school and nothing else, consent_state 'pending',
+   * so the family screen draws the "Read the terms" card from her link's own
+   * state, never from whether a read of him returned rows. A parent who is
+   * also staff reads him as staff; her family card is still the gated one.
+   *
    * db/99 §49 runs this same text (between the my_children markers) as each
    * persona; read.test.mjs holds the two copies equal.
    */
@@ -3924,7 +3931,26 @@ export const READ_QUERIES = {
               and s.verification_state = 'verified'
               and s.valid_from <= sa_today()
               and (s.valid_until is null or s.valid_until > sa_today())
-            order by p.full_name, s.player_id`/* my_children:end */,
+              and s.consent_state <> 'pending'
+           union all
+           select t.player_id, t.full_name, null, null,
+                  t.school_id, t.school_name, null,
+                  null, 'verified', 'pending',
+                  null, null,
+                  null, null
+             from my_terms_due() t
+            order by full_name, player_id`/* my_children:end */,
+  },
+
+  /*
+   * THE CHILDREN WHOSE TERMS SHE HAS STILL TO READ (db/175, slice 5b): her own
+   * live, verified guardian links still waiting for her agreement, with the
+   * child's name and his school's, for the "Read the terms" card. Nothing else
+   * of his: until she agrees, her link reaches no row of him (app_can()), so
+   * this definer is the one place the card can say whose terms these are.
+   */
+  my_terms_due: {
+    text: `select link_id, player_id, full_name, school_id, school_name from my_terms_due()`,
   },
 
   /*
