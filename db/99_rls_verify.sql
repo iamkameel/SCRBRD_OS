@@ -6651,24 +6651,45 @@ CREATE OR REPLACE FUNCTION _v112_fact(p_what text, p_id uuid DEFAULT NULL) RETUR
     -- db/128 moved its day to sa_today(); read back on db/92's clock. db/169
     -- stamps his own link by pupil_signin_stamp(), under pupil_signin_terms_version(),
     -- and (20 Nov, A) asks `player` for a boy too; read back as db/92 wrote it.
-    WHEN 'grant_md5' THEN (SELECT md5(replace(replace(replace(replace(prosrc, 'sa_today()', 'current_date'),
+    -- db/176 adds one refusal after that (pupil_needs_his_roster_row), taken
+    -- out again here, exactly as db/176 writes it, on db/92's clock. Answered
+    -- only while db/108's block is in the body, so the md5 says both.
+    WHEN 'grant_md5' THEN (SELECT CASE WHEN position(k.b108 IN p.prosrc) > 0 THEN
+          md5(replace(replace(replace(replace(replace(p.prosrc, 'sa_today()', 'current_date'),
           'IF r.role IN (''guardian'', ''selfaccess'', ''enquiry'', ''player'') AND v_player IS NULL THEN',
           'IF r.role IN (''guardian'', ''selfaccess'', ''enquiry'') AND v_player IS NULL THEN'),
           '''self'', ''verified'', p_decider, now(), pupil_signin_stamp(v_player), '
        || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN pupil_signin_terms_version() END, '
        || 'CASE WHEN pupil_signin_stamp(v_player) = ''granted'' THEN now() END, p_decider);',
           '''self'', ''verified'', p_decider, now(), ''granted'', ''popia-2026-01'', now(), p_decider);'),
-          '  -- db/108: a pupil is a pupil OF A SIDE (role_assignment_player_team_scoped).' || chr(10)
-       || '  -- No side named by the request or the decider: his own side on the roster,' || chr(10)
-       || '  -- at this school. None there either: refused by name, before anything is' || chr(10)
-       || '  -- written, as a coach with no side is.' || chr(10)
-       || '  IF r.role = ''player'' AND v_team IS NULL THEN' || chr(10)
-       || '    SELECT p.team_code INTO v_team FROM player p WHERE p.id = v_player AND p.school_id = r.school_id;' || chr(10)
-       || '    IF v_team IS NULL THEN' || chr(10)
-       || '      RETURN QUERY SELECT false, ''team_required'', NULL::uuid; RETURN;' || chr(10)
-       || '    END IF;' || chr(10)
-       || '  END IF;' || chr(10), ''))
-       FROM pg_proc WHERE oid = to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'))
+          k.b108, ''), k.p176, '')) END
+       FROM pg_proc p,
+            (SELECT '  -- db/108: a pupil is a pupil OF A SIDE (role_assignment_player_team_scoped).' || chr(10)
+                 || '  -- No side named by the request or the decider: his own side on the roster,' || chr(10)
+                 || '  -- at this school. None there either: refused by name, before anything is' || chr(10)
+                 || '  -- written, as a coach with no side is.' || chr(10)
+                 || '  IF r.role = ''player'' AND v_team IS NULL THEN' || chr(10)
+                 || '    SELECT p.team_code INTO v_team FROM player p WHERE p.id = v_player AND p.school_id = r.school_id;' || chr(10)
+                 || '    IF v_team IS NULL THEN' || chr(10)
+                 || '      RETURN QUERY SELECT false, ''team_required'', NULL::uuid; RETURN;' || chr(10)
+                 || '    END IF;' || chr(10)
+                 || '  END IF;' || chr(10) AS b108,
+                    '  -- db/176 (Kameel, 18 Nov 2026, Q5: an under-18 pupil signs in only on a' || chr(10)
+                 || '  -- guardian''s yes or the office''s form; 20 Nov, A): a scorer''s or a side''s' || chr(10)
+                 || '  -- role, for an account the gate would close as a pupil''s with no boy (a' || chr(10)
+                 || '  -- claim that waits, or a pupil''s role naming none), only once the account' || chr(10)
+                 || '  -- is a roster boy''s own, so the sign-in gate reads that boy''s yes.' || chr(10)
+                 || '  IF (r.role IN (''scorer'', ''coach'', ''assistantcoach'', ''teammanager'')' || chr(10)
+                 || '      OR (v_team IS NOT NULL AND r.role NOT IN (''player'', ''selfaccess'', ''guardian'', ''enquiry'')))' || chr(10)
+                 || '     AND (EXISTS (SELECT 1 FROM pupil_claim pc WHERE pc.user_id = r.person_id AND pc.state IN (''with_office'', ''recognised''))' || chr(10)
+                 || '          OR EXISTS (SELECT 1 FROM role_assignment pr WHERE pr.person_id = r.person_id AND pr.active' || chr(10)
+                 || '                      AND pr.role IN (''player'', ''selfaccess'') AND (pr.valid_until IS NULL OR pr.valid_until > current_date)))' || chr(10)
+                 || '     AND NOT EXISTS (SELECT 1 FROM app_user pu WHERE pu.id = r.person_id AND pu.player_id IS NOT NULL)' || chr(10)
+                 || '     AND NOT EXISTS (SELECT 1 FROM role_assignment pa JOIN assignment_subject ps ON ps.assignment_id = pa.id' || chr(10)
+                 || '                      WHERE pa.person_id = r.person_id AND pa.active AND ps.relationship = ''self'') THEN' || chr(10)
+                 || '    RETURN QUERY SELECT false, ''pupil_needs_his_roster_row'', NULL::uuid; RETURN;' || chr(10)
+                 || '  END IF;' || chr(10) AS p176) k
+      WHERE p.oid = to_regprocedure('role_request_grant_as(uuid,uuid,text,uuid,text)'))
     WHEN 'child_md5' THEN (SELECT md5(prosrc) FROM pg_proc WHERE oid = to_regprocedure('my_child_fixtures()'))
   END
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
@@ -39762,7 +39783,8 @@ $v49$;
       '§89 (check): role_assignment_player_team_scoped is not db/108''s, or not validated');
     PERFORM _assert(_v112_fact('teamless_live') = '0', '§89 (check): a live player row names no side');
     PERFORM _assert(_v112_fact('grant_md5') = 'a9a5a09414e0629d70c873fcbeb99f75',
-      '§89 (check): role_request_grant_as() is not db/92''s body with db/108''s block');
+      format('§89 (check): role_request_grant_as() is not db/92''s body with db/108''s block (and db/169''s and db/176''s): %s',
+             coalesce(_v112_fact('grant_md5'), 'db/108''s block is not in it')));
 
     -- ── (doors) ──
     PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = to_regclass('player')
