@@ -37711,6 +37711,20 @@ $v49$;
     n    int;
     bad  text;
     rr   record;
+    -- Asked once, as the owner, before the person loops (CI speed, 26 Nov
+    -- 2026): nothing between here and (withdrawn) writes, so each is what
+    -- the loops asked per person and per row. BM the scored fixtures, GO the
+    -- guardians, PL* every plan's fixture, school and side.
+    BM   uuid[];
+    GO   uuid[];
+    PLF  uuid[];
+    PLS  uuid[];
+    PLT  text[];
+    v_seen  uuid[];
+    v_mr    uuid[];
+    v_child uuid[];
+    k2   int;
+    FXS  uuid[];
   BEGIN
     FX := ARRAY[(z->>'f1')::uuid, (z->>'f2')::uuid, (z->>'f3')::uuid, (z->>'f4')::uuid,
                 (z->>'f5')::uuid, (z->>'f6')::uuid, (z->>'f7')::uuid, (z->>'f8')::uuid];
@@ -37718,6 +37732,10 @@ $v49$;
                 (z->>'t4')::uuid, (z->>'t6')::uuid, (z->>'t8')::uuid];
     SX := ARRAY[(z->>'s6')::uuid, (z->>'s7')::uuid, (z->>'s8')::uuid, (z->>'sw')::uuid];
     ppl := _v106_people();
+    BM := _v106_ball_matches();
+    GO := _v106_guardians_only();
+    SELECT coalesce(array_agg(p.fixture), '{}'), coalesce(array_agg(p.school), '{}'), coalesce(array_agg(p.team), '{}')
+      INTO PLF, PLS, PLT FROM _v106_plans() p;
 
     -- (reader): m fixtures · t trips · s training · x toss/umpire/weather · p publication
     want := '{
@@ -37801,10 +37819,11 @@ $v49$;
     END LOOP;
 
     -- (literal): the build is §2.5's text, for everyone, everywhere staged or scored
+    FXS := FX || _v106_seed_matches();
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(format('%s/%s', x.f, x.cap), ' ') INTO bad
-        FROM (SELECT f0 AS f, c.cap FROM unnest(FX || _v106_seed_matches()) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
+        FROM (SELECT f0 AS f, c.cap FROM unnest(FXS) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
        WHERE fixture_reach(x.cap, x.f) IS DISTINCT FROM _v117_lit_fixture(x.cap, x.f);
       PERFORM _assert(bad IS NULL, format('§83 (literal): for %s fixture_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(format('%s/%s', s.school, s.team), ' ') INTO bad
@@ -37819,33 +37838,36 @@ $v49$;
     -- db/112 that includes the one a boy playing up reads only as the boy on
     -- its sheet, db/106 (e): he reads its balls too (§89). (shape) below holds
     -- match_read to fixture_reach() on every one of them.
+    -- Each side of the comparison is read once a person, as he reads it, and
+    -- both differences and the count are taken from those two (the log under
+    -- his row security was read three times a person, and the scored
+    -- fixtures asked again on every row of match, before 26 Nov 2026).
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
+      v_seen := ARRAY(SELECT DISTINCT b.match_id FROM ball_event b);
+      v_mr := ARRAY(SELECT m.id FROM match m WHERE m.id = ANY (BM) AND NOT trip_fixture_driver_only(m.id));
       SELECT string_agg(x::text, ' ') INTO bad
-        FROM ((SELECT DISTINCT b.match_id FROM ball_event b)
-              EXCEPT (SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
-                       AND NOT trip_fixture_driver_only(m.id))) d(x);
+        FROM ((SELECT unnest(v_seen)) EXCEPT (SELECT unnest(v_mr))) d(x);
       PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads the balls of %s, which match_read does not give him', u, left(bad, 300)));
       SELECT string_agg(x::text, ' ') INTO bad
-        FROM ((SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
-                AND NOT trip_fixture_driver_only(m.id))
-              EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b)) d(x);
+        FROM ((SELECT unnest(v_mr)) EXCEPT (SELECT unnest(v_seen))) d(x);
       PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads %s through match_read and none of its balls', u, left(bad, 300)));
-      n := n + (SELECT count(DISTINCT b.match_id) FROM ball_event b);
+      n := n + cardinality(v_seen);
     END LOOP;
-    PERFORM _assert(n > 0 AND cardinality(_v106_ball_matches()) > 1 AND cardinality(ppl) > 20,
+    PERFORM _assert(n > 0 AND cardinality(BM) > 1 AND cardinality(ppl) > 20,
       format('§83 (agree): the log comparison ran over %s people, %s fixtures and %s reads: it proves nothing',
-             cardinality(ppl), cardinality(_v106_ball_matches()), n));
+             cardinality(ppl), cardinality(BM), n));
     -- (agree) 2: db/100's helper, for every guardian
     n := 0;
-    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+    FOREACH u IN ARRAY GO LOOP
       PERFORM _as(u);
+      v_child := my_child_fixtures();
       PERFORM _assert(
-        (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(my_child_fixtures()) x)
+        (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(v_child) x)
           = (SELECT coalesce(array_agg(m.id ORDER BY m.id), '{}') FROM match m),
         format('§83 (agree): for the guardian %s my_child_fixtures() and match_read give different fixtures', u));
-      n := n + cardinality(my_child_fixtures());
+      n := n + cardinality(v_child);
     END LOOP;
     PERFORM _assert(n > 10, format('§83 (agree): the guardians'' fixtures number %s: it proves nothing', n));
     -- (agree) 3: db/96's side, for everyone; db/101's sheet, for every guardian
@@ -37853,23 +37875,30 @@ $v49$;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(format('%s/%s', p.school, p.team), ' ') INTO bad
-        FROM _v106_plans() p
+        FROM unnest(PLF, PLS, PLT) p(fixture, school, team)
        WHERE news_plan_reach(p.school, p.team) IS DISTINCT FROM
              (app_can('news.read', p.school, p.team, ZERO, ZERO) AND side_reach('team.read', p.school, p.team, ZERO));
       PERFORM _assert(bad IS NULL, format('§83 (agree): for %s news_plan_reach() and side_reach() answer apart at %s', u, bad));
     END LOOP;
     n := 0;
-    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+    FOREACH u IN ARRAY GO LOOP
       PERFORM _as(u);
-      SELECT string_agg(format('%s/%s', p.school, p.team), ' ') INTO bad
-        FROM _v106_plans() p
-       -- since db/117 the side on the plan's day (its fixture's), as
-       -- news_post_plan_side and news_post_team_side ask it
-       WHERE (news_plan_reach(p.school, p.team, side_day(p.fixture)) OR news_sheet_reach(p.fixture, p.school, p.team)) IS DISTINCT FROM
-             (app_can('news.read', p.school, p.team, ZERO, ZERO) AND fixture_end_reach('team.read', p.fixture, p.school, p.team));
+      -- each plan's three answers asked once; MATERIALIZED, because the
+      -- comparison and the count both read them, and a subquery flattened
+      -- into both would ask each again
+      WITH r AS MATERIALIZED (
+        SELECT p.school, p.team,
+               -- since db/117 the side on the plan's day (its fixture's), as
+               -- news_post_plan_side and news_post_team_side ask it
+               news_plan_reach(p.school, p.team, side_day(p.fixture)) AS plan,
+               news_sheet_reach(p.fixture, p.school, p.team) AS sheet,
+               (app_can('news.read', p.school, p.team, ZERO, ZERO) AND fixture_end_reach('team.read', p.fixture, p.school, p.team)) AS want
+          FROM unnest(PLF, PLS, PLT) p(fixture, school, team))
+      SELECT string_agg(format('%s/%s', r.school, r.team), ' ') FILTER (WHERE (r.plan OR r.sheet) IS DISTINCT FROM r.want),
+             count(*) FILTER (WHERE r.sheet AND NOT r.plan)
+        INTO bad, k2 FROM r;
       PERFORM _assert(bad IS NULL, format('§83 (agree): for the guardian %s db/101''s plan reach and fixture_end_reach() answer apart at %s', u, bad));
-      n := n + (SELECT count(*) FROM _v106_plans() p
-                 WHERE news_sheet_reach(p.fixture, p.school, p.team) AND NOT news_plan_reach(p.school, p.team, side_day(p.fixture)));
+      n := n + k2;
     END LOOP;
     PERFORM _assert(n > 0, '§83 (agree): no guardian reaches a plan by the sheet alone: the sheet comparison proves nothing');
 
@@ -37880,7 +37909,7 @@ $v49$;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(_v106_label(z, x) || '?' || x::text, ' ') INTO bad
-        FROM unnest(FX || _v106_ball_matches()) x
+        FROM unnest(FX || BM) x
        WHERE EXISTS (SELECT 1 FROM match m WHERE m.id = x)
              IS DISTINCT FROM (fixture_reach('fixture.read', x) OR x IN (SELECT trip_driven_matches()));
       PERFORM _assert(bad IS NULL, format('§83 (shape): for %s match_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
@@ -39590,6 +39619,14 @@ $v49$;
     v_child  uuid[];
     v_base   text;
     j        jsonb;
+    -- (guardians) and (agree): the scored fixtures, asked once a loop as the
+    -- owner (the loops write nothing); each person's fixtures with a ball he
+    -- reads, and those db/100's branches (or the sheet) give him, each asked
+    -- once a person (CI speed, 26 Nov 2026)
+    BM       uuid[];
+    v_seen   uuid[];
+    v_want   uuid[];
+    k        int;
   BEGIN
     OFFICE := (z->>'office')::uuid;
     MB := (z->>'mb')::uuid; SB := (z->>'sb')::uuid; NB := (z->>'nb')::uuid; UPB := (z->>'up')::uuid;
@@ -39700,17 +39737,18 @@ $v49$;
     PERFORM _assert(_v112_fact('child_md5') IN ('78db5a4d195937ed800efc92e0489516', '69846e82142ceea5c17809122f375706'),
       '§89 (guardians): my_child_fixtures() is not db/100''s, nor db/117''s');
     n := 0;
+    BM := _v106_ball_matches();
     FOREACH u IN ARRAY _v106_guardians_only() LOOP
       PERFORM _as(u);
       v_child := my_child_fixtures();
       PERFORM _assert(cardinality(my_own_sheet_fixtures()) = 0,
         format('§89 (guardians): the guardian %s has fixtures on the new branch', u));
+      v_seen := ARRAY(SELECT DISTINCT b.match_id FROM ball_event b);
+      v_want := ARRAY(SELECT y FROM unnest(BM) y WHERE _v112_db100(y, v_child));
       SELECT string_agg(x::text, ' ') INTO bad FROM (
-        ((SELECT DISTINCT b.match_id FROM ball_event b)
-         EXCEPT (SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child)))
+        ((SELECT unnest(v_seen)) EXCEPT (SELECT unnest(v_want)))
         UNION ALL
-        ((SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child))
-         EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b))) d(x);
+        ((SELECT unnest(v_want)) EXCEPT (SELECT unnest(v_seen)))) d(x);
       PERFORM _assert(bad IS NULL, format('§89 (guardians): the guardian %s reads balls apart from db/100 at %s', u, left(bad, 300)));
       n := n + 1;
     END LOOP;
@@ -39757,18 +39795,25 @@ $v49$;
 
     -- ── (agree) ──
     ppl := _v106_people();
+    BM := _v106_ball_matches();
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       v_child := my_child_fixtures();
+      v_seen := ARRAY(SELECT DISTINCT b.match_id FROM ball_event b);
+      -- each fixture's two answers asked once; MATERIALIZED, because the set
+      -- and the count both read them, and a subquery flattened into both
+      -- would ask each again
+      WITH r AS MATERIALIZED (
+        SELECT y, _v112_db100(y, v_child) AS db, _v106_self_sheet('fixture.read', y) AS sheet FROM unnest(BM) y)
+      SELECT ARRAY(SELECT r.y FROM r WHERE r.db OR r.sheet), (SELECT count(*) FROM r WHERE r.sheet AND NOT r.db)
+        INTO v_want, k;
       SELECT string_agg(x::text, ' ') INTO bad FROM (
-        ((SELECT DISTINCT b.match_id FROM ball_event b)
-         EXCEPT (SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child) OR _v106_self_sheet('fixture.read', y)))
+        ((SELECT unnest(v_seen)) EXCEPT (SELECT unnest(v_want)))
         UNION ALL
-        ((SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child) OR _v106_self_sheet('fixture.read', y))
-         EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b))) d(x);
+        ((SELECT unnest(v_want)) EXCEPT (SELECT unnest(v_seen)))) d(x);
       PERFORM _assert(bad IS NULL, format('§89 (agree): %s reads balls apart from db/100 and the sheet at %s', u, left(bad, 300)));
-      IF EXISTS (SELECT 1 FROM unnest(_v106_ball_matches()) y WHERE _v106_self_sheet('fixture.read', y) AND NOT _v112_db100(y, v_child)) THEN
+      IF k > 0 THEN
         n := n + 1;
       END IF;
     END LOOP;
@@ -48577,6 +48622,9 @@ $v116$;
     b_stray boolean;
     b_host  boolean;
     b_tgt   boolean;
+    -- the pad's fixtures, asked once a label as the owner rather than once a
+    -- reader (CI speed, 26 Nov 2026): no reader's loop writes the log
+    MS      uuid[];
   BEGIN
     -- (pinned)
     PERFORM _assert(ball_log_policies_unpinned() IS NULL, format('§126 (pinned): %s', ball_log_policies_unpinned()));
@@ -48647,6 +48695,7 @@ $v116$;
       -- (rows) / (stray)
       PERFORM set_config('app.user_id', '', true);
       n_all := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
+      IF pass = 1 THEN MS := ARRAY(SELECT * FROM _v152_matches()); END IF;
       FOR u IN SELECT * FROM _v152_readers() LOOP
         PERFORM _as(u);
         n := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
@@ -48672,7 +48721,7 @@ $v116$;
         -- (pad) a pad's credential at each school's busiest fixture, either
         -- end; after the plant, at the planted fixture (its re-judged striker),
         -- whether or not it is one of those.
-        FOR mm IN SELECT x FROM _v152_matches() x WHERE pass = 1
+        FOR mm IN SELECT x FROM unnest(MS) x WHERE pass = 1
                   UNION SELECT (y->>'match')::uuid WHERE pass = 2 LOOP
           PERFORM set_config('app.scope', 'pad', true);
           PERFORM set_config('app.match_id', mm::text, true);
@@ -48707,12 +48756,13 @@ $v116$;
     got := _v152_owner('ALTER TABLE match DISABLE ROW LEVEL SECURITY');
     PERFORM _assert(got = 'ok', format('§126 (match): row security could not be lifted from match: %s', got));
     PERFORM _assert(ball_log_pinned(), '§126 (match): lifting match''s row security broke the live pin');
+    MS := ARRAY(SELECT * FROM _v152_matches());
     FOR u IN SELECT * FROM _v152_readers() LOOP
       PERFORM _as(u);
       PERFORM _v152_same('match');
       -- and on a pad's credential at each fixture: match's pad guard is no
       -- part of the away branch once match asks no policy
-      FOR mm IN SELECT * FROM _v152_matches() LOOP
+      FOR mm IN SELECT * FROM unnest(MS) LOOP
         PERFORM set_config('app.scope', 'pad', true);
         PERFORM set_config('app.match_id', mm::text, true);
         PERFORM _v152_same('match, pad');
