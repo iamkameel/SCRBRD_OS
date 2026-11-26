@@ -217,6 +217,11 @@ export function bornLinkWords(l, today, fmt = (d) => d) {
   return `${who} ${ended ? "ended" : "ends"} on ${fmt(l.endsOn)}: ${from}. By the corrected date he is 18 on ${fmt(l.ofAgeOn)}.`;
 }
 
-/** What the office is told under the list, once (db/176). */
+/**
+ * What the office is told under the list, once (db/176). Kameel, 26 Nov 2026
+ * (Q3): until a link can be reopened from the list (the re-dating design's
+ * slice 2), the office links her again by the ordinary door, she agrees the
+ * terms again, and her yes for his own sign-in is given again.
+ */
 export const BORN_LINKS_NOTE =
-  "Nothing here changes a link. To give a parent back a link that ended, link her again on People: she agrees the terms again, and any yes for his own sign-in is asked of her again.";
+  "Nothing here changes a link. Until a link can be reopened from this list, give a parent back a link that ended by linking her again on People: she agrees the terms again, and gives her yes for his own sign-in again.";

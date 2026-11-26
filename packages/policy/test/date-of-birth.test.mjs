@@ -137,6 +137,11 @@ group("After a correction: the links the old date set, in the office's words (db
   const left = bornLinkWords({ guardianName: null, endsOn: "2026-11-16", why: "left_school", ofAgeOn: "2028-05-26" }, "2026-11-26");
   ok("a link that ended when he left school, unnamed", left.startsWith("A guardian's link ended on 2026-11-16: the day he left school") && /18 on 2028-05-26\.$/.test(left), left);
   ok("the note says nothing is changed, and how she gets a link back", /Nothing here changes a link/.test(BORN_LINKS_NOTE) && /agrees the terms again/.test(BORN_LINKS_NOTE));
+  // Kameel, 26 Nov 2026 (Q3): until the list can reopen a link, the ordinary
+  // door, the terms again, and her yes for his sign-in given again.
+  ok("...until a link can be reopened from the list: the ordinary door, and her yes for his sign-in again",
+     /^Nothing here changes a link\. Until a link can be reopened from this list, /.test(BORN_LINKS_NOTE)
+     && /linking her again on People/.test(BORN_LINKS_NOTE) && /gives her yes for his own sign-in again\.$/.test(BORN_LINKS_NOTE));
 }
 
 console.log(`DATE OF BIRTH: ${pass} passed, ${fail} failed`);
