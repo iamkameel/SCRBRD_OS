@@ -329,7 +329,7 @@ function NewsView({ role }) {
               <span style={{display:"block",fontFamily:D.body,fontSize:"13px",fontWeight:700,color:D.textPrimary}}>Send to phones too</span>
               <span id="news-compose-phones-hint" style={{display:"block",fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5}}>
                 {post.phones
-                  ? "Phones that allow alerts show “You have a new notice.” The words stay in the app."
+                  ? "Phones that allow notices show “You have a new notice.” The words stay in the app."
                   : "In the app only: it waits in Notices and News until people open SCRBRD."}
               </span>
             </span>

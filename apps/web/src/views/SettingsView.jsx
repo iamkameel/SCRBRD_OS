@@ -1021,7 +1021,7 @@ function AlertsSection({ role }) {
     setBusy(true); setSaid(null);
     const r = await enablePush({ label: navigator.platform || null });
     setBusy(false);
-    setSaid(r.ok ? { ok: true, text: "This device will now receive alerts." }
+    setSaid(r.ok ? { ok: true, text: "This device will now receive notices." }
                  : { ok: false, text: WHY[r.reason] ?? `Could not register this device (${r.reason}).` });
     if (r.ok) setNudge((n) => n + 1);
   };
@@ -1029,7 +1029,7 @@ function AlertsSection({ role }) {
     setBusy(true); setSaid(null);
     const r = await disablePush();
     setBusy(false);
-    setSaid({ ok: true, text: r.retired ? "This device will no longer receive alerts." : "This device was not registered." });
+    setSaid({ ok: true, text: r.retired ? "This device will no longer receive notices." : "This device was not registered." });
     setNudge((n) => n + 1);
   };
   // Signing out one of the OTHERS, by row id rather than by token: a phone
@@ -1052,7 +1052,7 @@ function AlertsSection({ role }) {
 
   return (
     <Panel>
-      <CardHead title="Alerts on this device"
+      <CardHead title="Notices on this device"
         sub="A notice arrives as a prompt, not as the message itself. Open SCRBRD to read it — anything about a child stays behind your sign-in rather than on a lock screen."
         aside={support === null
           ? <Badge color={D.textMuted}>Checking</Badge>
@@ -1069,7 +1069,7 @@ function AlertsSection({ role }) {
       )}
       <div style={{ ...EYEBROW(), marginBottom: "8px" }}>My devices</div>
       {ordered.length === 0
-        ? <EmptyState icon="smartphone" message="No devices registered yet. Turn alerts on above and this one will appear here."/>
+        ? <EmptyState icon="smartphone" message="No devices registered yet. Turn notices on above and this one will appear here."/>
         : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
