@@ -53,6 +53,8 @@ Decisions (Kameel, 20 Nov 2026, on the board): (1) Migration B, a disable: "Drop
 
 25 Nov 2026 (later): eight merges recorded, from the git log. #377 (merge 5a2ae3c7, db/170): Pro mode per fixture, a coach asks in advance for every shot to be recorded. #383 (merge 99fc4d08): redesign slice 14, the public shell (a header, a not-available page that leads somewhere, a board-shaped wait; no migration). #385 (merge 8cc7348c): redesign slice 8, one lead on the pupil's and the parent's Home. #387 (merge 85381e5c): redesign slice 11, the coach's queue. #388 (merge c8505f19): records, docs only. #390 (merge 499251aa): redesign slice 9, the availability answer (on #385). #391 (merge 5c8b3938): the 16px floor for the type inside every field, with a walk check. #392 (merge c5a396e6): redesign slice 13, the scorer when another phone holds the match. Redesign slices 8, 9, 11, 13 and 14 are done. db/169, db/170 and db/171 were pasted on the demo and production on 25 Nov 2026, each hash-checked against its reviewed commit, with 0 accounts closed by db/169's gate; db/172 was pasted on both the same afternoon. db/169 and db/170 are recorded in db/SHIPPED.sha256; db/171 and db/172 follow when #378 and #381 merge.
 
+26 Nov 2026 (overnight): eight merges recorded, from the git log. #378 (merge 02427bc8, db/171): slice 4's follow-ups, the end of a match on the server; the server refuses a scorer's finish, the coach is told, and the scorer frees the pad. #381 (merge 4ea5130d, db/172): a date of birth corrected by the office, every change recorded with a reason and checked against the ID number. #398 (merge 2bea6ced): the Home reads only an injury's status (whose, open, return date), and the other-phone screen names a pupil scorer by initial. #401 (merge a35067d2): the browser-homes walk dates its day in Johannesburg, as the Home does. #396 (merge 99c5e554): CI skips the RLS verifier on PRs that touch no schema, policy, API, migrator or workflow file, and db/99 times each section. #400 (merge d154522d): architecture diagrams, the system, the data model and how a read is decided (`docs/architecture/SCRBRD_OS_diagrams.md`; docs only). #393 (merge 12fd5328): the coach's follow-ups after slice 11, the organiser's conditions, one number to chase, and his own side's names. #403 (merge ed6ea841): db/171 and db/172 shipped, pasted on the demo and production on 25 Nov. Roster imports may run once #381's API has deployed; DEPLOYING says none should run between the db/172 paste and the API's deploy. The date-of-birth entry is closed by #381; a parent's link end dates following a correction stays a follow-up.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -5418,15 +5420,15 @@ commits. Pass the token's device (the principal carries it) and refuse a batch t
 - [ ] Tick SCRBRD-002's box.
 **Source:** the backlog map of 15 Nov 2026.
 
-### Date of birth: the office corrects it, every change audited (follow-up to db/169, 2026-11-20)
+### ~~Date of birth: the office corrects it, every change audited (follow-up to db/169, 2026-11-20)~~ — CLOSED
 **Priority:** P2 · **Domain:** Privacy / Sign-up · **Type:** build, Opus (a migration, and a minor's data)
-**Status:** open, not built. Decided by Kameel, 20 Nov: "The office corrects it; every change is audited (a follow-up)". db/169 leaves the date as today; this follow-up is db/172 (decided 13:38).
+**Status:** closed 26 Nov 2026 by #381 (merge 4ea5130d, db/172, pasted on the demo and production on 25 Nov; shipped by #403, merge ed6ea841). Was: open, not built. Decided by Kameel, 20 Nov: "The office corrects it; every change is audited (a follow-up)". db/169 leaves the date as today; this follow-up is db/172 (decided 13:38).
 **Decided (Kameel, 25 Nov), all six as recommended:** the owner's own writes keep their exemption; the office only corrects; a wrong ID number is corrected by hand for the pilot; a parent's link end dates follow a correction (a follow-up); the change history joins the audit log for audit readers; a correction carries a required reason.
 **Why:** his note: "Date of birth should be match with an ID No."
 **Acceptance criteria:**
-- [ ] The office may correct a recorded date of birth.
-- [ ] Every change is logged: the old date, the new date, and who.
-- [ ] A date that does not match the ID number is refused on the server.
+- [x] The office may correct a recorded date of birth.
+- [x] Every change is logged: the old date, the new date, and who.
+- [x] A date that does not match the ID number is refused on the server.
 **Source:** Kameel, on the board, 20 Nov 2026. Number not assigned.
 
 ---

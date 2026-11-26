@@ -254,6 +254,8 @@ export function useQueue({ matches, assignments, now, onOpen = false }) {
     retryPotm: () => setPotmAgain((n) => n + 1),
     lifts,
     checkLifts,
+    /** The reads made for one fixture in the window (null until read): Today's Needs you names his own side's boys from them. @param {string} id */
+    readsOf: (id) => byId[id]?.reads ?? null,
     /** Is there anything this reader can be shown at all. */
     reader: isQueueReader(assignments),
   };
