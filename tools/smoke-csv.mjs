@@ -455,6 +455,90 @@ try {
        again.body?.committed === true && again.body?.updated === 1);
   }
 
+  group("A birthday the file changes is a correction: the office's, against his ID number, recorded (db/172)");
+  {
+    // Kameel, 20 Nov 2026: "The office corrects it; every change is audited".
+    // The import's `born = coalesce($9, born)` used to overwrite a recorded
+    // date in silence; now the database's trigger decides each such row.
+    const changesOf = async (name) => (await q(
+      `select c.how, to_char(c.was,'YYYY-MM-DD') was, to_char(c.became,'YYYY-MM-DD') became, c.by_id
+         from player_born_change c join player p on p.id = c.player_id
+        where p.school_id = $1 and p.full_name = $2 order by c.at`, [HIL, name]));
+    const bornOf = async (name) => (await q(
+      `select to_char(born,'YYYY-MM-DD') b from player where school_id = $1 and full_name = $2`, [HIL, name]))[0]?.b;
+
+    // From Id carries 1104075800085 (above): 2011-04-07 and nothing else.
+    const clash = await importCsv("players", office, {
+      csv: "full_name,team_code,born\nFrom Id,1XI,2011-04-08\n", schoolId: HIL, commit: true });
+    ok("a date that disagrees with the ID number on his record is refused on its line",
+       clash.body?.committed === false && Number(clash.body?.errors?.[0]?.line) === 2 && clash.body?.errors?.[0]?.column === "born"
+         && /ID number on his record/.test(clash.body?.errors?.[0]?.message ?? ""), JSON.stringify(clash.body?.errors));
+    ok("...and his date stands, with nothing recorded",
+       (await bornOf("From Id")) === "2011-04-07" && (await changesOf("From Id")).length === 0);
+
+    // K Dlamini has no ID number on file.
+    const was = await bornOf("K Dlamini");
+    const to = `${was.slice(0, 8)}${was.slice(8) === "01" ? "02" : "01"}`;
+    const director = await login("sarah@example.invalid");   // player.profile.manage, not the office
+    const dry = await importCsv("players", director, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL });
+    ok("the director of sport's file that changes his date is refused on its line, on a dry run too",
+       dry.body?.committed === false && dry.body?.errors?.[0]?.column === "born"
+         && /Only the school office/.test(dry.body?.errors?.[0]?.message ?? ""), JSON.stringify(dry.body?.errors));
+    const byDirector = await importCsv("players", director, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL, commit: true });
+    ok("...and committing it changes nothing", byDirector.body?.committed === false && (await bornOf("K Dlamini")) === was);
+    const sameByDirector = await importCsv("players", director, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${was}\n`, schoolId: HIL, commit: true });
+    ok("...while his file carrying the date already on record goes in", sameByDirector.body?.committed === true,
+       JSON.stringify(sameByDirector.body?.errors));
+
+    // Kameel, 25 Nov 2026: a correction carries its reason, which a file
+    // cannot give, so a recorded date is corrected on Edit Profile (db/172
+    // review B S1). The office's file is refused on the line, in those words.
+    const byOffice = await importCsv("players", office, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL, commit: true });
+    ok("the office's file changing a recorded date is refused on its line, sent to Edit Profile",
+       byOffice.body?.committed === false && byOffice.body?.errors?.[0]?.column === "born"
+         && /corrected from Edit Profile, with a reason/.test(byOffice.body?.errors?.[0]?.message ?? ""),
+       JSON.stringify(byOffice.body?.errors));
+    ok("...and his date stands, with nothing recorded", (await bornOf("K Dlamini")) === was && (await changesOf("K Dlamini")).length === 0);
+    const again = await importCsv("players", office, {
+      csv: `full_name,team_code,born\nK Dlamini,U16B,${was}\n`, schoolId: HIL, commit: true });
+    ok("...while the office's file carrying the date already on record goes in, and records nothing",
+       again.body?.committed === true && (await changesOf("K Dlamini")).length === 0, JSON.stringify(again.body?.errors));
+    // A new boy's first date is the file's, recorded as nothing (an insert is no change).
+    const newBoy = await importCsv("players", office, {
+      csv: "full_name,team_code,born\nFirst Date Boy,U15A,2011-05-05\n", schoolId: HIL, commit: true });
+    ok("a new boy's first date goes in from a file", newBoy.body?.committed === true && (await bornOf("First Date Boy")) === "2011-05-05");
+
+    // The ID number on file is the office's (db/172 review S1, N1).
+    const idOf = async (name) => (await q(`select id_number from player where school_id = $1 and full_name = $2`, [HIL, name]))[0]?.id_number;
+    const dirId = await importCsv("players", director, {
+      csv: "full_name,team_code,id_number\nFrom Id,1XI,1104075999084\n", schoolId: HIL });
+    ok("the director's file giving an ID number for a boy on the roster is refused, saying nothing of what is on file",
+       dirId.body?.committed === false && dirId.body?.errors?.[0]?.column === "id_number"
+         && /school office's to record/.test(dirId.body?.errors?.[0]?.message ?? ""), JSON.stringify(dirId.body?.errors));
+    const dirNone = await importCsv("players", director, {
+      csv: `full_name,team_code,id_number\nK Dlamini,U16B,${was.slice(2, 4)}${was.slice(5, 7)}${was.slice(8, 10)}5000081\n`, schoolId: HIL });
+    ok("...and the same words where none is on file",
+       dirNone.body?.errors?.[0]?.message === dirId.body?.errors?.[0]?.message, JSON.stringify(dirNone.body?.errors));
+    const swap = await importCsv("players", office, {
+      csv: "full_name,team_code,id_number\nFrom Id,1XI,1104075999084\n", schoolId: HIL, commit: true });
+    ok("the office's file carrying another number than his record's is refused on its line",
+       swap.body?.committed === false && swap.body?.errors?.[0]?.column === "id_number"
+         && /different ID number/.test(swap.body?.errors?.[0]?.message ?? ""), JSON.stringify(swap.body?.errors));
+    ok("...and the number on file stands", (await idOf("From Id")) === "1104075800085");
+    const sameId = await importCsv("players", office, {
+      csv: "full_name,team_code,id_number\nFrom Id,1XI,1104075800085\n", schoolId: HIL, commit: true });
+    ok("...while the number already on file goes through", sameId.body?.committed === true, JSON.stringify(sameId.body?.errors));
+    const fill = `${was.slice(2, 4)}${was.slice(5, 7)}${was.slice(8, 10)}5000081`;
+    const filled = await importCsv("players", office, {
+      csv: `full_name,team_code,id_number\nK Dlamini,U16B,${fill}\n`, schoolId: HIL, commit: true });
+    ok("the office's file fills a missing number", filled.body?.committed === true && (await idOf("K Dlamini")) === fill,
+       JSON.stringify(filled.body?.errors));
+  }
+
   group("A round trip");
   {
     // The real test of a pair of tools: what comes out goes back in.

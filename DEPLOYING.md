@@ -2653,6 +2653,57 @@ To paste:
 
 Not pasted yet. Hash to check: `sha256 05e2fa904ea6283f6cffc1c78195abb1df1fde47a70acb6368e2753231bcf40a`.
 <!-- ── end db/171 ── -->
+<!-- ── db/172: a date of birth, corrected by the office ── -->
+#### A date of birth: the office corrects it, every change is recorded (db/172)
+
+`db/172_dob_audited_correction.sql` (branch claude/wip-dob-followup; Kameel,
+20 Nov 2026: "The office corrects it; every change is audited", and "Date of
+birth should be match with an ID No."). A date of birth that disagrees with the
+ID number on his record is refused in the database, whoever writes it through
+the application. A recorded date, and an ID number on file, are the school
+office's alone to change. Every change to a date is written to
+`player_born_change` (before, after, who, when, how, and for a correction its
+required reason, Kameel 25 Nov 2026), which the office reads on Edit Profile;
+the changes join `audit_log()` as the kind `dob` for its readers (the dates to
+a reader of the boy's age, never the reason). The roster import's silent
+overwrite is folded into the same rule. Its proof is db/99 §147.
+
+To paste:
+
+- **After db/171.** It needs db/168's `pupil_claim_office()` and re-emits no
+  function of db/169, db/170 or db/171. It patches `audit_log()` in place, and
+  only over db/148's body (the last to touch it) or its own: anything else
+  fails the paste loudly, changing nothing. It matters more once db/169 is in,
+  because db/169 opens a pupil's own sign-in by the date on his record.
+- **Read its NOTICE.** The paste counts the rows whose date already disagrees
+  with their ID number, and names the count, never a boy. Nothing fails because
+  of them: such a row stands until its date or its number is next written, and
+  then the write must agree. Give the count to the office, which puts each date
+  right on Edit Profile to the date its ID number carries. A boy whose ID number
+  is the wrong one is a question for Kameel: no route corrects an ID number yet.
+- **Then, on the managed host, check the API roles reach nothing new:**
+  ```sql
+  SELECT * FROM api_role_reach('anon');
+  SELECT * FROM api_role_reach('authenticated');
+  SELECT * FROM api_role_reach('service_role');
+  ```
+  Each answers no rows (db/157). This is the one check the local verify cannot
+  make.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  172, and the API refuses to start on a database without it.
+- **No roster imports between the paste and the API's deploy.** The API before
+  it does not word db/172's refusals, so an import in that window fails on a
+  raw name (it fails closed: nothing is written).
+- It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, and a `DROP
+  TRIGGER IF EXISTS` before each trigger. It takes a short lock on `player` for
+  its two triggers (ten-second `lock_timeout`, reset by its last statement); a
+  paste that timed out on its lock is simply run again.
+- §147's `(definer)` case logs in as the application for a moment, which only a
+  superuser login can do. On the managed host it is skipped and says so; it runs
+  locally and on CI.
+
+Not pasted yet. Hash to check: `sha256 273369f0c7f68464f33493b461f24a5ec4562d406dc09a0c36111102a136f68a`.
+<!-- ── end db/172 ── -->
 
 ### 5 · Cloud Run, the first time
 
