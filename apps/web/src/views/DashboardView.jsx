@@ -643,7 +643,7 @@ function DashboardView({ role, onNav, onOpenScorer }) {
     matches: readState(matchesRead, { what: "the fixtures" }),
     out: readState(injuriesRead, { what: "the injury list" }),
     week: combineReads([{ what: "the fixtures", read: matchesRead }, { what: "the training sessions", read: trainingRead }]),
-    alerts: readState(notificationsRead, { what: "the alerts" }),
+    alerts: readState(notificationsRead, { what: "the notices" }),
     weather: readState(weatherRead, { what: "the weather" }),
   } : null;
 

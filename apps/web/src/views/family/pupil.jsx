@@ -157,7 +157,7 @@ function PupilHomeBody({ me, role, onNav, onOpenScorer, matches, matchesRead, re
       {lead.kind !== "result" && lastCard("quiet")}
       <SeasonCard child={me} role={role} self/>
       <TrainingCard child={me} role={role} now={now}/>
-      <NoticesCard child={me} role={role}/>
+      <NoticesCard child={me} role={role} onOpen={onNav ? () => onNav("notifications") : null}/>
       <NewsCard child={me} role={role}/>
       {/* Q7: the DSO card, last. */}
       <DsoCard onRaise={onNav ? () => onNav("safeguarding") : null}/>

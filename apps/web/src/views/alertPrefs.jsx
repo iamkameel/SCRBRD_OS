@@ -33,7 +33,7 @@ export const ALERT_WORDS = Object.freeze({
 export { ALWAYS_ON_WORDS };
 export const ALWAYS_ON_MORE = "Anything urgent, and notices about your own account, always reach your phone.";
 export const PUSH_ONLY_WORDS = "Switching one off quiets your phone only. Every notice still appears in Notices, on the badge and in your list of things to do.";
-export const QUIET_WORDS = "Between 21:00 and 06:00 your alerts wait until the morning; urgent ones still come through. SCRBRD sets these hours for every pupil.";
+export const QUIET_WORDS = "Between 21:00 and 06:00 your notices wait until the morning; urgent ones still come through. SCRBRD sets these hours for every pupil.";
 
 const text = (size = 13, color = D.textSecondary) => ({ fontFamily: D.body, fontSize: `${size}px`, lineHeight: 1.5, color, margin: 0 });
 

@@ -352,13 +352,13 @@ function CareSlide() {
 const SHOW = {
   day: {
     n: 1, kicker: "The coach's matchday", title: "The day, in the order it happens.",
-    lede: "A coach opens SCRBRD to a day sheet, not a wall of counters: what is live now, the next fixture with its ground, bus and weather, who is out, the week, and any alerts last. This is the real screen, drawn on invented fixtures.",
+    lede: "A coach opens SCRBRD to a day sheet, not a wall of counters: what is live now, the next fixture with its ground, bus and weather, who is out, the week, and any notices last. This is the real screen, drawn on invented fixtures.",
     points: [
       ["Ready or not, in words", "Team sheet, transport, officials and ground report each say \"on record\" or \"nothing on record\". No percentages, and nothing guessed."],
       ["Who is out, and no more", "Who, and when he is back. What the injury is sits behind a different capability, and this screen never reads it."],
       ["Only what the role reaches", "A section the role's capabilities do not reach is not drawn at all, rather than drawn empty."],
     ],
-    note: "The real day sheet, handed invented fixtures, players and alerts, with a demonstration chase on the board. The frame stops at the fold: the week and the alerts follow. Nothing on this slide can be tapped, and nothing on it is saved.",
+    note: "The real day sheet, handed invented fixtures, players and notices, with a demonstration chase on the board. The frame stops at the fold: the week and the notices follow. Nothing on this slide can be tapped, and nothing on it is saved.",
   },
   field: {
     n: 2, kicker: "On the field", title: "The scorer's pad, mid-over.",

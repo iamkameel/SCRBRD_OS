@@ -157,7 +157,7 @@ export default function PlanComposer({ match, side, title, opponent, sheet, onCl
             Send to phones too
           </Action>
           <span id="plan-phones-hint" style={{ ...T.role.body, fontSize: "14px", color: T.content.secondary }}>
-            {phones ? "Phones that allow alerts show “You have a new notice.” The words stay in the app."
+            {phones ? "Phones that allow notices show “You have a new notice.” The words stay in the app."
               : "In the app only: it waits in Notices until people open SCRBRD."}
           </span>
         </div>

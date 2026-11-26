@@ -69,8 +69,8 @@ export function DayShowcase() {
   const narrow = useNarrow(760);
   const props = useMemo(() => buildDaySheet(demo()), []);
   return (
-    <Device kind={narrow ? "phone" : "laptop"} height={narrow ? undefined : 740} testid="showcase-day" fade label="The coach's day sheet: the live fixture, the next fixture, who is out, the week and the alerts"
-      caption="The day sheet: what is live, what is next and whether it is ready, who is out, the week, then any alerts.">
+    <Device kind={narrow ? "phone" : "laptop"} height={narrow ? undefined : 740} testid="showcase-day" fade label="The coach's day sheet: the live fixture, the next fixture, who is out, the week and the notices"
+      caption="The day sheet: what is live, what is next and whether it is ready, who is out, the week, then any notices.">
       <div style={{ padding: narrow ? T.space.md : T.space.xl }}>
         <DaySheet {...props} onNav={noop} onOpenScorer={noop}/>
       </div>

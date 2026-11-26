@@ -1386,6 +1386,16 @@ try {
     await afterReads(gone.page, 1500);
     ok("his card has no plan line", await tid(gone.page, "captain-card").count() === 1 && await tid(gone.page, "captain-card-plan").count() === 0);
     ok("...Notices says it was withdrawn", /withdrawn/i.test(await inner(gone.page, "notices-card")), await inner(gone.page, "notices-card"));
+    // Slice 17b: his Notices card links to his Notices (the bell's screen), as a parent's does.
+    const allN = tid(gone.page, "notices-open");
+    const allBox = await allN.first().boundingBox().catch(() => null);
+    ok("...'All notices' is on his card, at least 44px tall", await allN.count() === 1 && /all notices/i.test(await inner(gone.page, "notices-open")) && !!allBox && allBox.height >= 44, JSON.stringify(allBox));
+    await allN.first().click({ timeout: 4000 }).catch(() => {});
+    await afterReads(gone.page, 1500);
+    ok("...it opens his Notices screen, titled Notices", await tid(gone.page, "notices-card").count() === 0 && await gone.page.getByText("Notices", { exact: true }).first().isVisible().catch(() => false)
+       && (await tid(gone.page, "notice-row").count() > 0 || await tid(gone.page, "notifications-mark-all").count() > 0 || await tid(gone.page, "notifications-read-state").count() > 0));
+    await go(gone.page, "myhome");
+    await afterReads(gone.page, 1200);
     await tid(gone.page, "captain-card-open").click({ timeout: 4000 }).catch(() => {});
     await afterReads(gone.page, 2000);
     ok("...his fixture has no block, and no place held for one", await tid(gone.page, "plan-block").count() === 0 && await tid(gone.page, "captain-section").count() === 1);
