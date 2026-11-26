@@ -307,10 +307,11 @@ try {
                         returning id`, [HIL]))[0].id;
   const asg = (await q(`insert into role_assignment (person_id, role, school_id, valid_from) values ($1, 'guardian', $2, current_date - 30) returning id`,
                        [MUM, HIL]))[0].id;
-  const link = (await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_at,
-                                                         consent_state, consent_version, consent_at, valid_from)
-                         values ($1, $2, 'parent', 'verified', now(), 'granted', 'popia-2026-01', now(), current_date - 30) returning id`,
-                        [asg, LEFT.id]))[0].id;
+  const REGISTRAR = (await q(`select id from app_user where email = 'registrar@example.invalid'`))[0].id;
+  const link = (await q(`insert into assignment_subject (assignment_id, player_id, relationship, verification_state, verified_by, verified_at,
+                                                         consent_state, consent_version, consent_at, created_by, valid_from)
+                         values ($1, $2, 'parent', 'verified', $3, now(), 'granted', 'popia-2026-01', now(), $3, current_date - 30) returning id`,
+                        [asg, LEFT.id, REGISTRAR]))[0].id;
   await q(`select guardian_links_close_on_leaving($1, current_date - 10)`, [LEFT.id]);
   const endsOn = (await q(`select to_char(valid_until, 'YYYY-MM-DD') d from assignment_subject where id = $1`, [link]))[0].d;
   ok("the fixture: his parent's link ends on his 18th birthday", endsOn === majorityOf(LEFT.born), `${endsOn} / ${LEFT.born}`);

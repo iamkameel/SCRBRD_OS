@@ -16,12 +16,14 @@
 --     21 Oct 2026): §0 rule 7, the record answers for each act; class A2,
 --     a boy's date of birth is read at his school (player.age.read, the
 --     roster tier) and never by another school.
+--   * The family list's condition 4 (SCRBRD-140, Kameel, 18 Nov 2026): a
+--     grant made on an office person's earlier act is made only while that
+--     person still holds the right to make it (db/174, family_may_link_for()).
 --   * The re-dating design (Kameel, 25 Nov 2026, as recommended): §3.2, a
 --     link the rule dated from the old date is listed for the office, which
 --     reopens or ends it by its own act (Q4: "the office reopens each ended
 --     link by a tap, from a list"); §3.5, the log shows a change's dates only
---     while he is still at the school of the change; §2.1, the grant door's
---     decider is a person who acts, or whose right holds, on the day.
+--     while he is still at the school of the change.
 -- Safe to run twice.
 --
 -- ── WHAT MOVES ─────────────────────────────────────────────────────
@@ -220,13 +222,12 @@ COMMENT ON COLUMN role_request.asked_by IS
   'db/176: who asked for this request on another''s behalf: the guardian whose yes opened his own sign-in, or the office person whose tick or retry did. NULL when the person asked himself. For such a request decided_by is the office person on whose authority it was granted: the one acting then, or the one who recognised his account (his claim''s known_by), still holding that right.';
 
 -- db/169's, as db/173 left it, with the grant's record made whole (the map,
--- §0 rule 7: the record answers for each act; the re-dating design, §2.1:
--- the door's decider is a person who acts, or whose right holds, that day).
--- The caller is the one who asked. The decider is the office person acting
--- now, or else the office person who recognised the account, and only while
--- he still holds the right to (the question the family list asks of its
--- uploader, family_may_link_for()). If he does not, nothing is granted: the
--- yes stands, and the office's retry opens him as its own act.
+-- §0 rule 7: the record answers for each act). The caller is the one who
+-- asked. The decider is the office person acting now, or else the office
+-- person who recognised the account, and only while he still holds the right
+-- to (the family list's condition 4, Kameel, 18 Nov 2026: the question db/174
+-- asks of its uploader, family_may_link_for()). If he does not, nothing is
+-- granted: the yes stands, and the office's retry opens him as its own act.
 CREATE OR REPLACE FUNCTION pupil_signin_after_yes(p_player uuid, p_version text) RETURNS text AS $$
 DECLARE c pupil_claim%ROWTYPE; v_user uuid; v_req uuid; v_ok boolean; v_why text; v_decider uuid;
 BEGIN

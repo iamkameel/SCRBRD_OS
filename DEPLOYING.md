@@ -2902,6 +2902,81 @@ chases, then Kameel's word):
 
 Not pasted yet. Hash to check: `sha256 84de5b81cf952f2a11e18e446cab9c1688e6371cb813ffe6234c5ab81c699e5c`.
 <!-- ── end db/175 ── -->
+<!-- ── db/176: a pupil's sign-in and his date of birth, followed up ── -->
+#### A pupil's sign-in and his date of birth, followed up (db/176)
+
+`db/176_signin_and_dob_followups.sql` (branch claude/wip-db176-redteam-leftovers,
+on db/175). Five follow-ups, each on a rule Kameel has decided (named in the
+file):
+
+- **The sign-in gate reads the claim** (Kameel, 18 Nov 2026, Q5; 20 Nov, A):
+  an account that has said it is a pupil here (a `pupil_claim` in any state
+  but `open`) and is not yet a roster boy's is closed, whatever role it holds.
+  A guardian's yes opens it through the claim, as before.
+- **The grant door names the boy:** a scorer's or a side's role (coach,
+  assistant coach, team manager, or any role named for a side) for an account
+  that is a pupil's is granted only once the account is a roster boy's own;
+  otherwise `pupil_needs_his_roster_row`, nothing written. People and
+  Requests say it in words.
+- **Who asked** (the map's rule 7): `role_request.asked_by`, a new empty
+  column, names the guardian whose yes opened his own sign-in; the decider is
+  the office person acting then, or the one who recognised his account while
+  that person still holds the right (`family_may_link_for()`). Otherwise
+  nothing is granted (`recogniser_lapsed`): her yes stands and the office's
+  retry opens him.
+- **The links a correction dated** (the re-dating design §3.2, Q4):
+  `born_links_to_review(school, player)` lists each guardian link whose end
+  date a since-corrected date of birth set, for the office to act on; nothing
+  is changed. The correction's answer carries the boy's, and
+  `GET /api/schools/:id/date-of-birth/links` the school's (the office alone).
+- **The log's dates stay at his school** (§3.5; the map, A2): `audit_log()`
+  shows a change's dates only while the boy is still at the school of the
+  change.
+
+The API, with it: the roster import answers anyone but the office in one
+sentence for a date on a boy already on the roster, whatever is on his record;
+the guardians import answers anyone but the office in one sentence for every
+address it cannot use (R4); no import route passes a Postgres `detail` on.
+Its proof is db/99 §151; its walks are `smoke-csv`, `smoke-guardian-import` and
+`smoke-dob-gaps`.
+
+To paste:
+
+- **Count first, on that database, as the owner** (counts only, no names):
+  who the gate closes that holds a role today. Expected: no rows (an account
+  whose claim waits asks for nothing, db/168).
+  ```sql
+  SELECT c.school_id, count(DISTINCT c.user_id) AS would_close
+    FROM pupil_claim c
+    JOIN role_assignment a ON a.person_id = c.user_id AND a.active
+                          AND (a.valid_until IS NULL OR a.valid_until > sa_today())
+   WHERE c.state <> 'open'
+     AND NOT EXISTS (SELECT 1 FROM app_user u WHERE u.id = c.user_id AND u.player_id IS NOT NULL)
+     AND NOT EXISTS (SELECT 1 FROM role_assignment s JOIN assignment_subject g ON g.assignment_id = s.id
+                      WHERE s.person_id = c.user_id AND s.active AND g.relationship = 'self')
+   GROUP BY c.school_id;
+  ```
+  A row is an account that loses its role's reach at the paste: read it with
+  the school's office first.
+- **After db/175** (and db/174, db/173, db/169). It replaces
+  `pupil_signin_open()` and `pupil_signin_after_yes()` whole and patches
+  `role_request_grant_as()` and `audit_log()` by needle, each only over the body
+  db/173 or db/169 left (or its own, on a second paste), and refuses a mix of
+  the two. Anything else fails the paste loudly, changing nothing. Run it as
+  the schema owner; it refuses any other role. A later paste of db/169 or
+  db/173 then stops at its own guard, changing nothing.
+- **As one transaction:** the SQL Editor's single run, or `psql -1 -v
+  ON_ERROR_STOP=1 -f`. The new column takes a short lock on `role_request`,
+  and re-emitting the gate waits on every statement reading through it
+  (ten-second `lock_timeout`, reset by its last statement); a paste that timed
+  out on its lock is simply run again. No existing row is changed.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  176, and the API refuses to start on a database without it.
+- It can be pasted again: CREATE OR REPLACE, `ADD COLUMN IF NOT EXISTS`, and
+  each needle skipped where this file's text is already in place.
+
+Not pasted yet. Hash to check: `sha256 18bf1a68438d1d31325d543a95a31d7be322fc346810c17ae32ec3d9176d819a`.
+<!-- ── end db/176 ── -->
 
 ### 5 · Cloud Run, the first time
 

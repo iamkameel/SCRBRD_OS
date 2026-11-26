@@ -17128,6 +17128,13 @@ BEGIN
     -- prove each. The four re-emitted bodies db/175 gates (my_alert_choices(),
     -- my_health_consents(), public_name_consent_set(),
     -- health_monitoring_consent_set()) keep the place they had.
+    -- db/176 adds one definer the application may call, reviewed here and not
+    -- on the list: born_links_to_review() reads no caller of its own; the
+    -- office's question (player_born_office(), through app_can(), which the
+    -- gate closes) decides every row. Its re-emitted bodies are the
+    -- application's to call never (pupil_signin_open(), pupil_signin_after_yes(),
+    -- role_request_grant_as()) or keep their place (audit_log()). §151 (links)
+    -- and (grants) prove each.
     PERFORM _assert(v = 'auth_identity_sign_in(text,text,text,text),captain_nominate(uuid,uuid,jsonb),'
          || 'colours_decide(uuid,text,text),colours_nominate(uuid,text,text),colours_nominations(),'
          -- db/174 (25 Nov): the family list's three join it. Each asks the office's own question
