@@ -178,7 +178,7 @@ try {
     const dw = (await menuOf(sd.page)).map((x) => x.word);
     ok("the director of sport: Today, Matches, Team, Logistics, then his office's entries until Slice 6, none folded",
        ["Today", "Matches", "Team", "Logistics"].every((w) => dw.includes(w))
-       && !dw.some((w) => ["Dashboard", "Newsfeed", "Match Centre", "Calendar", "Competitions", "Officials", "Squad", "Profiles", "Injuries", "Analytics", "Skills", "Training", "Fields", "To resolve", "Alerts", "Safeguarding", "Settings", "Rulebook"].includes(w)),
+       && !dw.some((w) => ["Dashboard", "Newsfeed", "Match Centre", "Calendar", "Competitions", "Officials", "Squad", "Profiles", "Injuries", "Analytics", "Skills", "Training", "Fields", "To resolve", "Alerts", "Notices", "Safeguarding", "Settings", "Rulebook"].includes(w)),
        dw.join(" · "));
     await sd.ctx.close();
   }
@@ -620,7 +620,7 @@ try {
           const b = await bare(s);
           ok(`${name} @${width}: titled with the date, never "Spectator"`, b.title.includes(dayWords) && !b.h1s.some((h) => /Spectator/.test(h)), `${b.title} | ${b.h1s}`);
           ok(`${name} @${width}: no readiness chips, no Next fixture card`, b.chips === 0 && b.next === 0);
-          ok(`${name} @${width}: no empty Alerts card`, !/Nothing unread/.test(b.all));
+          ok(`${name} @${width}: no empty Notices card`, !/Nothing unread/.test(b.all));
           if (name === "nothing") ok(`nothing @${width}: one sentence, and no live board`, /Nothing is on today or this week/.test(b.all) && await tid(s.page, "day-now").count() === 0, b.all.slice(0, 300));
           if (name === "later") ok(`later @${width}: the match under "Today", as a row`, await tid(s.page, "day-group-today").count() === 1 && /Slice 15 Later/.test(await inner(s.page, "day-group-today")) && !/Nothing is on today/.test(b.all), b.all.slice(0, 300));
           if (name === "later") {

@@ -497,7 +497,9 @@ const NAV_META = {
   staff:        { icon:"school", label:"People"       },
   sponsors:     { icon:"handshake", label:"Sponsors"     },
   news:         { icon:"newspaper", label:"Newsfeed"     },
-  notifications:{ icon:"bell", label:"Alerts"       },
+  // The bell's word is "Notices" for everyone (Kameel, slice 12 call 3, 26 Nov; done in slice 17): the staff's
+  // and the pupil's one Notices screen, and the parent's own, are named alike.
+  notifications:{ icon:"bell", label:"Notices"      },
   safeguarding: { icon:"hand-heart", label:"Safeguarding" },
   settings:     { icon:"settings", label:"Settings"     },
   management:   { icon:"user-cog", label:"Management"   },

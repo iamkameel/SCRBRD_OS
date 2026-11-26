@@ -775,7 +775,7 @@ export default function SCRBRD_OS() {
     // The family app (step 4 P1–P7) and the pupil's (S1–S4).
     children:     <FamilyHome        role={role} onNav={setPage} onOpenScorer={openScorer}/>,
     fixtures:     <FamilyMatches     role={role}/>,
-    notices:      <FamilyNotices     role={role}/>,
+    notices:      <FamilyNotices     role={role} onNav={setPage}/>,
     family:       <FamilyFile        role={role} onNav={setPage}/>,
     myhome:       <PupilHome         role={role} onNav={setPage} onOpenScorer={openScorer}/>,
     mymatches:    <PupilMatches      role={role}/>,

@@ -618,7 +618,7 @@ try {
   group("The notification feed is not a way around RLS");
   const watcher = await open();
   ok("a spectator signs in", await signIn(watcher.page, /Spectator|Watcher/));
-  if (await nav(watcher.page, /Notifications|Alerts/)) {
+  if (await nav(watcher.page, /Notices|Notifications|Alerts/)) {
     const feed = await text(watcher.page);
     if (DEBUG) console.log("[debug] spectator feed:\n" + feed.slice(0, 700));
     ok("the spectator receives general notices", /Fixture list published/i.test(feed));
@@ -633,7 +633,7 @@ try {
 
   const medic = await open();
   ok("the medical officer signs in", await signIn(medic.page, /Medical|Physio/));
-  if (await nav(medic.page, /Notifications|Alerts/)) {
+  if (await nav(medic.page, /Notices|Notifications|Alerts/)) {
     // Since notifications S1 (D17) the list holds a tiered notice's title and
     // not its body: the body is read on open, and the open is logged.
     const listed = await text(medic.page);

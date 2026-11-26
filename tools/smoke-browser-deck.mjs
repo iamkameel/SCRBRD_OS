@@ -379,7 +379,7 @@ try {
      (await count(`${day} [data-testid^="out-"]`)) === 2 && /Z Mahlangu/.test(outTxt) && /Y Coetzee/.test(outTxt) && /back /.test(outTxt) && !/hamstring|fracture|severity/i.test(outTxt), outTxt);
   ok("This week: the two fixtures and the two sessions",
      (await count(`${day} [data-testid^="week-fixture-"]:not([data-testid^="week-fixture-said-"])`)) === 2 && (await count(`${day} [data-testid^="week-training-"]`)) === 2);
-  ok("Alerts: the two unread ones", (await count(`${day} [data-testid^="alert-"]`)) === 2);
+  ok("Notices: the two unread ones", (await count(`${day} [data-testid^="alert-"]`)) === 2);
   ok("the frame is inert", (await inertFrames()).filter((f) => f.id === "showcase-day").every((f) => f.inert && f.events === "none"));
   const dayIds = await page.evaluate(() => { const all = [...document.querySelectorAll('[data-testid="deck"] [id]')].map((e) => e.id); return all.filter((x, i) => all.indexOf(x) !== i); });
   ok("no id is drawn twice on the slide", dayIds.length === 0, dayIds.join(", "));

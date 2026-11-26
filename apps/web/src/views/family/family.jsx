@@ -19,9 +19,8 @@ import { useLive } from "../../lib/live.js";
 import { useNotifications, report, reportable } from "../../lib/notifications.js";
 import { signedIn } from "../../lib/api.js";
 import { useNav } from "../../lib/features.js";
-import { humanDate } from "../../lib/format.js";
 import { tenantWords } from "../../lib/words.js";
-import { chooseChild, doorTo, fixturesOf, forgetChild, linkWords, pendingWords, recallChild, rememberChild, termsGated } from "../../lib/family.js";
+import { chooseChild, doorTo, fixturesOf, forgetChild, linkWords, peekFixtureDoor, pendingWords, recallChild, rememberChild, termsGated } from "../../lib/family.js";
 import { agreedWords } from "../../lib/guardianLink.js";
 import { Action, Card, ChildSwitcher, Line, NoneOr, Page, RetryBtn, Title } from "./parts.jsx";
 import { readState } from "../../lib/readState.js";
@@ -36,6 +35,8 @@ import { leadOf } from "../../lib/homeLead.js";
 import { owes } from "../../lib/todo.js";
 import { AppointedCard, AppointedOnMatch } from "./scoring.jsx";
 import { DsoCard } from "./dso.jsx";
+import { byDay, followSubject, schoolNames, schoolOf, subjectLink, timeWords } from "../../lib/noticeList.js";
+import { DayHeading, ReportButton, SchoolLine, SubjectLink, UnreadDot, UnreadWord } from "../noticeParts.jsx";
 import { WaitingTerms } from "../terms.jsx";
 import { TermsGate } from "./terms.jsx";
 
@@ -57,7 +58,9 @@ function useChildren(role) {
   const { rows: kids, loading, error } = useLive("my_children", role, nonce);
   const matchesRead = useLive("matches", role, nonce);
   const { rows: matches } = matchesRead;
-  const [picked, setPicked] = useState(recallChild);
+  // A notice's "See the fixture" names the child it is about (lib/noticeList.js): his Matches is the one shown, for
+  // this visit, without remembering him on the device.
+  const [picked, setPicked] = useState(() => peekFixtureDoor()?.child ?? recallChild());
   const child = chooseChild(kids, matches, picked, Date.now());
   useForgetGated(kids);
   // A child behind the terms is chosen for this visit only, never remembered on the device.
@@ -279,8 +282,12 @@ export function FamilyMatches({ role }) {
 // ── P5 · Notices ───────────────────────────────────────
 
 /**
- * One list of notices, newest first, unread first-lit, each saying which
- * child it is about when it names one. What arrives is what RLS delivered
+ * One list of notices, newest first, in day groups by Johannesburg's day
+ * ("Today", "Yesterday", "Mon 23 Nov"; redesign slice 17, Flow C), an unread
+ * one with its dot, each saying which child it is about when it names one,
+ * and which school it is from when her notices come from two. Opened, a
+ * notice links to its subject in her app, "See the fixture" or "See his
+ * health history" (lib/noticeList.js). What arrives is what RLS delivered
  * (§2.1 P5): nothing is filtered here, because for a parent nothing needs to
  * be — a medical notice about another child cannot reach her, and since
  * db/123 (REACH R-E) a side's notice with no child ("team sheet published",
@@ -301,17 +308,21 @@ export function FamilyMatches({ role }) {
  * a notice marks it read; a notice behind more than news.read lists its title
  * and is read on open. "Mark all read" marks every notice.
  */
-export function FamilyNotices({ role }) {
+export function FamilyNotices({ role, onNav = null }) {
   const [nonce, setNonce] = useState(0);
   const { list: notesRead, rows: notes, unread: counted, opened, open, markAll } = useNotifications(role, nonce, { fresh: true });
   const { rows: kids } = useLive("my_children", role);
+  const nav = useNav(role);
   const [openKey, setOpenKey] = useState(/** @type {string | null} */ (null));
   const [got, setGot] = useState(/** @type {Record<string, any>} */ ({}));
   const [reported, setReported] = useState(/** @type {Record<string, { done: boolean, words: string }>} */ ({}));
   const [reporting, setReporting] = useState(/** @type {string | null} */ (null));
+  // Flow C (3): with two schools, each notice names its own; with one, none does. Never a sum across them (D7).
+  const schoolFor = schoolOf(notes, schoolNames(kids));
   const items = notes.map((n) => ({ key: `n-${n.id}`, id: n.id, at: n.time, title: n.title, body: n.body, unread: !n.read, tiered: n.tiered,
-    about: kids.find((k) => k.id === n.subjectPerson) ?? null, reportable: reportable(n) }))
+    about: kids.find((k) => k.id === n.subjectPerson) ?? null, reportable: reportable(n), school: schoolFor(n), n }))
     .sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")));
+  const days = byDay(items, Date.now(), (i) => i.at);
   // "Nothing unread" is a count; it is said of notices the server counted.
   const answered = ["ok", "empty"].includes(readState(notesRead, { what: "the notices" }).state) && counted != null;
   const toggle = async (/** @type {any} */ i) => {
@@ -333,38 +344,49 @@ export function FamilyNotices({ role }) {
       {answered && <Line quiet>{counted ? `${counted} unread` : "Nothing unread"}</Line>}
       {answered && counted > 0 && <div><Action onClick={() => { void markAll(); }} testid="family-notices-mark-all">Mark all read</Action></div>}
       {!items.length && <Card label="Notices"><NoneOr read={notesRead} what="notices" none="No notices yet." onRetry={() => setNonce((n) => n + 1)} testid="notices-none"/></Card>}
-      {items.map((i) => {
-        const isOpen = openKey === i.key;
-        const o = got[i.id] ?? opened[i.id];
-        const body = i.body ?? (o && !o.gone && !o.withdrawn && !o.failed ? o.body : null);
-        const sentence = o && (o.gone || o.withdrawn || o.failed) ? o.sentence : null;
-        return (
-          <article key={i.key} data-testid="notice" data-unread={i.unread ? "true" : undefined}
-            style={{ background: T.surface.raised, border: `1px solid ${i.unread ? T.line.strong : T.line.normal}`,
-              borderRadius: T.radius.lg, padding: `${T.space.md} ${T.space.lg}`, display: "grid", gap: T.space.xs }}>
-            <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap", alignItems: "baseline" }}>
-              {i.unread && <span style={{ ...T.role.label, color: T.content.primary }}>New</span>}
-              <span style={{ ...T.role.label, color: T.content.secondary }}>{humanDate(String(i.at ?? "").slice(0, 10))}</span>
-              {i.about && <span data-testid="notice-about" style={{ ...T.role.label, color: T.content.secondary }}>About {i.about.knownAs || i.about.name}</span>}
-            </div>
-            {/* The title is the control: opening the notice reads it and marks it read. */}
-            <button type="button" onClick={() => { void toggle(i); }} aria-expanded={isOpen} data-testid="notice-open"
-              style={{ ...T.role.body, fontWeight: i.unread ? 700 : 600, color: T.content.primary, margin: 0, padding: 0, minHeight: "44px",
-                background: "none", border: "none", textAlign: "left", cursor: "pointer" }}>
-              {i.title}
-            </button>
-            {body && (isOpen || !i.tiered) && <p data-testid="notice-body" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{body}</p>}
-            {!body && i.tiered && !isOpen && <p style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>Open to read.</p>}
-            {isOpen && sentence && <p data-testid="notice-sentence" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{sentence}</p>}
-            {i.reportable && !reported[i.id]?.done && (
-              <div><Action onClick={() => { void sendReport(i.id); }} testid="notice-report" disabled={reporting === i.id}>
-                {reporting === i.id ? "Reporting…" : "Report"}
-              </Action></div>
-            )}
-            {reported[i.id] && <p role="status" data-testid="notice-reported" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{reported[i.id].words}</p>}
-          </article>
-        );
-      })}
+      {/* Day groups (Flow C): Today, Yesterday, then the weekday and the date, by Johannesburg's day. */}
+      {days.map((g) => (
+        <section key={g.day ?? "undated"} data-testid="notice-day" data-day={g.day ?? undefined} style={{ display: "grid", gap: T.space.sm }}>
+          <DayHeading words={g.words} as="h2"/>
+          {g.rows.map((i) => {
+            const isOpen = openKey === i.key;
+            const o = got[i.id] ?? opened[i.id];
+            const body = i.body ?? (o && !o.gone && !o.withdrawn && !o.failed ? o.body : null);
+            const sentence = o && (o.gone || o.withdrawn || o.failed) ? o.sentence : null;
+            // Flow C (2): opened, the notice links to its subject in her app ("See the fixture", "See his health
+            // history"), once its open answered with the notice itself; never on a withdrawn one.
+            const settled = o ? !(o.gone || o.withdrawn || o.failed) : (!i.unread && !i.tiered);
+            const link = onNav && isOpen && settled ? subjectLink(i.n, { persona: "family", nav, kids }) : null;
+            return (
+              <article key={i.key} data-testid="notice" data-unread={i.unread ? "true" : undefined}
+                style={{ background: T.surface.raised, border: `1px solid ${i.unread ? T.line.strong : T.line.normal}`,
+                  borderRadius: T.radius.lg, padding: `${T.space.md} ${T.space.lg}`, display: "grid", gap: T.space.xs, justifyItems: "start" }}>
+                <div style={{ display: "flex", gap: T.space.sm, flexWrap: "wrap", alignItems: "center" }}>
+                  {i.unread && <UnreadDot/>}
+                  <span data-testid="notice-time" style={{ ...T.role.label, color: T.content.secondary, fontVariantNumeric: "tabular-nums" }}>{timeWords(i.at)}</span>
+                  {i.about && <span data-testid="notice-about" style={{ ...T.role.label, color: T.content.secondary }}>About {i.about.knownAs || i.about.name}</span>}
+                </div>
+                <SchoolLine name={i.school}/>
+                {/* The title is the control: opening the notice reads it and marks it read. */}
+                <button type="button" onClick={() => { void toggle(i); }} aria-expanded={isOpen} data-testid="notice-open"
+                  style={{ ...T.role.body, fontWeight: i.unread ? 700 : 600, color: T.content.primary, margin: 0, padding: 0, minHeight: "44px",
+                    background: "none", border: "none", textAlign: "left", cursor: "pointer", justifySelf: "stretch" }}>
+                  {i.title}{i.unread && <UnreadWord/>}
+                </button>
+                {body && (isOpen || !i.tiered) && <p data-testid="notice-body" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{body}</p>}
+                {!body && i.tiered && !isOpen && <p style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>Open to read.</p>}
+                {isOpen && sentence && <p data-testid="notice-sentence" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{sentence}</p>}
+                {link && <SubjectLink link={link} onFollow={() => followSubject(link, onNav)}/>}
+                {/* Flow C (4): Report stays one tap (D11), a quiet text button at the notice's foot. */}
+                {i.reportable && !reported[i.id]?.done && (
+                  <ReportButton title={i.title} busy={reporting === i.id} onReport={() => { void sendReport(i.id); }}/>
+                )}
+                {reported[i.id] && <p role="status" data-testid="notice-reported" style={{ ...T.role.body, color: T.content.secondary, margin: 0 }}>{reported[i.id].words}</p>}
+              </article>
+            );
+          })}
+        </section>
+      ))}
     </Page>
   );
 }

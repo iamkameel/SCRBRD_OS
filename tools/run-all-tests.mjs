@@ -519,6 +519,8 @@ const SUITES = [
   // `players` read held to the API's.
   ["player-columns", "services/api/player-columns.test.mjs"],
   ["notif-store", "apps/web/test/notifications-store.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Redesign slice 17: Notices in day groups by Johannesburg's day, the subject's link per reader, the school rule.
+  ["notice-list", "apps/web/test/notice-list.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The pilot load's checker (docs/pilot/PILOT_LOAD.md): duplicates, a bad
   // birthday, a side his birthday does not fit, a guardian with no email, an
   // email two people share; the templates clean; and it sends nothing.
