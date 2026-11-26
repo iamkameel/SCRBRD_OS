@@ -20522,6 +20522,9 @@ END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- is dropped; the application role calls them through pg_temp's USAGE, which
 -- every session has on its own temporary schema. The first section's
 -- "previous" is everything before it: this file's helpers and fixtures.
+-- `node tools/verify-until.mjs --through §N` runs this file from its start
+-- through section N and rolls back, to time or check one section without
+-- the rest (it cuts where the next section's marker stands).
 CREATE FUNCTION pg_temp._v_section(p_label text) RETURNS text LANGUAGE plpgsql AS $v_section$
 DECLARE
   v_now  numeric := extract(epoch FROM pg_catalog.clock_timestamp());
@@ -37729,6 +37732,11 @@ $v49$;
     FR   uuid[];
     FRM  jsonb := '{}';
   BEGIN
+    -- Fresh planner statistics after the stage, as §94 has them (CI speed, 26
+    -- Nov 2026): the loops below ask every person of some 300 about the
+    -- earlier sections' rows, on statistics last gathered at the seed. It
+    -- changes no answer, only the plans; they roll back with the rest.
+    PERFORM _v117_fresh_stats();
     FX := ARRAY[(z->>'f1')::uuid, (z->>'f2')::uuid, (z->>'f3')::uuid, (z->>'f4')::uuid,
                 (z->>'f5')::uuid, (z->>'f6')::uuid, (z->>'f7')::uuid, (z->>'f8')::uuid];
     TX := ARRAY[(z->>'t1')::uuid, (z->>'t1b')::uuid, (z->>'t2')::uuid, (z->>'t3')::uuid,
@@ -39650,6 +39658,8 @@ $v49$;
     v_want   uuid[];
     k        int;
   BEGIN
+    -- Fresh planner statistics after the stage, as at §83 and §94 (CI speed).
+    PERFORM _v117_fresh_stats();
     OFFICE := (z->>'office')::uuid;
     MB := (z->>'mb')::uuid; SB := (z->>'sb')::uuid; NB := (z->>'nb')::uuid; UPB := (z->>'up')::uuid;
     WD := (z->>'wd')::uuid; TM := (z->>'tm')::uuid; PB := (z->>'pb')::uuid; T1 := (z->>'t1')::uuid;
