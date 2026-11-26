@@ -618,7 +618,7 @@ function RoadmapSlide() {
   return (
     <div>
       <Kicker>The roadmap</Kicker>
-      <H>Built, built underneath, planned. Every shipped item names the walk that covers it.</H>
+      <H>Built and planned. Every shipped item names the walk that covers it.</H>
       <p className="deck-lede">{ROADMAP_LEDE}</p>
       <div className="deck-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", marginTop: "20px", alignItems: "start" }}>
         {["shipped", "partial", "planned"].map((st, col) => (
