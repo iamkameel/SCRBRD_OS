@@ -377,6 +377,10 @@ export const NEVER_PUBLIC = Object.freeze({
   // db/173: who wrote a boy's ID number and when, and whether the office
   // (never the number). The trigger's alone; never public as a whole.
   player_id_number_change: "N1",
+  // db/176 (Kameel, 26 Nov 2026, Q2): who tried to record a boy's missing date
+  // of birth and was refused, and when, and whether the office (never the
+  // date). Written and counted by "Record it"'s two doors; never public as a whole.
+  player_born_refusal: "N1",
 });
 
 /**

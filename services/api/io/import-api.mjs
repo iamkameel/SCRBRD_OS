@@ -58,6 +58,9 @@ import { parseCsv, mapRows, asText, asDate, asInt, asOneOf, asEmail, asPhone } f
  * @property {string} [idOnFile]   SQL for a boy already on the books ($1 his id, $2 the file's
  *                                 ID number): `differs`, whether one on file is another number.
  *                                 Never returned to the caller.
+ * @property {string} [bornOnRecord] SQL for a boy already on the books ($1 his id): `born`, his
+ *                                 date as the caller may read it (YYYY-MM-DD, or NULL), for a
+ *                                 line that carries the same one (db/176, Kameel 26 Nov, Q2).
  * @property {boolean} [adults]    db/173: a line whose first date makes him 18 today is the
  *                                 office's; anyone else's is left out, with the one sentence.
  *                                 The office's lines that make him 18 today or within 60 days

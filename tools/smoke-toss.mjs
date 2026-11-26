@@ -262,7 +262,9 @@ try {
                                           // db/173: who wrote an ID number and when, never the number; the trigger's alone.
                                           "player_id_number_change",
                                           // db/175: every agreement of a guardian's terms; the trigger's and the owner's alone.
-                                          "guardian_terms_record"]);
+                                          "guardian_terms_record",
+                                          // db/176: each refused try at a boy's missing date of birth, never the date; "Record it"'s doors alone.
+                                          "player_born_refusal"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

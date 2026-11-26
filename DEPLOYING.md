@@ -2931,6 +2931,13 @@ on db/175, which is live). Each change rests on a rule Kameel has decided
   list reads "a parent's yes is in" with Open his account, and its queue counts
   the accounts waiting (`pupil_accounts_waiting()`, no name). The audit log says
   such a grant came on a yes, and who recognised him.
+- **His own guardian at the office** (Kameel, 26 Nov 2026, Q7): an office
+  person who is the boy's guardian gives her yes as a guardian's, by Allow. It
+  opens his account only on another person's decision: the one who recognised
+  him, if that is someone else and still holds the right, or another office
+  person's Open from the claims list (`own_child` until then; she is told
+  another person at the office opens him). "The signed consent form is on file"
+  for her own child is refused to her (`own_child`).
 - **The terms gate's test said plainly** (Kameel, 20 Nov 2026, Q1): db/175's
   nine gate bodies and `my_terms_due()` read a guardian's link as agreed when
   it is `granted`, or `withdrawn` with the time she agreed; never "not pending".
@@ -2944,16 +2951,28 @@ on db/175, which is live). Each change rests on a rule Kameel has decided
   changed. Edit Profile draws the boy's under the correction, and
   `GET /api/schools/:id/date-of-birth/links` gives the school's (the office
   alone).
-- **The log's dates stay at his school** (§3.5; the map, A2): `audit_log()`
-  shows a change's dates only while the boy is still at the school of the
-  change.
+- **The log's dates stay at his school** (§3.5; the map, A2; Kameel, 26 Nov
+  2026, Q4): `audit_log()` shows a change's dates only while the boy is still
+  at the school of the change and has not left it (`player_departed_from()`,
+  db/116). After he leaves, moved or not, the event and who made it stay.
+- **"Record it": three refused tries a day** (Kameel, 26 Nov 2026, Q2): each
+  try at a missing date of birth that the database refuses is recorded in the
+  new `player_born_refusal` (who, which boy, whether his school's office,
+  when; never the date). After three in the school's day from anyone but his
+  school's office, no try is taken for him until the next (`born_tries_used`,
+  429). The office's own are recorded and not counted. RLS on, no policy, no
+  privilege; `player_born_tries_left()` and `player_born_refused()` are the
+  route's doors, each asking `player.profile.manage` of the caller.
 
 The API, with it: the roster import answers anyone but the office in one
-sentence for a date on a boy already on the roster, whatever is on his record;
+sentence for a date on a boy already on the roster, whatever is on his record,
+except a line carrying the date on his record as the caller may read it, which
+passes and writes nothing (Q2: a roster file can be sent again);
 the guardians import answers anyone but the office in one sentence for every
 address it cannot use (R4); no import route passes a Postgres `detail` on.
-Its proof is db/99 §151 (and §150's notices case); its walks are `smoke-csv`,
-`smoke-guardian-import` and `smoke-dob-gaps`.
+The links list says how a parent gets a link back until the list can reopen
+one (Q3). Its proof is db/99 §151 (and §150's notices case); its walks are
+`smoke-csv`, `smoke-guardian-import` and `smoke-dob-gaps` (the three tries).
 
 To paste:
 
@@ -2980,7 +2999,8 @@ To paste:
 - **After db/175** (and db/174, db/173, db/169). It replaces
   `pupil_signin_open()`, `pupil_signin_after_yes()` and
   `guardian_terms_record_append_only()` whole; patches `role_request_grant_as()`,
-  `audit_log()` and `pupil_claims()` by needle; re-emits db/175's nine gate
+  `audit_log()`, `pupil_claims()` and `pupil_signin_office_set()` by needle;
+  creates `player_born_refusal` and its two doors; re-emits db/175's nine gate
   bodies and `my_terms_due()` from the catalog; and replaces the notice policy
   `notification_terms_gate`. Each only over the body the file before it left,
   or its own on a second paste; the nine move together or not at all.
@@ -2990,13 +3010,15 @@ To paste:
 - **As one transaction, outside a match:** the SQL Editor's single run, or
   `psql -1 -v ON_ERROR_STOP=1 -f`. Re-emitting `app_can()` waits on every
   statement reading through it; the new column's foreign key takes a short
-  lock on `role_request` and `app_user`; the policy, on `notification`
+  lock on `role_request` and `app_user`, the new record's on `player`; the
+  policy, on `notification`
   (ten-second `lock_timeout`, reset by its last statement). A paste that timed
   out on its lock is simply run again. No existing row is changed.
 - **Before the API deploys.** `services/api/expected-migrations.json` lists
   176, and the API refuses to start on a database without it.
-- It can be pasted again: CREATE OR REPLACE, `ADD COLUMN IF NOT EXISTS`, each
-  needle and the policy skipped where this file's text is already in place.
+- It can be pasted again: CREATE OR REPLACE, `ADD COLUMN IF NOT EXISTS`,
+  `CREATE TABLE IF NOT EXISTS`, and each needle and the policy skipped where
+  this file's text is already in place.
 - **The terms gate's way back, after this file:** `tools/terms-gate-rollback.sql`
   undoes this file's test on the nine first, then db/175's, so they end as the
   bodies db/175 replaced; it drops `notification_terms_gate` and the DSO's
@@ -3007,7 +3029,7 @@ To paste:
   deploy the API from before db/175's (PR #404); an older API runs on a database
   ahead of it (`services/api/schema-guard.mjs`).
 
-Not pasted yet. Hash to check: `sha256 4734201d855bb535f0d37309fba17131c3b22b482c00df3fc50b1b42a3c90f00`.
+Not pasted yet. Hash to check: `sha256 c31e4ef699b46b93cb5cf9909bdccc289faeb5170558e4f85ed2e5ce136ffb7b`.
 <!-- ── end db/176 ── -->
 
 ### 5 · Cloud Run, the first time
