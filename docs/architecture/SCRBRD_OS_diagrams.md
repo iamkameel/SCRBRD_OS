@@ -47,7 +47,7 @@ flowchart LR
   Scoring --- Pad
   Scoring --- Write
   Policy --> Gen --> PG
-  CI -. "every PR and every merge to main" .-> Pkg
+  CI -. "every PR (one that touches no schema, policy,<br/>API or workflow skips the RLS verifier)<br/>and every merge to main, in full" .-> Pkg
 ```
 
 **Checked against:**
@@ -58,6 +58,7 @@ flowchart LR
 - `packages/sync/src` (`indexeddb-storage.mjs`, `sync-engine.mjs`).
 - `services/api/rls` and the generated files named in CI's "RLS output is current" step.
 - The Render startup log of 25 Nov: weather, AI and the scorebook reader are unconfigured on production.
+- `.github/workflows/ci.yml`, the "What changed" job (#396): which paths make a PR run the RLS verifier; a push to main always runs it.
 
 ---
 
