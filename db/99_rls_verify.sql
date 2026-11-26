@@ -17118,6 +17118,16 @@ BEGIN
     -- never a child's own account (pupil_signin_child_account());
     -- player_born_own_child() answers only whether the caller is the boy's
     -- own guardian (Q8's refusal), and only about the caller.
+    -- db/175 adds four definers, reviewed here and none on the list, each
+    -- asking for itself: my_terms_due() reads only the caller's own guardian
+    -- links (a.person_id = app_user_id(), no pad, no closed pupil) and asks the
+    -- gate itself (pupil_signin_open()), so it is not counted; terms_gate_mine()
+    -- and terms_gate_schools() read nothing but my_terms_due(), never
+    -- app_user_id() of their own; guardian_terms_recorded() is the trigger's,
+    -- not the application's (no EXECUTE). §150 (due), (open) and (grants)
+    -- prove each. The four re-emitted bodies db/175 gates (my_alert_choices(),
+    -- my_health_consents(), public_name_consent_set(),
+    -- health_monitoring_consent_set()) keep the place they had.
     PERFORM _assert(v = 'auth_identity_sign_in(text,text,text,text),captain_nominate(uuid,uuid,jsonb),'
          || 'colours_decide(uuid,text,text),colours_nominate(uuid,text,text),colours_nominations(),'
          -- db/174 (25 Nov): the family list's three join it. Each asks the office's own question
