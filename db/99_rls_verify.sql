@@ -20083,11 +20083,14 @@ BEGIN
     PERFORM _assert(_v176_record(K) = G || '|' || REG || '|' || REG, format('§151 (asked): the record reads %s', _v176_record(K)));
     -- The audit log: the grant on a yes, its actor the one who asked, and
     -- who recognised him.
+    -- Read by its own key: every grant in this one transaction has the same
+    -- time, so the page is cut just above it.
     PERFORM _as(REG);
-    SELECT * INTO r FROM audit_log(HIL, ARRAY['role']) a
-     WHERE a.action = 'Granted a role on a yes for his own sign-in: ' || role_words('player') || ' (U16A)'
-       AND a.detail->>'recognisedBy' = _v168_audit_label(REG) AND a.actor = _v168_audit_label(G) LIMIT 1;
-    PERFORM _assert(r.key IS NOT NULL, '§151 (asked): the audit log does not say the grant came on her yes, recognised by the office');
+    v := 'role:' || _v169_role(K, 'player') || ':granted';
+    SELECT * INTO r FROM audit_log(HIL, ARRAY['role'], NULL, now(), v || '~', 1) a;
+    PERFORM _assert(r.key = v AND r.action = 'Granted a role on a yes for his own sign-in: ' || role_words('player') || ' (U16A)'
+                    AND r.detail->>'recognisedBy' = _v168_audit_label(REG) AND r.actor = _v168_audit_label(G),
+                    format('§151 (asked): the audit log does not say the grant came on her yes, recognised by the office: %s', row_to_json(r)));
     -- The recogniser no longer holds the right: nothing is granted, she is
     -- told her yes is recorded and his account waits, and the office's retry
     -- opens him as its own act.
