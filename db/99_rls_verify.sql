@@ -17095,10 +17095,12 @@ BEGIN
     GET DIAGNOSTICS n = ROW_COUNT;
     PERFORM _assert(n = 1, '§142 (writes): open, he could not declare his own availability (the control)');
     v := _v169_ungated();
-    -- db/173 adds two, each asking for itself: player_born_confirm() is the
+    -- db/173 adds three, each asking for itself: player_born_confirm() is the
     -- office's (player_born_office(), through app_can(), which the gate
     -- closes); pupil_signin_account() answers a guardian on her own link and
-    -- never a child's own account (pupil_signin_child_account()).
+    -- never a child's own account (pupil_signin_child_account());
+    -- player_born_own_child() answers only whether the caller is the boy's
+    -- own guardian (Q8's refusal), and only about the caller.
     PERFORM _assert(v = 'auth_identity_sign_in(text,text,text,text),captain_nominate(uuid,uuid,jsonb),'
          || 'colours_decide(uuid,text,text),colours_nominate(uuid,text,text),colours_nominations(),'
          -- db/174 (25 Nov): the family list's three join it. Each asks the office's own question
@@ -17111,7 +17113,7 @@ BEGIN
          || 'lift_contacts(uuid),lift_seat_decline(uuid),lift_seat_withdraw(uuid),match_award(uuid,uuid,jsonb),'
          || 'match_award_state(uuid),match_award_withdraw(uuid,text,text),'
          || 'match_nomination_decide(uuid,text,uuid,jsonb),match_nomination_state(uuid),my_alert_choices(),'
-         || 'my_lifts(),nominations_to_decide(),passport_consent_writer_ok(uuid),player_born_confirm(uuid),pupil_claim_not_him(uuid),'
+         || 'my_lifts(),nominations_to_decide(),passport_consent_writer_ok(uuid),player_born_confirm(uuid),player_born_own_child(uuid),pupil_claim_not_him(uuid),'
          || 'pupil_claim_recognise(uuid,uuid),pupil_claim_send(uuid,text,text,date),pupil_signin_account(uuid),'
          || 'pupil_signin_consent_set(uuid,boolean),pupil_signin_office_set(uuid,boolean,text,date),'
          || 'pupil_signin_state(uuid),recognition_review_stand(uuid),recognition_reviews_open(uuid),'
