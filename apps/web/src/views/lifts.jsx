@@ -648,10 +648,15 @@ function LiftPolicyForSchool({ school }) {
 //  Settings → Me: the parent's standing and declaration
 // ══════════════════════════════════════════════════════════════════
 
-export function LiftDeclarationPanel() {
+/**
+ * @param {{ onDeclared?: (schoolId: string, declared: boolean) => void }} [props]  told, per school, whether a driver's
+ *   declaration stands for her there (the standing's `declaration`): a parent's Settings shows her clearances once one
+ *   does (DESIGN_DIRECTION §5 Q4 (a)). Read from the standing this panel reads anyway; nothing more is asked.
+ */
+export function LiftDeclarationPanel({ onDeclared } = {}) {
   const schools = schoolsWhere("transport.lift.arrange");
   if (!schools.length) return null;
-  return <>{schools.map((s) => <LiftDeclarationForSchool key={s.id} school={s}/>)}</>;
+  return <>{schools.map((s) => <LiftDeclarationForSchool key={s.id} school={s} onDeclared={onDeclared}/>)}</>;
 }
 
 /**
@@ -661,9 +666,11 @@ export function LiftDeclarationPanel() {
 const childrenAt = (schoolId) => [...new Set((profile()?.assignments ?? [])
   .filter((a) => a.school === schoolId && roleGrants(a.role, "transport.lift.arrange")).flatMap((a) => a.subjects ?? []))];
 
-function LiftDeclarationForSchool({ school }) {
+function LiftDeclarationForSchool({ school, onDeclared }) {
   const [nonce, setNonce] = useState(0);
   const standing = useStanding(school.id, nonce);
+  const declared = !!standing?.declaration;
+  useEffect(() => { onDeclared?.(school.id, declared); }, [school.id, declared, onDeclared]);
   const [policy, setPolicy] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [f, setF] = useState({ vehicle: "", registration: "", seats: "3", licenceHeld: false, insured: false,

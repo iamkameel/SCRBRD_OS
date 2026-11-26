@@ -24,8 +24,8 @@ import { ruleS8 } from "../src/lib/signals.js";
 import { formLetter, teamResults } from "../src/views/TeamPage.jsx";
 import { MobileNav, SportSwitcher } from "../src/shell/MobileNav.jsx";
 import { readFileSync } from "node:fs";
-import { TopBar } from "../src/shell/TopBar.jsx";
-import { PersonaBar } from "../src/shell/PersonaBar.jsx";
+import { AppHeader, RoleOptions, initialsOf } from "../src/shell/AppHeader.jsx";
+import { ROLE_FAMILIES } from "../src/design/roles.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d === undefined ? "" : `— ${String(typeof d === "string" ? d : JSON.stringify(d)).slice(0, 300)}`); } };
@@ -177,14 +177,42 @@ group("The shell, drawn signed out (the demo)");
   ok("a director of sport's phone bar is Today, Matches, Team, Logistics, School, and no More (Slice 6)",
      ["mnav-dashboard", "mnav-matches", "mnav-squad", "mnav-logistics", "mnav-staff"].every((t) => dos.includes(`data-testid="${t}"`)) && !dos.includes("mnav-more")
      && (dos.match(/data-testid="mnav-[a-z]+"/g) ?? []).length === 5 && dos.includes(">School</span>"), dos.slice(0, 200));
-  const top = renderToStaticMarkup(h(TopBar, { role: "coach", onRoleChange: () => {}, onNav: () => {}, userName: "A Coach", active: "dashboard", onSignOut: () => {} }));
-  ok("the staff header: the bell, Raise a concern and the person's name", top.includes('data-testid="topbar-alerts"') && /data-testid="nav-safeguarding"[^>]*aria-label="Raise a concern"|aria-label="Raise a concern"[^>]*data-testid="nav-safeguarding"/.test(top)
-     && top.includes('data-testid="nav-settings"') && top.includes("A Coach"));
-  ok("...and no mark beside Raise a concern", !/nav-safeguarding[^]*?badge/.test(top.slice(top.indexOf("nav-safeguarding"), top.indexOf("nav-settings"))));
+  // The one header (DESIGN_DIRECTION §2.1, slice 12), as each reader gets it on a phone and at 1366.
+  const header = (/** @type {Record<string, any>} */ p) => renderToStaticMarkup(h(AppHeader, { role: "coach", home: "dashboard", onNav: () => {}, onRoleChange: () => {},
+    userName: "A Coach", active: "dashboard", onSignOut: () => {}, ...p }));
+  const has = (/** @type {string} */ html, /** @type {string} */ id) => html.includes(`data-testid="${id}"`);
+  const top = header({});
+  ok("the staff header on a phone: the mark, the bell, Raise a concern and the person's name, in that order",
+     ["header-mark", "topbar-alerts", "nav-safeguarding", "header-account"].every((id) => has(top, id))
+     && ["header-mark", "topbar-alerts", "nav-safeguarding", "header-account"].map((id) => top.indexOf(`data-testid="${id}"`)).every((at, i, a) => i === 0 || at > a[i - 1])
+     && /data-testid="nav-safeguarding"[^>]*aria-label="Raise a concern"|aria-label="Raise a concern"[^>]*data-testid="nav-safeguarding"/.test(top)
+     && top.includes("A Coach"), top.slice(0, 300));
+  ok("...the name opens a short sheet (a menu button), not a page", /<button[^>]*data-testid="header-account"[^>]*aria-haspopup="menu"/.test(top) && !/data-testid="nav-settings"/.test(top));
+  ok("...and shortens to initials, drawn beside it for the narrow rows", top.includes(">AC</span>") && initialsOf("A Coach") === "AC" && initialsOf("Sarah") === "S" && initialsOf("  ") === "");
+  ok("...and no mark beside Raise a concern", !/nav-safeguarding[^]*?badge/.test(top.slice(top.indexOf("nav-safeguarding"), top.indexOf("header-account"))));
+  ok("...no bare sign-out glyph, no role chip, and no Switch Role in a real session",
+     !has(top, "persona-signout") && !has(top, "topbar-signout") && !has(top, "topbar-role") && !/Switch role/i.test(top) && !has(top, "topbar-live"));
   ok("every control in it at least 44px", (top.match(/min-height:(\d+)px/g) ?? []).every((m) => parseInt(m.slice(11), 10) >= 44));
-  // Glossary review item 1: "Raise a concern" in words beside its icon, on both headers, its name starting with them.
-  const persona = renderToStaticMarkup(h(PersonaBar, { active: "children", onNav: () => {}, onSignOut: () => {}, userName: "A Parent" }));
-  for (const [who, html] of [["the staff header", top], ["the persona header", persona]]) {
+  ok("\"Raise a concern\" is set on one line: it never wraps", /class="os-concern-text"[^>]*white-space:nowrap/.test(top));
+  const wide = header({ wide: true });
+  ok("at 1366 the header repeats neither the mark, the name nor the way out: the rail holds them",
+     !has(wide, "header-mark") && !has(wide, "header-account") && !has(wide, "nav-settings") && !/Sign out/.test(wide)
+     && has(wide, "topbar-alerts") && has(wide, "nav-safeguarding"));
+  ok("...nor, in a real session, a role switcher", !has(wide, "topbar-role"));
+  ok("the demonstration keeps its role list on a laptop, as its own button", has(header({ wide: true, demo: true }), "topbar-role"));
+  // The role list lists each role once (ROLE_FAMILIES, never the lookup table with its aliases).
+  const roles = renderToStaticMarkup(h(RoleOptions, { role: "coach", onPick: () => {} }));
+  const listed = (roles.match(/data-testid="role-option-([a-z0-9]+)"/g) ?? []).map((m) => m.slice(25, -1));
+  ok("the demonstration's role list names each role once", listed.length === Object.values(ROLE_FAMILIES).flat().length && new Set(listed).size === listed.length, listed.join());
+  const persona = header({ persona: "family", userName: "A Parent", active: "children" });
+  ok("the parent's header is the same header: the mark, the bell, Raise a concern and her name",
+     has(persona, "persona-bar") && ["header-mark", "topbar-alerts", "nav-safeguarding", "header-account"].every((id) => has(persona, id)) && persona.includes("A Parent"));
+  ok("...with no search, and no sign-out glyph", !has(persona, "topbar-search") && !has(persona, "persona-signout"));
+  ok("...and her bell is named for her Notices", /data-testid="topbar-alerts"[^>]*aria-label="Notices"|aria-label="Notices"[^>]*data-testid="topbar-alerts"/.test(persona));
+  const pupil = header({ persona: "pupil", userName: "R Pillay", active: "myhome", role: "player" });
+  ok("the pupil gets the bell too (Player 5)", has(pupil, "topbar-alerts") && has(pupil, "header-account"));
+  // Glossary review item 1: "Raise a concern" in words beside its icon, on every header, its name starting with them.
+  for (const [who, html] of [["the staff header", top], ["the parent's header", persona], ["the pupil's header", pupil]]) {
     const btn = html.match(/<button[^>]*data-testid="nav-safeguarding"[^>]*>([^]*?)<\/button>/);
     const words = (btn?.[1] ?? "").replace(/<[^>]+>/g, "").replace(/\u00a0|&nbsp;|&#160;/g, " ").trim();
     const name = btn?.[0].match(/aria-label="([^"]*)"/)?.[1] ?? "";

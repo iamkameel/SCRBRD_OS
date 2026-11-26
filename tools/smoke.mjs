@@ -129,20 +129,31 @@ try {
 
   // Switching roles re-runs every view against a different scope, which is
   // the authorization path this refactor changed.
+  // The demonstration's role list (DESIGN_DIRECTION §2.1, slice 12): behind "Switch role" on a laptop, in the name's
+  // short sheet on a phone. A switch counts only once the list, opened again, marks that role as the current one.
   const errsBeforeRole = errors.length;
+  const ROLES_TO = ["superadmin", "player", "guardian", "medical", "scorer"];
+  const openRoles = async () => {
+    const at = page.locator('[data-testid="topbar-role"], [data-testid="header-account"]').first();
+    await at.click({ timeout: 2000 });
+    await page.waitForTimeout(200);
+  };
   let switched = 0;
-  for (const label of ["Super Admin", "Player", "Parent", "Medical", "Scorer"]) {
+  for (const role of ROLES_TO) {
     try {
-      await page.locator("button", { hasText: /▼$/ }).first().click({ timeout: 2000 });
-      await page.waitForTimeout(200);
-      const opt = page.locator("button", { hasText: label }).first();
+      await openRoles();
+      const opt = page.locator(`[data-testid="role-option-${role}"]`).first();
       if (!(await opt.count())) continue;
       await opt.click({ timeout: 2000 });
       await page.waitForTimeout(500);
-      switched++;
-    } catch { /* switcher shape differs for some roles */ }
+      await openRoles();
+      const now = await page.locator(`[data-testid="role-option-${role}"]`).first().getAttribute("aria-checked", { timeout: 2000 });
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(150);
+      if (now === "true") switched++;
+    } catch { /* not switched: counted below */ }
   }
-  deep.push([`switched through ${switched} roles`, switched >= 2]);
+  deep.push([`switched through ${switched} of ${ROLES_TO.length} roles`, switched === ROLES_TO.length]);
   deep.push(["no errors while switching roles", errors.length === errsBeforeRole]);
 } catch (e) {
   deep.push([`walk threw: ${e.message.slice(0, 70)}`, false]);

@@ -23,8 +23,7 @@ import { useNotifications } from "./lib/notifications.js";
 import { useWaitingInvitations } from "./lib/invitations.js";
 import { MobileNav, useIsMobile } from "./shell/MobileNav.jsx";
 import { Sidebar } from "./shell/Sidebar.jsx";
-import { TopBar } from "./shell/TopBar.jsx";
-import { PersonaBar } from "./shell/PersonaBar.jsx";
+import { AppHeader } from "./shell/AppHeader.jsx";
 import { navOff, personaOf, useFeatures, useNav } from "./lib/features.js";
 import { holdsAsHeld } from "./lib/held.js";
 import { scorerLanding } from "./lib/scorerLanding.js";
@@ -783,9 +782,10 @@ export default function SCRBRD_OS() {
     passport:     <PupilPassport     role={role}/>,
     me:           <PupilMe           role={role} onNav={setPage}/>,
   };
-  // The persona apps' own header (step 4 §2.0) for a signed-in parent or
-  // pupil; the demonstration keeps the staff top bar, whose role switcher is
-  // the only way to leave a persona there.
+  // One header for everybody (DESIGN_DIRECTION §2.1, slice 12), laid out for
+  // a signed-in parent's or pupil's app without the staff's search; the
+  // demonstration keeps the staff layout, whose role list is the only way to
+  // leave a persona there.
   const persona = personaOf(role);
   const personaHeader = persona && signedIn();
   // A persona that lands on a page it has no view for opens its own Home,
@@ -803,7 +803,7 @@ export default function SCRBRD_OS() {
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
         <OffPageGuard page={page} home={home} onNav={setPage}/>
-        {!isMobile&&<Sidebar role={role} active={page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona}/>}
+        {!isMobile&&<Sidebar role={role} active={page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona} home={home}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can
               be reached without a session — the demo entry, a restored
@@ -816,9 +816,8 @@ export default function SCRBRD_OS() {
               <button onClick={()=>setAppState("login")} className="pressBtn" data-testid="demo-banner-signin" style={{padding:"3px 10px",minHeight:"44px",borderRadius:D.pill,border:`1px solid ${D.amber}`,background:"transparent",color:D.textPrimary,fontFamily:D.head,fontSize:"12px",fontWeight:700,cursor:"pointer"}}>Sign in</button>
             </div>
           )}
-          {personaHeader
-            ? <PersonaBar active={page} onNav={setPage} onSignOut={handleSignOut} userName={userName}/>
-            : <TopBar role={role} onRoleChange={handleRoleChange} onNav={setPage} userName={userName} active={page} onSignOut={handleSignOut}/>}
+          <AppHeader role={role} persona={personaHeader ? persona : null} wide={!isMobile} demo={!signedIn()} home={home}
+            onNav={navTo} onRoleChange={handleRoleChange} userName={userName} active={page} onSignOut={handleSignOut}/>
           <main id="os-content" tabIndex={-1} className="os-main" data-testid="os-main" data-page={shown} data-persona={persona ?? undefined} style={{flex:1,overflowY:"auto",outline:"none"}}>
             {/* One boundary round the routed view, keyed on the page: a view
                 that throws is replaced by a card in its own place, and the

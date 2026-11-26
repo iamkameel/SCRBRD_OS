@@ -156,9 +156,11 @@ export const UNDER = Object.freeze({
 });
 
 /**
- * In the header on every screen, for everybody (§1.2 rule 3): the bell,
- * "Raise a concern" and the person's own name, which opens their Settings.
- * Still routes; never menu entries. The persona bars never held them.
+ * In the header on every screen, for everybody (§1.2 rule 3; DESIGN_DIRECTION
+ * §2.1, shell/AppHeader.jsx): the bell, "Raise a concern" and the person's own
+ * name, whose short sheet opens their Settings (the rail's foot at 1366).
+ * Still routes; never menu entries. A parent's bell opens her Notices, which
+ * stays on her bar as well (EP §1.7).
  */
 export const HEADER = Object.freeze(["notifications", "safeguarding", "settings"]);
 

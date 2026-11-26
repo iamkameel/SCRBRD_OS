@@ -539,11 +539,15 @@ try {
     ok("on a phone the bar is the four, in order", bar.join() === "mnav-children,mnav-fixtures,mnav-notices,mnav-family", bar.join());
     ok("...with no More and no drawer", await page.locator('[data-testid="mnav-more"]').count() === 0
        && await page.locator('[data-testid="drawer"]').count() === 0);
-    ok("...and the way out in the header", await page.locator('[data-testid="persona-signout"]').count() === 1);
+    // DESIGN_DIRECTION §2.1: the way out is under her name, in its short sheet; the bare glyph is gone.
+    ok("...and the way out under her name in the header, with no bare glyph", await page.locator('[data-testid="persona-bar"] [data-testid="header-account"]').count() === 1
+       && await page.locator('[data-testid="persona-signout"]').count() === 0);
     const f = await floors(page);
     ok(`Home at phone width: nothing read under 12px (${f.small.length})`, f.small.length === 0, f.small.slice(0, 4).join(" · "));
     ok(`...nothing tapped under 44px (${f.tiny.length})`, f.tiny.length === 0, f.tiny.slice(0, 4).join(" · "));
-    await page.locator('[data-testid="persona-signout"]').click({ timeout: 4000 }).catch(() => {});
+    await page.locator('[data-testid="header-account"]').click({ timeout: 4000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.locator('[data-testid="header-signout"]').click({ timeout: 4000 }).catch(() => {});
     await afterReads(page, 1200);
     ok("...which signs her out", await page.locator('[data-testid="os-main"]').count() === 0);
     ok("no page errors on the phone", errs.length === 0, errs.join(" | "));
@@ -1231,8 +1235,18 @@ try {
     // SCRBRD-033. Where his access stops, derived from the policy rather than
     // written per role — so the assertions are about a coach's REAL boundary
     // and would go red if the capability moved.
+    // Behind one link, in words (DESIGN_DIRECTION §5 Q4 (a)): closed until he opens it, and no capability code on it.
+    ok("his clearances come before where his access stops, which is one link, closed",
+       await coach.page.locator('[data-testid="boundaries-section"]').count() === 0 && await coach.page.locator('[data-testid="boundaries-open"]').count() === 1
+       && await coach.page.evaluate(() => {
+         const a = document.querySelector('[data-testid="my-clearances"]'), b = document.querySelector('[data-testid="boundaries-open"]');
+         return !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+       }));
+    await coach.page.locator('[data-testid="boundaries-open"]').click({ timeout: 4000 }).catch(() => {});
+    await coach.page.waitForTimeout(300);
     const bounds = coach.page.locator('[data-testid="boundaries-section"]');
     ok("the coach is told where his access stops", await bounds.count() === 1);
+    ok("...in words: no capability's code on the panel", !/\b[a-z]+\.[a-z]+(\.[a-z]+)+\b/.test(await bounds.innerText().catch(() => "x.y.z")));
     const bt = await bounds.innerText().catch(() => "");
     ok("...including the clinical record, which is ADR 0002's whole point",
        await coach.page.locator('[data-testid="boundary-medical.details.read"]').count() === 1, bt.slice(0, 120));
@@ -1776,10 +1790,29 @@ try {
   // role repeatedly under the same name.
   group("The role switcher lists each role once, not once per alias");
   {
+    // A real session offers no roles at all (DESIGN_DIRECTION §2.1: "Switch Role (Demo)" leaves the header in a real
+    // session): not on a laptop, and not under the name on a phone.
+    const r = await open();
+    await signIn(r.page, /sarah@example\.invalid/);
+    ok("a real session draws no role switcher", await r.page.locator('[data-testid="topbar-role"], [data-testid^="role-option-"]').count() === 0
+       && !/Switch Role/i.test(await r.page.locator('[data-testid="topbar"]').innerText().catch(() => "")));
+    await r.page.setViewportSize({ width: 390, height: 844 });
+    await r.page.waitForTimeout(500);
+    await r.page.locator('[data-testid="header-account"]').click({ timeout: 4000 }).catch(() => {});
+    await r.page.waitForTimeout(300);
+    const sheet = (await r.page.locator('[data-testid="header-account-menu"]').innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+    ok("...and on a phone her name's sheet is Settings and Sign out, and nothing else", sheet === "Settings Sign out", sheet);
+    ok("no console errors in her session", r.errors.length === 0, r.errors.join(" | "));
+    await r.ctx.close();
+
+    // The demonstration keeps its list: nobody is signed in, so it is entered with no server to answer.
     const c = await open();
-    await signIn(c.page, /sarah@example\.invalid/);
-    // The person's name opens Settings in the header now (EXPERIENCE_PASS §1.2); the switcher is its own button.
-    ok("the switcher opens", await c.page.locator('[data-testid="topbar-role"]').click({ timeout: 4000 }).then(() => true, () => false));
+    await c.page.addInitScript(`window.__SCRBRD_API_BASE__ = "http://127.0.0.1:9";`);
+    await c.page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "networkidle" });
+    await click(c.page, /Get Started|Log In/, 5000);
+    await c.page.locator('[data-testid="login-demo"]').click({ timeout: 6000 }).catch(() => {});
+    await c.page.waitForSelector('[data-testid="os-main"]', { timeout: 15000 }).catch(() => {});
+    ok("the demonstration's switcher opens", await c.page.locator('[data-testid="topbar-role"]').click({ timeout: 4000 }).then(() => true, () => false));
     await c.page.waitForTimeout(400);
     const menu = c.page.locator('[role="menu"][aria-label="Switch role"]');
     ok("the menu is drawn", await menu.count() === 1);
@@ -2118,8 +2151,9 @@ try {
     ok("the sidebar collapses", await tid("sidebar").getAttribute("data-collapsed") === "true");
     // The menu is the homes now (EXPERIENCE_PASS §1.2): Profiles is Team's Players section; the entry's name is Team.
     ok("...and the entries keep their names", await tid("nav-squad").getAttribute("aria-label") === "Team");
-    ok("the top bar's controls are addressable",
-       await tid("topbar-search").count() === 1 && await tid("topbar-alerts").count() === 1 && await tid("topbar-role").count() === 1);
+    // The role chip left the header in a real session (DESIGN_DIRECTION §2.1); the search and the bell stay.
+    ok("the top bar's controls are addressable, and carry no role chip",
+       await tid("topbar-search").count() === 1 && await tid("topbar-alerts").count() === 1 && await tid("topbar-role").count() === 0);
     ok("no console errors on the laptop", c.errors.length === 0, c.errors.join(" | "));
     await c.ctx.close();
 
