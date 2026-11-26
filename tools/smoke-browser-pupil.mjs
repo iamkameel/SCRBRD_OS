@@ -77,6 +77,7 @@ import pg from "pg";
 import { appUrl, ownerUrl, port } from "./db-url.mjs";
 import { bookCard, writeBookInnings } from "./book-innings.mjs";
 import { capWords } from "@scrbrd/scoring";
+import { saDate } from "../apps/web/src/lib/saTime.js";
 import { ATTACK, buildCaptainFixtures, fixConditions, PLAY } from "./fixture-captain.mjs";
 import { afterReads, watchReads } from "./walk-wait.mjs";
 import { pickTab, tabIds } from "./walk-tabs.mjs";
@@ -612,6 +613,67 @@ try {
   const fm = await floors(s.page);
   ok(`Me at phone width: nothing read under 12px (${fm.small.length})`, fm.small.length === 0, fm.small.slice(0, 4).join(" · "));
   ok(`...nothing tapped under 44px (${fm.tiny.length})`, fm.tiny.length === 0, fm.tiny.slice(0, 4).join(" · "));
+  // ── Redesign slice 17 (DESIGN_DIRECTION §2.1, Flow C): the pupil has the bell, and Notices opens from it ──
+  group("Notices: the bell opens his Notices, its count is the bell's, and it lists what the server sends him");
+  {
+    // One notice of his side's, about his next fixture, written for the walk and removed after it.
+    const [n17] = await q(`insert into notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability, is_public, subject_kind, subject_id)
+                           values ($1, '1XI', 'team', 'fixture', 'low', 'Verify 17: start moved to 09:30', 'Verify 17: the toss at 09:00.', 'fixture.read', false, 'match', $2)
+                           returning id`, [HIL, NEXT]);
+    const bell = s.page.locator('[data-testid="persona-bar"] [data-testid="topbar-alerts"]');
+    ok("he sees the bell in his header", await bell.count() === 1);
+    await bell.click({ timeout: 4000 }).catch(() => {});
+    await afterReads(s.page, 2000);
+    ok("the bell opens his Notices", await tid(s.page, "os-main").getAttribute("data-page") === "notifications"
+       && /^Notices$/.test((await s.page.locator('[data-testid="os-main"] h2').first().textContent().catch(() => "")).trim()));
+    await s.page.locator('[data-testid="notice-row"]', { hasText: "Verify 17" }).first().waitFor({ timeout: 8000 }).catch(() => {});
+    const tok = await devToken("pillay@example.invalid");
+    const served = await readRows(tok, "notifications");
+    const counted = (await readRows(tok, "summary"))[0]?.unread_alerts;
+    const badge = async () => (await bell.locator('[data-testid="topbar-alerts-badge"]').innerText().catch(() => "")).trim();
+    const sub = async () => (await s.page.locator('[data-testid="os-main"] h2').first().locator("xpath=../..").innerText().catch(() => "")).replace(/\s+/g, " ");
+    const b0 = await badge(), line0 = await sub();
+    ok("...whose count is the bell's, and the server's", b0 !== "" && b0 === String(counted) && new RegExp(`\\b${b0} unread\\b`).test(line0)
+       && (await bell.getAttribute("aria-label")) === `Notices, ${b0} unread`, `${b0} | ${counted} | ${line0.slice(0, 80)} | ${await bell.getAttribute("aria-label")}`);
+    // Exactly what my_notifications returns to him, and nothing more: the screen filters nothing and adds nothing.
+    const titles = await s.page.$$eval('[data-testid="notice-row"] [data-testid="notice-open"]', (els) => els.map((e) => (e.childNodes[0]?.textContent ?? "").trim()));
+    ok(`...the list is the server's to him, row for row (${served.length})`, titles.length === served.length
+       && JSON.stringify([...titles].sort()) === JSON.stringify(served.map((r) => r.title).sort()), `${titles.length} drawn, ${served.length} served`);
+    // Day groups, by Johannesburg's day, newest first.
+    const days = await s.page.$$eval('[data-testid="notice-day"]', (els) => els.map((e) => e.getAttribute("data-day")));
+    const want = [...new Set(served.map((r) => saDate(r.published_at)))];
+    ok("...in day groups, by Johannesburg's day, newest first", days.join() === want.join(), `${days.join()} vs ${want.join()}`);
+    const words = await s.page.$$eval('[data-testid="notice-day-words"]', (els) => els.map((e) => e.textContent.trim()));
+    ok("...each said as Today, Yesterday, or the weekday and the date in words", words[0] === "Today"
+       && words.every((w) => /^(Today|Yesterday|(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)( \d{4})?)$/.test(w)), words.join(" · "));
+    // The dot, and the word a screen reader hears.
+    const row = s.page.locator('[data-testid="notice-row"]', { hasText: "Verify 17" }).first();
+    ok("an unread notice carries the dot, and its title's button says Unread", await row.getAttribute("data-unread") === "true"
+       && await row.locator('[data-testid="notice-dot"][aria-hidden="true"]').count() === 1
+       && /Verify 17: start moved to 09:30\. Unread$/.test((await row.locator('[data-testid="notice-open"]').textContent().catch(() => "")).trim()));
+    ok("...and every unread row does, and no read one", await s.page.locator('[data-testid="notice-row"][data-unread="true"]').count() === served.filter((r) => !r.read).length
+       && await s.page.locator('[data-testid="notice-row"]:not([data-unread]) [data-testid="notice-dot"]').count() === 0);
+    ok("...a fixture's notice, which nobody wrote, carries no Report", await row.locator('[data-testid="notice-report"]').count() === 0);
+    // Opening it marks it read, through the one store, and the bell and the server agree again.
+    await row.locator('[data-testid="notice-open"]').click({ timeout: 4000 }).catch(() => {});
+    await afterReads(s.page, 1500);
+    const counted1 = (await readRows(tok, "summary"))[0]?.unread_alerts;
+    const b1 = await badge();
+    ok("opening it marks it read: the dot goes, and the bell's count and the server's fall by one together",
+       await row.getAttribute("data-unread") === null && counted1 === counted - 1 && (counted1 === 0 ? b1 === "" : b1 === String(counted1)), `${counted} → ${counted1} | ${b1}`);
+    // Its subject, in his own app: See the fixture, on his Matches, opened on that fixture.
+    const link = row.locator('[data-testid="notice-subject"]');
+    ok("...and it links to its subject in his own app: See the fixture, to his Matches", (await link.textContent().catch(() => "")).startsWith("See the fixture")
+       && await link.getAttribute("data-to") === "mymatches");
+    const fn = await floors(s.page);
+    ok(`Notices at phone width: nothing read under 12px (${fn.small.length})`, fn.small.length === 0, fn.small.slice(0, 4).join(" · "));
+    ok(`...nothing tapped under 44px (${fn.tiny.length})`, fn.tiny.length === 0, fn.tiny.slice(0, 4).join(" · "));
+    await link.click({ timeout: 4000 }).catch(() => {});
+    await afterReads(s.page, 2000);
+    ok("...which opens his Matches on that fixture, as his own list would", await tid(s.page, "os-main").getAttribute("data-page") === "mymatches"
+       && await tid(s.page, "fixture-detail").first().getAttribute("data-match").catch(() => null) === NEXT);
+    await q(`delete from notification where id = $1`, [n17.id]);
+  }
   group("No ordered list of team-mates is drawn for him (recognition R5b: D23, A15)");
   for (const key of ["myhome", "mymatches", "passport", "me"]) {
     const opened = await go(s.page, key);

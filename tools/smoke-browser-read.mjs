@@ -442,7 +442,32 @@ try {
      && said?.email === "parent@example.invalid", JSON.stringify(said));
 
   // ── P5: notices, newest first, saying which child each is about ──
+  // Redesign slice 17: one notice of his side's about the fixture she answered for, written for the walk and
+  // removed after it, so "See the fixture" has a subject the walk knows.
+  const N17 = (await owner.query(
+    `insert into notification (school_id, team_code, scope_level, kind, urgency, title, body, required_capability, is_public, subject_kind, subject_id)
+     values ('11111111-1111-1111-1111-111111111111', '1XI', 'team', 'fixture', 'low', 'Verify 17: Step4 start moved to 09:30',
+             'Verify 17: the toss at 09:00.', 'fixture.read', false, 'match', $1) returning id`, [DECL])).rows[0].id;
   ok("Notices opens", await nav(parent.page, /^Notices$/));
+  const n17Row = parent.page.locator('[data-testid="notice"]', { hasText: "Verify 17" }).first();
+  await n17Row.waitFor({ timeout: 8000 }).catch(() => {});
+  {
+    // DESIGN_DIRECTION §2.1 (EP §1.7): she keeps Notices on her bar, and the bell shows the same count.
+    const pBell = parent.page.locator('[data-testid="persona-bar"] [data-testid="topbar-alerts"]');
+    const pBadge = (await pBell.locator('[data-testid="topbar-alerts-badge"]').innerText().catch(() => "")).trim();
+    const pLine = (await ptid("family-notices").innerText().catch(() => "")).replace(/\s+/g, " ");
+    ok("her bell's count is her Notices tab's, opened from the tab", pBadge !== "" && new RegExp(`\\b${pBadge} unread\\b`).test(pLine)
+       && (await pBell.getAttribute("aria-label")) === `Notices, ${pBadge} unread`, `${pBadge} | ${await pBell.getAttribute("aria-label")} | ${pLine.slice(0, 80)}`);
+    // Flow C (1): in day groups, by Johannesburg's day, newest first; the walk's notice is today's.
+    const days = await parent.page.$$eval('[data-testid="family-notices"] [data-testid="notice-day"]', (els) => els.map((e) => e.getAttribute("data-day") ?? ""));
+    const words = await parent.page.$$eval('[data-testid="family-notices"] [data-testid="notice-day-words"]', (els) => els.map((e) => e.textContent.trim()));
+    ok("...in day groups, newest first, the first Today", days.length > 0 && days.every((d, i) => i === 0 || d < days[i - 1]) && words[0] === "Today"
+       && words.every((w) => /^(Today|Yesterday|(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)( \d{4})?)$/.test(w)), `${days.join()} | ${words.join(" · ")}`);
+    ok("...an unread notice with the dot, its button saying Unread", await n17Row.getAttribute("data-unread") === "true"
+       && await n17Row.locator('[data-testid="notice-dot"][aria-hidden="true"]').count() === 1
+       && /\. Unread$/.test((await n17Row.locator('[data-testid="notice-open"]').textContent().catch(() => "")).trim()));
+    ok("...and one school: no notice names a school", await ptid("notice-school").count() === 0);
+  }
   const notes = await ptid("family-notices").innerText({ timeout: 4000 }).catch(() => "");
   ok("...with her notices, the one about her child saying so", /Injury recorded/i.test(notes) && /About R Pillay/i.test(notes));
   ok("...and none naming another family's child", !OTHERS.test(notes), notes.match(OTHERS)?.[0]);
@@ -454,11 +479,43 @@ try {
   const injRow = parent.page.locator('[data-testid="notice"]', { hasText: /Injury recorded/i }).first();
   ok("...which carries Report; the injury notice does not",
      await postRow.locator('[data-testid="notice-report"]').count() === 1 && await injRow.locator('[data-testid="notice-report"]').count() === 0);
+  // Flow C (4): Report is a quiet text button, not a pill, and still 44px and one tap (D11).
+  const rep = await postRow.locator('[data-testid="notice-report"]').evaluate((b) => {
+    const cs = getComputedStyle(b), r = b.getBoundingClientRect();
+    return { border: cs.borderTopStyle, bg: cs.backgroundColor, h: r.height, w: r.width, words: b.textContent.trim(), name: b.getAttribute("aria-label") ?? "" };
+  }).catch(() => null);
+  ok("...Report is a quiet text button: no border, no fill, 44px, and its name says which notice",
+     rep && rep.border === "none" && /rgba\(0, 0, 0, 0\)|transparent/.test(rep.bg) && rep.h >= 44 && rep.w >= 44 && rep.words === "Report" && /^Report this notice: Nets moved to Thursday/.test(rep.name), JSON.stringify(rep));
   await postRow.locator('[data-testid="notice-report"]').click({ timeout: 4000 }).catch(() => {});
   const reportedWords = await postRow.locator('[data-testid="notice-reported"]').innerText({ timeout: 6000 }).catch(() => "");
   ok("one tap reports it to the school's safeguarding officer, and says so",
      /Reported to the school's safeguarding officer/.test(reportedWords), reportedWords);
   ok("...and the Report button is gone", await postRow.locator('[data-testid="notice-report"]').count() === 0);
+  // Flow C (2): opened, a notice links to its subject in her app, and the link only navigates.
+  await postRow.locator('[data-testid="notice-open"]').click({ timeout: 4000 }).catch(() => {});
+  await afterReads(parent.page, 1000);
+  ok("the post's notice, opened, offers no link (her app has no Newsfeed)", await postRow.locator('[data-testid="notice-open"][aria-expanded="true"]').count() === 1
+     && await postRow.locator('[data-testid="notice-subject"]').count() === 0);
+  await injRow.locator('[data-testid="notice-open"]').click({ timeout: 4000 }).catch(() => {});
+  await injRow.locator('[data-testid="notice-subject"]').waitFor({ timeout: 6000 }).catch(() => {});
+  const injLink = injRow.locator('[data-testid="notice-subject"]');
+  ok("the injury notice about her child, opened: See his health history, to Family", (await injLink.textContent().catch(() => "")).startsWith("See his health history")
+     && await injLink.getAttribute("data-to") === "family");
+  await injLink.click({ timeout: 4000 }).catch(() => {});
+  await afterReads(parent.page, 2000);
+  ok("...which opens Family with his Health open", await parent.page.locator('[data-testid="os-main"]').getAttribute("data-page") === "family"
+     && await ptid("health").count() === 1);
+  ok("back on Notices", await nav(parent.page, /^Notices$/));
+  await n17Row.locator('[data-testid="notice-open"]').click({ timeout: 4000 }).catch(() => {});
+  await afterReads(parent.page, 1200);
+  const fixLink = n17Row.locator('[data-testid="notice-subject"]');
+  ok("the side's fixture notice, opened: read now, and See the fixture, to her Matches", await n17Row.getAttribute("data-unread") === null
+     && (await fixLink.textContent().catch(() => "")).startsWith("See the fixture") && await fixLink.getAttribute("data-to") === "fixtures");
+  await fixLink.click({ timeout: 4000 }).catch(() => {});
+  await afterReads(parent.page, 2000);
+  ok("...which opens her Matches on that fixture, as her own list would", await parent.page.locator('[data-testid="os-main"]').getAttribute("data-page") === "fixtures"
+     && await ptid("fixture-detail").first().getAttribute("data-match").catch(() => null) === DECL);
+  await owner.query(`delete from notification where id = $1`, [N17]);
   ok("the guardian's session raised no scoping refusals", parent.refusals.length === 0);
   ok("...and no page errors", parent.errors.length === 0, parent.errors.join(" | "));
 
