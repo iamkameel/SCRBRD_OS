@@ -18372,6 +18372,70 @@ BEGIN
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/173 (section 148) ─────────────────────────────────────────────
 
+-- ┌── Section timing (Kameel, 25 Nov 2026) ─────────────────────────────
+-- CI's verifier ran for two to three and a half hours with no output at all,
+-- so nobody could say which sections were slow. Each section of the DO block
+-- below now opens with
+--
+--   RAISE NOTICE '%', pg_temp._v_section('§N its heading');
+--
+-- which prints the time since this file's BEGIN and how long the section
+-- before it took, and the file ends with the slowest fifteen. psql prints a
+-- NOTICE as it arrives, so the CI log shows progress section by section.
+--
+-- They change nothing a section does or asserts: RAISE sets neither FOUND nor
+-- ROW_COUNT, the state is two custom settings of this transaction
+-- (scrbrd_verify.*, set_config local, gone at the ROLLBACK), and the functions
+-- live in pg_temp, not public, so no section that reads public's functions,
+-- grants or definers meets them. Created here, as the owner, before privilege
+-- is dropped; the application role calls them through pg_temp's USAGE, which
+-- every session has on its own temporary schema. The first section's
+-- "previous" is everything before it: this file's helpers and fixtures.
+CREATE FUNCTION pg_temp._v_section(p_label text) RETURNS text LANGUAGE plpgsql AS $v_section$
+DECLARE
+  v_now  numeric := extract(epoch FROM pg_catalog.clock_timestamp());
+  v_t0   numeric := extract(epoch FROM pg_catalog.transaction_timestamp());
+  v_cur  text    := coalesce(pg_catalog.current_setting('scrbrd_verify.section', true), '');
+  v_at   numeric := v_t0;
+  v_name text    := '(before §1: helpers and fixtures)';
+  v_took numeric;
+  v_all  numeric;
+BEGIN
+  IF v_cur <> '' THEN
+    v_at   := pg_catalog.split_part(v_cur, E'\t', 1)::numeric;
+    v_name := pg_catalog.substr(v_cur, pg_catalog.strpos(v_cur, E'\t') + 1);
+  END IF;
+  v_took := pg_catalog.round(v_now - v_at, 1);
+  v_all  := pg_catalog.floor(v_now - v_t0);
+  PERFORM pg_catalog.set_config('scrbrd_verify.done',
+    coalesce(pg_catalog.current_setting('scrbrd_verify.done', true), '') || v_took || E'\t' || v_name || E'\n', true);
+  PERFORM pg_catalog.set_config('scrbrd_verify.section',
+    CASE WHEN p_label IS NULL THEN '' ELSE v_now || E'\t' || p_label END, true);
+  RETURN pg_catalog.format('[verify %s:%s:%s] %s  (the section before: %s s)',
+    pg_catalog.lpad(pg_catalog.div(v_all, 3600)::text, 2, '0'),
+    pg_catalog.lpad(pg_catalog.div(pg_catalog.mod(v_all, 3600), 60)::text, 2, '0'),
+    pg_catalog.lpad(pg_catalog.mod(v_all, 60)::text, 2, '0'),
+    coalesce(p_label, 'end'), v_took);
+END $v_section$;
+
+-- The last section closed, and the slowest fifteen, slowest first.
+CREATE FUNCTION pg_temp._v_section_summary() RETURNS text LANGUAGE plpgsql AS $v_summary$
+DECLARE
+  v_close text := pg_temp._v_section(NULL);
+  v_out   text;
+BEGIN
+  SELECT pg_catalog.string_agg(pg_catalog.format('%8s s  %s', s.took, s.name), E'\n' ORDER BY s.took DESC, s.n)
+    INTO v_out
+    FROM (SELECT pg_catalog.split_part(l, E'\t', 1)::numeric AS took,
+                 pg_catalog.substr(l, pg_catalog.strpos(l, E'\t') + 1) AS name, n
+            FROM pg_catalog.regexp_split_to_table(
+                   pg_catalog.rtrim(pg_catalog.current_setting('scrbrd_verify.done', true), E'\n'), E'\n')
+                 WITH ORDINALITY AS t(l, n)
+           ORDER BY 1 DESC, n LIMIT 15) s;
+  RETURN v_close || E'\nThe fifteen slowest sections:\n' || v_out;
+END $v_summary$;
+-- └── Section timing ───────────────────────────────────────────────────
+
 -- From here on we are the unprivileged application role, so every read below
 -- is subject to RLS exactly as it would be through the API.
 SET ROLE scrbrd_app;
@@ -18468,6 +18532,7 @@ DECLARE
   A_DUTY    uuid;
   n int;
 BEGIN
+  RAISE NOTICE '%', pg_temp._v_section('§1 Nobody is anybody by default');
   -- ── 1. Nobody is anybody by default ────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   SELECT count(*) INTO n FROM player;
@@ -18475,6 +18540,7 @@ BEGIN
   SELECT count(*) INTO n FROM match;
   PERFORM _assert(n = 0, 'an unidentified session can read matches');
 
+  RAISE NOTICE '%', pg_temp._v_section('§2 The roster: rows widen to the school, columns do not');
   -- ── 2. The roster: rows widen to the school, columns do not ────
   -- A coach used to see only their own squad, full stop. That made the
   -- access-request workflow unusable — you cannot ask about a player you
@@ -18535,6 +18601,7 @@ BEGIN
   PERFORM _assert(n > (SELECT count(*) FROM player WHERE school_id = HIL AND team_code = '1XI'),
                   'the roster is no wider than the coach''s own side');
 
+  RAISE NOTICE '%', pg_temp._v_section('§3 The coach of the side holds an OVERVIEW, not the full record');
   -- ── 3. The coach of the side holds an OVERVIEW, not the full record ──
   -- ADR 0002 (decided): a coach reads the nature tier — what the injury is,
   -- how severe, when he is expected back — for the children they coach, and
@@ -18585,6 +18652,7 @@ BEGIN
   SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
   PERFORM _assert(n > 0, 'medical staff cannot read clinical notes');
 
+  RAISE NOTICE '%', pg_temp._v_section('§3b A pupil reads no team-mate''s injury at all (K3, db/55)');
   -- ── 3b. A pupil reads no team-mate's injury at all (K3, db/55) ────
   -- It used to be "who is out, not what is wrong": the player bundle held
   -- medical.status.read, so a pupil read every team-mate's date_injured,
@@ -18605,6 +18673,7 @@ BEGIN
   SELECT count(*) INTO n FROM injury_masked WHERE injury_type IS NOT NULL;
   PERFORM _assert(n = 1, 'a guardian cannot read what is wrong with their own child');
 
+  RAISE NOTICE '%', pg_temp._v_section('§3c Your own file');
   -- ── 3c. Your own file ──────────────────────────────────────────
   -- A pupil holds `player` for the things that are about the team, and that
   -- assignment reaches every team mate — so it cannot carry the capabilities
@@ -18650,6 +18719,7 @@ BEGIN
   SELECT count(*) INTO n FROM player_masked WHERE id = P_OTHER AND born IS NOT NULL;
   PERFORM _assert(n = 0, 'self-access leaks a team mate''s date of birth');
 
+  RAISE NOTICE '%', pg_temp._v_section('§3d A coach reaches the team they coach, not the school');
   -- ── 3d. A coach reaches the team they coach, not the school ────
   -- A NULL team_code widens to every team in the school. Right for a head of
   -- sport, wrong for a coach: a coach reaches a player's medical information
@@ -18679,6 +18749,7 @@ BEGIN
    WHERE role IN ('coach','assistantcoach','teammanager') AND team_code IS NULL;
   PERFORM _assert(n = 0, 'a coach assignment with no team is present in the data');
 
+  RAISE NOTICE '%', pg_temp._v_section('§4 A minor''s PII');
   -- ── 4. A minor's PII ───────────────────────────────────────────
   PERFORM _as(U_COACH);
   -- A coach picking a U13 side who cannot see an age cannot avoid putting a
@@ -18702,6 +18773,7 @@ BEGIN
   SELECT count(*) INTO n FROM player_masked WHERE born IS NOT NULL;
   PERFORM _assert(n = 0, 'scout can read a minor date of birth');
 
+  RAISE NOTICE '%', pg_temp._v_section('§5 A guardian reaches their own children and no further');
   -- ── 5. A guardian reaches their own children and no further ────
   PERFORM _as(U_PARENT);
   SELECT count(*) INTO n FROM player WHERE id <> P_INJURED;
@@ -18720,6 +18792,7 @@ BEGIN
   SELECT count(*) INTO n FROM injury_masked WHERE notes IS NOT NULL;
   PERFORM _assert(n = 1, 'a guardian cannot read their own child''s clinical notes');
 
+  RAISE NOTICE '%', pg_temp._v_section('§6 Sarah: four assignments across two institutions');
   -- ── 6. Sarah: four assignments across two institutions ─────────
   -- The case the previous single-role, single-school session could not
   -- express at all.
@@ -18755,6 +18828,7 @@ BEGIN
   SELECT count(*) INTO n FROM injury WHERE school_id = WES;
   PERFORM _assert(n = 0, 'Sarah sees Westville injuries');
 
+  RAISE NOTICE '%', pg_temp._v_section('§7 Scoring one match is not standing squad access');
   -- ── 7. Scoring one match is not standing squad access ──────────
   PERFORM _as(U_SCORER);
   SELECT count(*) INTO n FROM match;
@@ -18764,6 +18838,7 @@ BEGIN
   SELECT count(*) INTO n FROM player_masked WHERE born IS NOT NULL;
   PERFORM _assert(n = 0, 'scorer can read a minor date of birth');
 
+  RAISE NOTICE '%', pg_temp._v_section('§8 Writes are refused, not silently dropped');
   -- ── 8. Writes are refused, not silently dropped ────────────────
   PERFORM _as(U_SCOUT);
   BEGIN
@@ -18781,6 +18856,7 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN NULL;
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§9 Views do not smuggle rows past the policies');
   -- ── 9. Views do not smuggle rows past the policies ─────────────
   -- A view runs with the permissions of its OWNER unless it says otherwise,
   -- and the owner of these owns the tables underneath them — so row-level
@@ -18822,6 +18898,7 @@ BEGIN
   PERFORM _assert((SELECT count(*) FROM injury_masked) = (SELECT count(*) FROM injury),
                   'injury_masked and injury disagree about which rows exist');
 
+  RAISE NOTICE '%', pg_temp._v_section('§10 The four tables that had no policy at all');
   -- ── 10. The four tables that had no policy at all ──────────────
   -- school, app_user, ground and match_squad ran with row-level security
   -- switched OFF. Nothing was misconfigured; they were simply never listed,
@@ -18908,6 +18985,7 @@ BEGIN
   SELECT count(*) INTO n FROM ground WHERE school_id = WES;
   PERFORM _assert(n = 0, 'coach can read another school''s grounds');
 
+  RAISE NOTICE '%', pg_temp._v_section('§10b An injury alerts the circle of care, and only them');
   -- ── 10b. An injury alerts the circle of care, and only them ────
   -- A trigger on `injury` publishes a notice declaring medical.nature.read and
   -- naming the player it is about. Nobody is listed as a recipient anywhere:
@@ -18971,6 +19049,7 @@ BEGIN
   SELECT count(*) INTO n FROM notification WHERE kind = 'injury';
   PERFORM _assert(n = 0, 'a spectator received an injury alert');
 
+  RAISE NOTICE '%', pg_temp._v_section('§10c A fifteen-year-old cannot be picked for a U13 side');
   -- ── 10c. A fifteen-year-old cannot be picked for a U13 side ────
   -- "U13" means thirteen AND UNDER. Getting this wrong is a safeguarding
   -- failure before it is a competitive one, so it is enforced by a trigger
@@ -18990,6 +19069,7 @@ BEGIN
   PERFORM _assert(n = 1,
     'the eligibility check is not SECURITY DEFINER — it cannot read a masked date of birth');
 
+  RAISE NOTICE '%', pg_temp._v_section('§10b A minor with no verified guardian is not selected');
   -- ── 10b. A minor with no verified guardian is not selected ─────
   -- §12.2. The rule is enforced at selection because that is where a school
   -- ACTS on a child's data, and it reads a DERIVED state rather than a flag:
@@ -19016,6 +19096,7 @@ BEGIN
    WHERE polrelid = 'assignment_subject'::regclass AND polcmd <> 'r';
   PERFORM _assert(n = 0, 'assignment_subject has a write policy — links must go through the functions');
 
+  RAISE NOTICE '%', pg_temp._v_section('§11 The programme tables');
   -- ── 11. The programme tables ───────────────────────────────────
   -- Five areas that existed in the product and not in the database, so the
   -- browser was deciding all of them. Each assertion below is a decision that
@@ -19078,6 +19159,7 @@ BEGIN
   SELECT count(*) INTO n FROM player_skill WHERE player_id = P_U16B;
   PERFORM _assert(n = 0, '1XI coach can read a U16B player''s assessment');
 
+  RAISE NOTICE '%', pg_temp._v_section('§11b A notification is not permission');
   -- ── 11b. A notification is not permission ──────────────────────
   -- The one that matters most. news.read is a floor capability; if it were the
   -- only gate, the feed would be a side channel around every policy above.
@@ -19135,6 +19217,7 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§11c Participation, not authorship, decides a league');
   -- ── 11c. Participation, not authorship, decides a league ───────
   -- The competition is seeded with school_id NULL because that was the only
   -- way a shared league could be readable before competition_entrant existed.
@@ -19151,6 +19234,7 @@ BEGIN
   SELECT count(*) INTO n FROM match_weather;
   PERFORM _assert(n = 1, 'coach cannot read conditions for their own fixture');
 
+  RAISE NOTICE '%', pg_temp._v_section('§11d Read state is per person and not a capability');
   -- ── 11d. Read state is per person and not a capability ─────────
   PERFORM _as(U_COACH);
   INSERT INTO notification_read (notification_id, person_id)
@@ -19166,6 +19250,7 @@ BEGIN
   SELECT count(*) INTO n FROM notification_read;
   PERFORM _assert(n = 0, 'one person can see which notices another person has opened');
 
+  RAISE NOTICE '%', pg_temp._v_section('SCRBRD-039. What an innings declared it would capture');
   -- ── SCRBRD-039. What an innings declared it would capture ─────
   -- db/31's two views derive the declaration from innings_start rows and grade
   -- placement against it. Two things to prove against the real policies:
@@ -19218,6 +19303,7 @@ BEGIN
   SELECT count(*) INTO n FROM innings_declared_profile;
   PERFORM _assert(n = 0, format('a principal with no assignment sees %s capture declarations', n));
 
+  RAISE NOTICE '%', pg_temp._v_section('§12 Revocation takes effect immediately');
   -- ── 12. Revocation takes effect immediately ────────────────────
   -- This is the property the SECURITY DEFINER lookup was chosen for. Nothing
   -- about authority is carried in the session, so deactivating an assignment
@@ -19225,6 +19311,7 @@ BEGIN
   PERFORM _as(U_COACH);
   SELECT count(*) INTO n FROM player;
   PERFORM _assert(n > 0, 'coach starts with no visible players');
+  RAISE NOTICE '%', pg_temp._v_section('The owner''s recovery function only ever refreshes the owner''s key');
   -- ── The owner's recovery function only ever refreshes the owner's key ──
   --
   -- db/18. Two things to prove: it exists, and its ONE gate holds — a real
@@ -19251,6 +19338,7 @@ BEGIN
      WHERE code_hash IN ('verify-hash-owner') AND used_at IS NULL;
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('A scorer sees their own quarantined balls');
   -- ── A scorer sees their own quarantined balls ────────────────
   -- db/17. Placed before the coach's assignment is revoked below. Without this, an INSERT ... ON CONFLICT into quarantine failed the
   -- SELECT-policy check for any scorer who could not otherwise read the
@@ -19265,6 +19353,7 @@ BEGIN
   SELECT count(*) INTO n FROM ball_event_quarantine WHERE idempotency_key = 'verify:quarantine:own';
   PERFORM _assert(n = 1, 'a coach cannot quarantine (and then see) their own stale ball');
 
+  RAISE NOTICE '%', pg_temp._v_section('db/36: an idempotency key names ONE event');
   -- ── db/36: an idempotency key names ONE event ──────────────────
   -- The write path answers "duplicate" only when the stored event's
   -- fingerprint matches the one it is holding, and "conflict" otherwise. That
@@ -19321,6 +19410,7 @@ BEGIN
   SELECT count(*) INTO n FROM player;
   PERFORM _assert(n = 0, 'a revoked assignment still grants access');
 
+  RAISE NOTICE '%', pg_temp._v_section('§13 The officials register: open by name, closed by person');
   -- ── 13. The officials register: open by name, closed by person ──
   -- The register is the one table here that belongs to no school, so it is
   -- the one place the tenant model cannot do the work. What replaces it: a
@@ -19390,6 +19480,7 @@ BEGIN
   PERFORM _assert(v_level IS NULL, 'a lapsed accreditation still reads as current');
   PERFORM _as(U_SARAH);
 
+  RAISE NOTICE '%', pg_temp._v_section('A pupil without a date of birth cannot be written');
   -- ── A pupil without a date of birth cannot be written ─────────
   --
   -- The API refuses one at both doors, and this is the floor under that: a
@@ -19402,6 +19493,7 @@ BEGIN
     SELECT 1 FROM pg_constraint WHERE conname = 'player_born_required' AND convalidated),
     'the date-of-birth constraint is missing or was never validated');
 
+  RAISE NOTICE '%', pg_temp._v_section('How a batter is out is a closed list');
   -- ── How a batter is out is a closed list ──────────────────────
   --
   -- db/13: the dismissal column admits the eleven in the Laws and nothing
@@ -19411,12 +19503,14 @@ BEGIN
     SELECT 1 FROM pg_constraint WHERE conname = 'ball_event_dismissal_known' AND convalidated),
     'the dismissal vocabulary constraint is missing or was never validated');
 
+  RAISE NOTICE '%', pg_temp._v_section('Quarantine has a way out');
   -- ── Quarantine has a way out ──────────────────────────────────
   -- db/14. The door is a SECURITY DEFINER function that checks its own
   -- authority; the walk tools/smoke-quarantine.mjs exercises who may open it.
   PERFORM _assert(to_regprocedure('quarantine_resolve(bigint,boolean,jsonb,text,text)') IS NOT NULL,
     'quarantine_resolve() is missing — a quarantined ball has no way out');
 
+  RAISE NOTICE '%', pg_temp._v_section('Every definer function names its search path');
   -- ── Every definer function names its search path ───────────────
   -- db/16. A SECURITY DEFINER function without a pinned search_path runs the
   -- owner's privileges over whatever schema a caller can put first. This
@@ -19429,6 +19523,7 @@ BEGIN
   PERFORM _assert(n = 0,
     n || ' SECURITY DEFINER function(s) do not pin search_path — add "SET search_path = pg_catalog, public, pg_temp" or re-run db/16');
 
+  RAISE NOTICE '%', pg_temp._v_section('A receipt is its owner''s');
   -- ── A receipt is its owner's ──────────────────────────────────
   -- db/15. The idempotency layer remembers a write's response per person;
   -- another person with the same key must see nothing, or one account's
@@ -19454,6 +19549,7 @@ BEGIN
   EXCEPTION WHEN check_violation OR insufficient_privilege THEN NULL;
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('Guardianship ends at eighteen');
   -- ── Guardianship ends at eighteen ──────────────────────────────
   --
   -- A guardian's access is co-ownership of a CHILD's record. The model had no
@@ -19499,6 +19595,7 @@ BEGIN
   SELECT count(*) INTO n FROM injury;
   PERFORM _assert(n = 0, 'an expired guardian link still reaches injuries');
 
+  RAISE NOTICE '%', pg_temp._v_section('The two refusals, and what a refusal must not leave behind');
   -- ── The two refusals, and what a refusal must not leave behind ──
   PERFORM _as(U_REGISTRAR);
 
@@ -19577,6 +19674,7 @@ BEGIN
   PERFORM _assert(n = 0,
     'guardian_link_establish ended a link on some date other than the child''s majority');
 
+  RAISE NOTICE '%', pg_temp._v_section('dob_gaps(): the two facts db/10 and db/11 could only log');
   -- ── dob_gaps(): the two facts db/10 and db/11 could only log ────
   --
   -- Reuses P_U13 (B Khumalo) exactly as he stands after the block above: born
@@ -19637,6 +19735,7 @@ BEGIN
   SELECT count(*) INTO n FROM player_masked WHERE id = P_INJURED;
   PERFORM _assert(n = 0, 'a guardian link past its end date still reads the child');
 
+  RAISE NOTICE '%', pg_temp._v_section('Enrolment leaves nothing behind when it is refused');
   -- ── Enrolment leaves nothing behind when it is refused ────────
   --
   -- enrol_person() writes the account, then answers the request through
@@ -19669,6 +19768,7 @@ BEGIN
   PERFORM _assert(_count_accounts('real.coach@example.invalid') = 1,
     'the enrolment did not create an account');
 
+  RAISE NOTICE '%', pg_temp._v_section('The owner''s key reaches every tenant');
   -- ── The owner's key reaches every tenant ──────────────────────
   --
   -- `superadmin` holds all 82 capabilities on an assignment naming no school.
@@ -19723,6 +19823,7 @@ BEGIN
     SELECT 1 FROM role_grantable WHERE granter = 'superadmin' AND role = 'platformadmin'),
     'the owner''s key cannot appoint a platform account');
 
+  RAISE NOTICE '%', pg_temp._v_section('The newsfeed: three tiers, three audiences');
   -- ── The newsfeed: three tiers, three audiences ────────────────
   --
   -- news.read and the three publish capabilities were in the model from the
@@ -19764,6 +19865,7 @@ BEGIN
   SELECT count(*) INTO n FROM news_post WHERE scope = 'competition';
   PERFORM _assert(n = 1, 'a league notice does not reach the other school entered in it');
 
+  RAISE NOTICE '%', pg_temp._v_section('The tier is the scope, and it is enforced on the write');
   -- ── The tier is the scope, and it is enforced on the write ────
   -- The 2XI coach holds news.publish.team and not news.publish.school. He
   -- cannot reach the whole school by naming a different anchor: the INSERT
@@ -19795,6 +19897,7 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('A module switched off is off in the database too');
   -- ── A module switched off is off in the database too ────────────
   --
   -- SCRBRD-014. The module gate is two gates reading one function: the read
@@ -19863,6 +19966,7 @@ BEGIN
   SELECT count(*) INTO n FROM match WHERE sport = 'hockey' AND opponent = 'Kearsney';
   PERFORM _assert(n = 1, 'the platform granted hockey and the fixture was still refused');
 
+  RAISE NOTICE '%', pg_temp._v_section('A read across every tenant is on the record');
   -- ── A read across every tenant is on the record ────────────────
   -- SCRBRD-026. The owner's key and a platform administrator's reach every
   -- school; db/20 makes the log say so, decided at write time by the same
@@ -19893,6 +19997,7 @@ BEGIN
   PERFORM _assert(n = 1, 'a school''s own read of its own roster was marked platform-wide');
 
 
+  RAISE NOTICE '%', pg_temp._v_section('SCRBRD-012: support access is an hour, at one school, on the record');
   -- ── SCRBRD-012: support access is an hour, at one school, on the record ──
   --
   -- platformadmin holds no school's roles, so a platform administrator reads
@@ -19987,6 +20092,7 @@ BEGIN
   SELECT count(*) INTO n FROM player_masked WHERE school_id = HIL;
   PERFORM _assert(n > 0, 'the hour hand stopped an ordinary appointment');
 
+  RAISE NOTICE '%', pg_temp._v_section('SCRBRD-034 (db/30): an hour hand always carries a reason');
   -- ── SCRBRD-034 (db/30): an hour hand always carries a reason ──
   --
   -- expires_at is the support session's hour hand, and support_access_begin()
@@ -20072,6 +20178,7 @@ BEGIN
   SELECT ok INTO v_ok FROM support_access_end(S_ID);
   PERFORM _assert(v_ok, 'the school could not end the third support session');
 
+  RAISE NOTICE '%', pg_temp._v_section('SCRBRD-054: a correction takes two people, in the database');
   -- ── SCRBRD-054: a correction takes two people, in the database ──
   --
   -- db/02's INSERT policy on scoring_amendment asked for `scoring.correct`,
@@ -20103,6 +20210,7 @@ BEGIN
   SELECT count(*) INTO n FROM scoring_amendment WHERE target_key = 'verify-key' AND requested_by = U_SCORER;
   PERFORM _assert(n = 1, 'the scorer could not file an amendment request');
 
+  RAISE NOTICE '%', pg_temp._v_section('SCRBRD-053: the disciplinary record, and the six grants on it');
   -- ── SCRBRD-053: the disciplinary record, and the six grants on it ──
   --
   -- `discipline.read` and `discipline.write` sat in the catalogue and in six
@@ -20242,6 +20350,7 @@ BEGIN
                  WHERE polrelid = 'disciplinary_record'::regclass AND polcmd = 'd'),
     'disciplinary_record has a delete policy');
 
+  RAISE NOTICE '%', pg_temp._v_section('§14 A plain claim cannot jump a handover (SCRBRD-059, db/28)');
   -- ── 14. A plain claim cannot jump a handover (SCRBRD-059, db/28) ─
   -- The scoring screen makes a plain scoring_claim() on ordinary mount. While
   -- a handover is armed or being verified that claim must be refused by the
@@ -20314,6 +20423,7 @@ BEGIN
   SELECT c.ok, c.reason INTO v_ok, v_reason FROM scoring_claim(M_HANDOVER, 'verify-059-b') c;
   PERFORM _assert(NOT v_ok AND v_reason = 'lease_active', 'a live lease is no longer refused as lease_active');
 
+  RAISE NOTICE '%', pg_temp._v_section('§15 A duty''s lifecycle, and completion ends scoring (SCRBRD-034)');
   -- ── 15. A duty's lifecycle, and completion ends scoring (SCRBRD-034) ─
   -- db/30's duty_status() derives each state from a fact already on record;
   -- db/33 makes a complete match unscorable for everyone. One fixture walked
@@ -20366,6 +20476,7 @@ BEGIN
   PERFORM _assert(v_ok, 'the scorer could not take a lapsed token back');
   PERFORM _assert(duty_status(O_SCORER) = 'active', 'a scorer holding the pen again is still delegated');
 
+  RAISE NOTICE '%', pg_temp._v_section('Completion ends scoring (db/33)');
   -- ── Completion ends scoring (db/33) ──
   -- Arm a handover and put another one mid-verification first, so both of
   -- the handover functions meet a complete match with work in flight.
@@ -20433,6 +20544,7 @@ BEGIN
   -- may put back a fixture he called off (only a finished one stays finished).
   PERFORM _set_match_status(M_HANDOVER, 'live');
 
+  RAISE NOTICE '%', pg_temp._v_section('Rulebook clauses: anyone signed in reads, nobody writes (SCRBRD-041, db/32)');
   -- ── Rulebook clauses: anyone signed in reads, nobody writes (SCRBRD-041, db/32)
   -- Reference material under the directive's own predicate. The spectator is
   -- the narrowest signed-in principal there is; if he reads the clause, so
@@ -20482,6 +20594,7 @@ BEGIN
                    AND polcmd <> 'r'),
     'a rulebook table has a write policy');
 
+  RAISE NOTICE '%', pg_temp._v_section('§16 A duty, the authority it rests on, and the pause (SCRBRD-034)');
   -- ── 16. A duty, the authority it rests on, and the pause (SCRBRD-034) ─
   -- db/34 links a match duty to a fixture-scoped assignment the office makes;
   -- db/35 teaches the decision functions to read a suspension. The claims:
@@ -20660,6 +20773,7 @@ BEGIN
   SELECT l.reason INTO v_reason FROM duty_link(D_DUTY) l;
   PERFORM _assert(v_reason = 'duty_withdrawn', 'a withdrawn duty could be linked again');
 
+  RAISE NOTICE '%', pg_temp._v_section('§17 Quarantine''s loose ends (SCRBRD-071, db/37)');
   -- ── 17. Quarantine's loose ends (SCRBRD-071, db/37) ────────────
   -- Three guarantees the database holds; the fourth — that a released ball
   -- meets the Laws — is the API's (lawsRefusal() cannot run in SQL), and
@@ -20730,6 +20844,7 @@ BEGIN
   END;
   PERFORM set_config('app.device_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§18 An approved amendment takes the per-match lock (SCRBRD-076, db/38)');
   -- ── 18. An approved amendment takes the per-match lock (SCRBRD-076, db/38) ──
   -- scoring_amendment_decide() appended its void without the lock the live
   -- path and a release take, so a live batch that had folded the log could
@@ -20819,6 +20934,7 @@ BEGIN
   END;
   PERFORM set_config('app.device_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('db/39. Fixture anchors through match_school()/match_team()');
   -- ── db/39. Fixture anchors through match_school()/match_team() ──
   --
   -- Seven tables' anchors moved from a subquery on `match` under the caller's
@@ -20923,6 +21039,7 @@ BEGIN
     PERFORM _assert(n = 0, format('the driver reads %s trip(s) he is not driving: trip was withheld from db/39 — see docs/rls-anchor-audit.md', n));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('db/41. A driver reaches his own trips, and no other');
   -- ── db/41. A driver reaches his own trips, and no other ──
   --
   -- trip_contacts() used to hand the manifest — every travelling child's
@@ -21071,6 +21188,7 @@ BEGIN
     PERFORM _assert(n = 6, format('the transport office, driving one of them, reads %s of db/41''s 6 trips', n));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§19 A player''s SQL figures follow the fold (SCRBRD-068/081, db/40)');
   -- ── 19. A player's SQL figures follow the fold (SCRBRD-068/081, db/40) ──
   -- Balls written live, old shapes beside new, and every career reader asked
   -- what moved. Deltas, read before and after, so whatever an earlier section
@@ -21197,6 +21315,7 @@ BEGIN
   END;
   PERFORM set_config('app.device_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§20 A wicket the free hit saved is no wicket in SQL (db/42)');
   -- ── 20. A wicket the free hit saved is no wicket in SQL (db/42) ─────
   -- The fold saves a batter dismissed off a free hit by a bowler's method
   -- (standsOnFreeHit); every SQL reader now asks ball_wicket_stands() the
@@ -21378,6 +21497,7 @@ BEGIN
   END;
   PERFORM set_config('app.device_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§21 The last places SQL disagreed with the fold (db/43)');
   -- ── 21. The last places SQL disagreed with the fold (db/43) ─────────
   -- Who is out is the fold's `dismissed ?? striker`; the opposition's balls
   -- faced, boundaries and runs conceded are the fold's; a ball with no type
@@ -21637,6 +21757,7 @@ BEGIN
   END;
   PERFORM set_config('app.device_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§22 Career figures by season (SCRBRD-086, db/44)');
   -- ── 22. Career figures by season (SCRBRD-086, db/44) ───────────────
   -- The season views are the lifetime views one grain finer: grouped by the
   -- school season each match is in, on the Johannesburg calendar, and read
@@ -21844,6 +21965,7 @@ BEGIN
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§23 A handover verifies this innings, penalties included (SCRBRD-088, db/45)');
   -- ── 23. A handover verifies this innings, penalties included (SCRBRD-088, db/45) ──
   -- The incoming scorer states the scoreboard's figures for the innings being
   -- played, and the fold keeps them per innings with penalty awards in the
@@ -22043,6 +22165,7 @@ BEGIN
   PERFORM set_config('app.device_id', '', true);
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§24 The opposition window is five days (SCRBRD-091, db/46)');
   -- ── 24. The opposition window is five days (SCRBRD-091, db/46) ──────
   -- Kameel, 2026-09-25: "14 days seems excessive; 5-7 days would be more
   -- than appropriate". Five, and one window for everything the dossier opens,
@@ -22083,6 +22206,7 @@ BEGIN
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§25 The records the public-data rule reads (SCRBRD-083, db/47)');
   -- ── 25. The records the public-data rule reads (SCRBRD-083, db/47) ──
   -- docs/policy/PUBLIC_DATA.md §4 and §6 step 2. Every write goes through a
   -- door that checks its own authority, and each refusal below is asserted to
@@ -22430,6 +22554,7 @@ BEGIN
   PERFORM set_config('app.user_id', '', true);
   PERFORM set_config('app.device_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§26 Penalty runs to the fielding side, in every total (SCRBRD-094, db/48)');
   -- ── 26. Penalty runs to the fielding side, in every total (SCRBRD-094, db/48) ──
   -- Law 41.17.4, as the fold credits it: five to the fielding side go to its
   -- most recently completed innings, or, if it has not batted, to its next,
@@ -22583,6 +22708,7 @@ BEGIN
   END;
   PERFORM set_config('app.device_id', '', true);
   PERFORM set_config('app.user_id', '', true);
+  RAISE NOTICE '%', pg_temp._v_section('§27 A career in one pass over the log (db/49)');
   -- ── 27. A career in one pass over the log (db/49) ───────────────────
   -- The three lifetime views were one pass of ball_event per PLAYER (db/02,
   -- over the *_since() functions), so the policy on ball_event ran players ×
@@ -22684,6 +22810,7 @@ BEGIN
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§28 The pad''s resume credential (SCRBRD-078 option B, db/50)');
   -- ── 28. The pad's resume credential (SCRBRD-078 option B, db/50) ────
   -- A request signed with the credential runs as the scorer, on his phone,
   -- with app.scope = 'pad' and app.match_id — its match. db/50 narrows that
@@ -23085,6 +23212,7 @@ BEGIN
   PERFORM set_config('app.device_id', '', true);
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§29 The milestone trigger reads the striker''s own balls (SCRBRD-097, db/51)');
   -- ── 29. The milestone trigger reads the striker's own balls (SCRBRD-097, db/51) ──
   -- milestone_watch() asked player_innings for the striker's innings and his
   -- career on every scoring ball, and the career question read every
@@ -23141,6 +23269,7 @@ BEGIN
     PERFORM _assert(n = 0,
       format('db/51 (same): %s figure(s) the milestone trigger reads are not what player_innings says — %s', n, left(detail, 600)));
   END;
+  RAISE NOTICE '%', pg_temp._v_section('§30 A no-ball''s byes and leg byes are not the bowler''s (Law 21.15, db/52)');
   -- ── 30. A no-ball's byes and leg byes are not the bowler's (Law 21.15, db/52) ──
   -- The rule as the current Code has it: a no-ball's penalty run and the runs
   -- off the bat are debited to the bowler; runs not off the bat are byes or
@@ -23198,6 +23327,7 @@ BEGIN
     PERFORM _assert(n = 0, format('db/52 (same): %s bowler figure(s) disagree between the readers — %s', n, left(coalesce(detail, ''), 600)));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§31 Retired out, back with the opposing captain''s consent (Law 25.4.3, db/53)');
   -- ── 31. Retired out, back with the opposing captain's consent (Law 25.4.3, db/53) ──
   -- A `retire` marked W is a wicket from the moment it is recorded; a later
   -- live `batters` row naming the same batter with captainConsent takes it
@@ -23259,6 +23389,7 @@ BEGIN
     PERFORM _assert(got = 'live(2) A(t)', format('db/53 (c): with the return voided, M1 reads %s; expected live(2) A(t)', got));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§32 A delivery that does not count in the over; the free hit by the format (SCRBRD-113, db');
   -- ── 32. A delivery that does not count in the over; the free hit by the format (SCRBRD-113, db/54) ──
   -- Law 17.3.2.5: a delivery under 24.4, 28.2, 41.4 or 41.5 is not one of the
   -- six (payload.notInOver); ball_counts_in_over() is countsInOver() in SQL,
@@ -23351,6 +23482,7 @@ BEGIN
     PERFORM _assert(n = 0, format('db/54 (context): another school''s admin reads %s row(s) of a fixture he may not read', n));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§33 A pupil reads no team-mate''s injury status (K3, db/55)');
   -- ── 33. A pupil reads no team-mate's injury status (K3, db/55) ──────
   -- CSA Safeguarding Policy p52 item 6: a child's medical needs are for
   -- "staff and coaches who need it, but not in general view to other ...
@@ -23430,6 +23562,7 @@ BEGIN
     PERFORM _assert(n = 0, format('db/55 (enquiry): a granted enquiry reads %s injury row(s) about somebody other than the boy granted', n));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§34 The clearance register to CSA''s rules (K4, SG-7, db/56)');
   -- ── 34. The clearance register to CSA's rules (K4, SG-7, db/56) ─────
   -- CSA's Safeguarding Policy: the Sexual Offences Register, the Child
   -- Protection Register and a criminal check for every adult coach,
@@ -23577,6 +23710,7 @@ BEGIN
       format('db/56 (trip): a driver whose recorded certificate lapsed was not refused as db/08''s guard refuses (%s)', v_err));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§35 Safeguarding, phase 1: the DSO and the concern record (db/57)');
   -- ── 35. Safeguarding, phase 1: the DSO and the concern record (db/57) ──
   -- CSA Safeguarding Policy p15–17, p52, p63; docs/design/SAFEGUARDING_DSO.md
   -- §9.1. Nobody but a DSO of the institution that HOLDS a concern reads it:
@@ -24037,6 +24171,7 @@ BEGIN
       'db/57 (catalogue): dso does not hold the four safeguarding capabilities');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§36 A boy''s fitness is his health (SCRBRD-117, db/58)');
   -- ── 36. A boy's fitness is his health (SCRBRD-117, db/58) ─────────
   -- player.fitness was unmasked under player.profile.read, which a pupil holds
   -- across his side. Masked behind medical.status.read on his own team: a
@@ -24077,6 +24212,7 @@ BEGIN
 
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§37 The signed-out read path (SCRBRD-083 phase 1, db/59)');
   -- ── 37. The signed-out read path (SCRBRD-083 phase 1, db/59) ──
   -- A public request runs as nobody: app.user_id empty, every base table
   -- denied, and only db/59's four SECURITY DEFINER reads answer — and only
@@ -24227,6 +24363,7 @@ BEGIN
     END LOOP;
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§38 Workload phase 1: consent and the count (SCRBRD-110, db/60)');
   -- ── 38. Workload phase 1: consent and the count (SCRBRD-110, db/60) ──
   -- The nets band is ordinary processing: a coach records it for a boy with no
   -- health consent, and his figure is an estimate. The table refuses a count
@@ -24616,6 +24753,7 @@ BEGIN
     PERFORM _assert(_v60_due(P_B) IS NULL, 'db/60 (retention): a boy with no consent recorded has a due date');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§39 Playing conditions per competition, phase 1 (SCRBRD-114, db/61)');
   -- ── 39. Playing conditions per competition, phase 1 (SCRBRD-114, db/61) ──
   -- The design's phase 1 "proves" (docs/design/SCRBRD-114_playing_conditions.md
   -- §9), on a festival Hilton organises and five fixtures (_seed_61()). The
@@ -24894,6 +25032,7 @@ BEGIN
       'db/61 (grants): the application may compute a match''s document with no guard');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§40 The guardian link past eighteen (SCRBRD-110 phase 0, db/62)');
   -- ── 40. The guardian link past eighteen (SCRBRD-110 phase 0, db/62) ──
   -- §9's phase 0 row: a pupil's link is open on his eighteenth birthday and
   -- app_can() still grants his parent; a club member's ends on the birthday
@@ -25179,6 +25318,7 @@ BEGIN
       'db/62: a guardian link is open-ended for an adult who is not at school');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§41 The scorebook importer, phase 1 (SCRBRD-120, db/63)');
   -- ── 41. The scorebook importer, phase 1 (SCRBRD-120, db/63) ──────────
   -- The design's phase 1 "proves" (docs/design/SCRBRD-120_scorebook_importer.md
   -- §8) that the database alone can show; the JavaScript half is
@@ -25608,6 +25748,7 @@ BEGIN
     PERFORM _assert(NOT r.ok AND r.reason = 'cannot_confirm_your_own', format('db/63 (two): the submitter confirmed his own (%s)', r.reason));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§42 The scorebook importer, phase 2: careers and tables (SCRBRD-120, db/64)');
   -- ── 42. The scorebook importer, phase 2: careers and tables (SCRBRD-120, db/64) ──
   -- The design's phase 2 "proves" (docs/design/SCRBRD-120_scorebook_importer.md
   -- §8): a boy's career after an import is the card's line for him, balls
@@ -25821,6 +25962,7 @@ BEGIN
     END LOOP;
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§43 Availability asks again when the fixture changes (SCRBRD-122, db/65)');
   -- ── 43. Availability asks again when the fixture changes (SCRBRD-122, db/65) ──
   -- Each answer carries the fixture as it stood when it was given; a change
   -- to its time, ground, format or overs makes the answer read
@@ -26029,6 +26171,7 @@ BEGIN
       format('db/65 (past): the played fixture''s answer reads %s and %s notice(s) went out', _eff_65(MP), _notice_count_65(MP)));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§44 The scorebook importer, phase 4: the reader (SCRBRD-120, db/66)');
   -- ── 44. The scorebook importer, phase 4: the reader (SCRBRD-120, db/66) ──
   -- The design's phase 4 proofs (§8) that the database can show: with the
   -- reader off, nothing starts (the route then says `off`); the platform's
@@ -26244,6 +26387,7 @@ BEGIN
     PERFORM _assert(NOT scorebook_reader_may(I), 'db/66: a revoked grant left the reader on');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§45 The fixture planner, phase 2: inputs, drafts, publishing (SCRBRD-123, db/67)');
   -- ── 45. The fixture planner, phase 2: inputs, drafts, publishing (SCRBRD-123, db/67) ──
   -- The ground owner's windows and closures are facility.manage at the
   -- ground's school and nobody else's; a pitch lies on a field of its own
@@ -26633,6 +26777,7 @@ BEGIN
                     = 'confirmed|Verify 067 Cup Rules|4.2', 'db/67 (copy): the cited figure was not copied with its citation');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§46 The wicket-keeper: his dismissals, and a stumping only his (SCRBRD-126, db/68)');
   -- ── 46. The wicket-keeper: his dismissals, and a stumping only his (SCRBRD-126, db/68) ──
   -- A keeper named, and changed mid-over, in a Hilton fixture (_seed_68());
   -- its twin has the same deliveries and no keeper row. The keeper's catches
@@ -26727,6 +26872,7 @@ BEGIN
       'db/68 (scope): a new view runs as its owner or is not the application role''s to read, or a new function runs as its owner');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§47 Match results and the table (SCRBRD-114 phase 3a, db/69)');
   -- ── 47. Match results and the table (SCRBRD-114 phase 3a, db/69) ──
   -- _seed_69(): a Hilton league of four sides, seven matches under the
   -- documents their first events fix (version 1, win 4 / tie 2 / no result
@@ -27013,6 +27159,7 @@ BEGIN
       'db/69 (scope): a new object runs as its owner, or the application may write a decision or an adjustment directly');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§49 The family app''s children: my_children (step 4 phase A, G1/G11)');
   -- ── 49. The family app's children: my_children (step 4 phase A, G1/G11) ──
   -- docs/design/STEP4_parent_pupil.md §5 G1 and §8 phase A. The read is not a
   -- database object — phase A needs no migration — so this section runs the
@@ -27174,6 +27321,7 @@ $v49$;
     EXECUTE 'DROP VIEW _v49_my_children';
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§48 Parent lift clubs, phase 1: the arrangement (SCRBRD-124, db/70)');
   -- ── 48. Parent lift clubs, phase 1: the arrangement (SCRBRD-124, db/70) ──
   -- docs/design/SCRBRD-124_lift_clubs.md §8's phase 1 row, with principals:
   -- the school's two keys; who may offer and who may ask, and the zeros —
@@ -27934,6 +28082,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§50 The super over (SCRBRD-114 phase 3b, db/71)');
   -- ── 50. The super over (SCRBRD-114 phase 3b, db/71) ──
   -- _seed_71(): a Hilton cup (a tie goes to a super over) and a Hilton
   -- league (a tie stands), five matches tied on the same over, and
@@ -28087,6 +28236,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§51 Knockout progression (SCRBRD-114 phase 3c, db/72)');
   -- ── 51. Knockout progression (SCRBRD-114 phase 3c, db/72) ──
   -- _seed_72(): a Hilton cup, two semi-finals played (Hilton 1XI and
   -- Westville 2XI through), one never played, and the final between the
@@ -28208,6 +28358,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§52 Rain: interruptions, par and the deemed NRR (SCRBRD-130 R1, db/73)');
   -- ── 52. Rain: interruptions, par and the deemed NRR (SCRBRD-130 R1, db/73) ──
   -- _seed_73(): the league "Verify 073 Rain" (dls_standard) and Hilton
   -- friendlies under the default method; every figure below worked by hand
@@ -28340,6 +28491,7 @@ $v49$;
       format('db/73 (super over): a DLS tie and its super over read %s', got));
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§53 Venue par (SCRBRD-130 R3, db/74)');
   -- ── 53. Venue par (SCRBRD-130 R3, db/74) ──────────────────────────
   -- _seed_74(): a Hilton field with a pitch on it, five first innings that
   -- count and one excluded for each of §6.2's rules; every figure worked by
@@ -28411,6 +28563,7 @@ $v49$;
       'db/74: the application may read the pool past the readers'' guards');
   END;
 
+  RAISE NOTICE '%', pg_temp._v_section('§54 The DLS table: loading, publishing, freezing (SCRBRD-130 R2, db/75)');
   -- ── 54. The DLS table: loading, publishing, freezing (SCRBRD-130 R2, db/75) ──
   -- Every cell here is the synthetic generator's (_synth_75), never a value
   -- of the published table (D5). The JavaScript half — the calculator, its
@@ -28577,6 +28730,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§55 Parent lift clubs, phase 2: the day (SCRBRD-124, db/76)');
   -- ── 55. Parent lift clubs, phase 2: the day (SCRBRD-124, db/76) ──────
   -- docs/design/SCRBRD-124_lift_clubs.md §8's phase 2 row, with principals:
   -- the marks go forward only, each once, on the day, by the driver alone (a
@@ -29246,6 +29400,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 55
 
+  RAISE NOTICE '%', pg_temp._v_section('§56 Ending a role (SCRBRD-132 C1, db/77)');
   -- ── 56. Ending a role (SCRBRD-132 C1, db/77) ──────────────────────
   -- role_assignment_end(): an assignment granted through the real path
   -- (enrol_person()) and ended stops granting on the next statement; whoever
@@ -29508,6 +29663,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
 
+  RAISE NOTICE '%', pg_temp._v_section('§57 Public commentary names the shot and where it went (SCRBRD-139, db/78)');
   -- ── 57. Public commentary names the shot and where it went (SCRBRD-139, db/78) ──
   -- PUBLIC_DATA L7 as amended (Kameel, 2026-10-01): a ball's shot and where
   -- it went may be named in public commentary, as words; no coordinate ever
@@ -29606,6 +29762,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 57
 
+  RAISE NOTICE '%', pg_temp._v_section('§58 db/79: the audit log, read (SCRBRD-132 B2)');
   -- ┌── section 58 · db/79: the audit log, read (SCRBRD-132 B2) ────────
   -- audit_log() is the one door to the audit tables for Management's tab,
   -- under audit.read (Kameel, 2026-10-01): whoever holds it today. Under the
@@ -29737,6 +29894,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 58
 
+  RAISE NOTICE '%', pg_temp._v_section('§59 db/80: the audit log shows roles granted (SCRBRD-132 B2)');
   -- ┌── section 59 · db/80: the audit log shows roles granted (SCRBRD-132 B2) ─
   -- audit_log() lists a role GRANTED beside a role ended (Kameel,
   -- 2026-10-02), under audit.read AND role_assignment's own reader, never a
@@ -29862,6 +30020,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 59
+  RAISE NOTICE '%', pg_temp._v_section('§60 sign-up with Google, and an account with no school (db/81, SCRBRD-140)');
   -- ┌── section 60: sign-up with Google, and an account with no school (db/81, SCRBRD-140) ──
   -- docs/design/SCRBRD-140_signup_and_school_linking.md §4.3 and §9 proof 1.
   -- auth_identity_sign_in() is called as the exchange calls it, with no
@@ -30324,6 +30483,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 60
+  RAISE NOTICE '%', pg_temp._v_section('§61 db/82: listing on the home page, and the live read (SCRBRD-142)');
   -- ┌── section 61 · db/82: listing on the home page, and the live read (SCRBRD-142) ──
   -- docs/design/SCRBRD-142_public_home_page.md §1.2–§1.4, §2.2; PUBLIC_DATA
   -- rule 7 as amended (D1a). Two schools, one listing at a time: a fixture is
@@ -30470,6 +30630,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 61
+  RAISE NOTICE '%', pg_temp._v_section('§62 db/83: public news on the home page (SCRBRD-142 phase 3)');
   -- ┌── section 62 · db/83: public news on the home page (SCRBRD-142 phase 3) ──
   -- docs/design/SCRBRD-142_public_home_page.md §3, §7 phase 3. A post reaches
   -- the home page when its author asked, a school-wide broadcast.publish
@@ -30697,6 +30858,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 62
+  RAISE NOTICE '%', pg_temp._v_section('§63 db/84: the database keeps the routes'' rules');
   -- ┌── section 63 · db/84: the database keeps the routes' rules ──
   -- The security review of 2026-10-06 fixed three things in a route; db/84
   -- puts each beneath the route, where every door passes it.
@@ -30858,6 +31020,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 63
 
+  RAISE NOTICE '%', pg_temp._v_section('§64 A session ends when it is ended (db/85, GA-I03)');
   -- ┌── 64 · A session ends when it is ended (db/85, GA-I03) ──────────
   -- Everything below as the application role, through app_session_begin()
   -- — the one call the API makes to become somebody — and the db/85 doors:
@@ -31067,6 +31230,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 64
 
+  RAISE NOTICE '%', pg_temp._v_section('§65 A platform role belongs to no school (db/86)');
   -- ┌── 65 · A platform role belongs to no school (db/86) ─────────────
   -- Kameel, 2026-10-07: "a super admin role isn't attached to any school
   -- and shouldn't be." The RBAC diagnosis that day found POST /api/users
@@ -31186,6 +31350,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 65
+  RAISE NOTICE '%', pg_temp._v_section('§66 db/87: a wicket on a wide or a no-ball');
   -- ┌── section 66 · db/87: a wicket on a wide or a no-ball ──
   -- _seed_87(): a Hilton innings with a stumping off a wide, a run out off a
   -- no-ball, and a stumping off a wide on the free hit that follows (saved).
@@ -31271,6 +31436,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 66
 
+  RAISE NOTICE '%', pg_temp._v_section('§67 Par for the public pages (SCRBRD-133 G2, db/88)');
   -- ── 67. Par for the public pages (SCRBRD-133 G2, db/88) ─────────────
   -- _seed_88(): a ground of five innings (par 120), a ground of four, and a
   -- published, an unpublished and a below-the-floor fixture. Read as NOBODY —
@@ -31345,6 +31511,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 67
 
+  RAISE NOTICE '%', pg_temp._v_section('§68 Notifications S1: the contract and read state (db/89)');
   -- ── 68. Notifications S1: the contract and read state (db/89) ───────
   -- docs/design/NOTIFICATIONS.md D1, D4, D5, D17, D18, D19. _seed_89() writes
   -- five notices as the owner (as the system's own definers do); every read
@@ -31618,6 +31785,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 68
+  RAISE NOTICE '%', pg_temp._v_section('§69 An account changes with a reason (db/90, account lifecycle slice 2)');
   -- ┌── 69 · An account changes with a reason (db/90, account lifecycle slice 2) ──
   -- As the application role, through the two db/90 doors:
   --
@@ -31844,6 +32012,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 69
 
+  RAISE NOTICE '%', pg_temp._v_section('§70 Notifications S2: one stream (db/91)');
   -- ── 70. Notifications S2: one stream (db/91) ────────────────────────
   -- docs/design/NOTIFICATIONS.md D9, D10, D11. Every write below is a person's,
   -- through scrbrd_app under RLS, as the routes make it: a post is inserted,
@@ -32097,6 +32266,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 70
+  RAISE NOTICE '%', pg_temp._v_section('§73 the school staff register (db/92, SCRBRD-140 phase 2)');
   -- ┌── section 73: the school staff register (db/92, SCRBRD-140 phase 2) ──
   -- docs/design/SCRBRD-140_phase2_register.md §8 item 4, every proof it
   -- lists. _seed_92() builds its own world (see its comment). Claimants who
@@ -32542,6 +32712,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   PERFORM set_config('app.scope', '', true);
   -- └── end of section 73
+  RAISE NOTICE '%', pg_temp._v_section('§74 a declined parent claim, and the request cooldown (db/93)');
   -- ┌── section 74: a declined parent claim, and the request cooldown (db/93) ──
   -- docs/design/SCRBRD-140_phase2_register.md §4 and §8 item 4's last
   -- proofs, and the lead's review note (1): the cooldown refuses a register
@@ -32739,6 +32910,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 74
 
+  RAISE NOTICE '%', pg_temp._v_section('§71 The cockpit''s read fixes, held in the schema (SCRBRD-136/137 phase B, B0)');
   -- ── 71. The cockpit's read fixes, held in the schema (SCRBRD-136/137 phase B, B0) ──
   -- docs/design/SCRBRD-136-137_phaseB.md §5 (PB-D8). Phase A's three read
   -- fixes live in services/api/read/read-api.mjs, which is JavaScript: the
@@ -32832,6 +33004,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 71
 
+  RAISE NOTICE '%', pg_temp._v_section('§72 bowler_day(): a boy''s overs today, across every match (db/94)');
   -- ── 72. bowler_day(): a boy's overs today, across every match (db/94) ──
   -- docs/design/SCRBRD-136-137_phaseB.md §1.7 (PB-D1 to PB-D4). The API half
   -- is tools/smoke-cockpit.mjs (bowler_day over HTTP, as each persona); the
@@ -32956,6 +33129,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 72
+  RAISE NOTICE '%', pg_temp._v_section('§76 The plan to the side: a team post tagged to a fixture (db/96)');
   -- ┌── db/96 (section 76) ───────────────────────────────────────────
   -- ── 76. The plan to the side: a team post tagged to a fixture (db/96) ──
   -- docs/design/SCRBRD-138_phaseB.md §1–§2, §7.2 (PB-D1 to PB-D5). The
@@ -33224,6 +33398,7 @@ $v49$;
   -- └── end of section 76
   -- └── db/96 (section 76) ───────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§75 The ball log follows the fixture: the away side reads its match (db/97)');
   -- ┌── db/97 (section 75) ──────────────────────────────────────────────
   -- ── 75. The ball log follows the fixture: the away side reads its match (db/97) ──
   -- docs/design/SCRBRD-136-137_away_visibility.md §9 (AV-D1 to AV-D5). The
@@ -33518,6 +33693,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 75
 
+  RAISE NOTICE '%', pg_temp._v_section('§77 A parent reads the ball log of his child''s side''s matches (db/100)');
   -- ┌── db/100 (section 77) ─────────────────────────────────────────────
   -- ── 77. A parent reads the ball log of his child's side's matches (db/100) ──
   -- Kameel's decision of 2026-10-14: a guardian reads the balls of fixtures
@@ -33803,6 +33979,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 77
+  RAISE NOTICE '%', pg_temp._v_section('§78 News to the side: a team post, and the team sheet (db/101)');
   -- ┌── db/101 (section 78) ──────────────────────────────────────────
   -- ── 78. News to the side: a team post, and the team sheet (db/101) ──
   -- Kameel's two decisions of 2026-10-14: an ordinary team post and its
@@ -34108,6 +34285,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 78
   -- └── db/101 (section 78) ───────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§79 who a module was hidden from is the school''s to read (db/102)');
   -- ┌── section 79: who a module was hidden from is the school's to read (db/102) ──
   -- feature_suppression's read policy was "anybody enrolled" (db/08, db/81),
   -- and module_suppressions handed any school's named rows, names and reasons
@@ -34272,6 +34450,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 79
+  RAISE NOTICE '%', pg_temp._v_section('§80 The plan''s byline: who wrote the side''s plan (db/103)');
   -- ┌── db/103 (section 80) ──────────────────────────────────────────
   -- ── 80. The plan's byline: who wrote the side's plan (db/103) ──
   -- SCRBRD-138 phase B's "Plan from …" and CSA SG-9: a pupil knows which
@@ -34483,6 +34662,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 80
   -- └── db/103 (section 80) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§81 corrections to a coach''s judgement, and the coaching point (db/104)');
   -- ┌── section 81: corrections to a coach's judgement, and the coaching point (db/104) ──
   -- GA-I26a slice A1 (AH-D2, AH-D3, AH-D5). The API half is
   -- tools/smoke-assessment-history.mjs (the routes, the reads' access-log rows,
@@ -34805,6 +34985,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 81
+  RAISE NOTICE '%', pg_temp._v_section('§82 the development loop — a target, the side''s plan, the register (db/105)');
   -- ┌── section 82: the development loop — a target, the side's plan, the register (db/105) ──
   -- GA-I26a slice A2 (AH-D1, AH-D3, AH-D9). The API half is
   -- tools/smoke-assessment-history.mjs (the routes, `injured` refused with
@@ -35242,6 +35423,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 82
 
+  RAISE NOTICE '%', pg_temp._v_section('§83 REACH R-A: a family reads its side''s fixtures, trips and training (db/106)');
   -- ┌── db/106 (section 83) ─────────────────────────────────────────────
   -- ── 83. REACH R-A: a family reads its side's fixtures, trips and training (db/106) ──
   -- docs/design/REACH_parent_pupil.md §6.1, REACH-D1 ("the side only", Kameel,
@@ -35647,6 +35829,7 @@ $v49$;
   -- └── end of section 83
 
 
+  RAISE NOTICE '%', pg_temp._v_section('§84 the officials register and the grant notes, closed (db/107)');
   -- ┌── section 84: the officials register and the grant notes, closed (db/107) ──
   -- REACH-D5 (Kameel, 14 Oct 2026): `official` held ID numbers, dates of
   -- birth, emails and phones — a pupil who scores among them — and every
@@ -35902,6 +36085,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 84
 
+  RAISE NOTICE '%', pg_temp._v_section('§85 a pupil is a pupil of a side (db/108)');
   -- ┌── section 85: a pupil is a pupil of a side (db/108) ──
   -- REACH-D4 (Kameel, 14 Oct 2026): a `player` row with no team passed
   -- app_can()'s team test for every side at the school. The migration's own
@@ -36032,6 +36216,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 85
+  RAISE NOTICE '%', pg_temp._v_section('§86 a child''s links, and the reason for an ending (db/109)');
   -- ┌── section 86: a child's links, and the reason for an ending (db/109) ──
   -- Account lifecycle slice 3 (ACCOUNT_LIFECYCLE.md §4, D11–D14, Q8, Q10,
   -- Q13). The API half is tools/smoke-family-links.mjs (child_links and the
@@ -36377,6 +36562,7 @@ $v49$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 86
+  RAISE NOTICE '%', pg_temp._v_section('§87 The coach''s draft plan: changed, and thrown away (db/110)');
   -- ┌── db/110 (section 87) ──────────────────────────────────────────
   -- ── 87. The coach's draft plan: changed, and thrown away (db/110) ──
   -- Kameel, 15 Oct (final): a plan never sent is its author's to edit and to
@@ -36567,6 +36753,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 87
   -- └── db/110 (section 87) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§88 The physio''s injury record, its reviews and her worklist (db/111)');
   -- ┌── db/111 (section 88) ──────────────────────────────────────────
   -- ── 88. The physio's injury record, its reviews and her worklist (db/111) ──
   -- GA-I19 slice A, and slice C's SG-12 injury half. Every write below is a
@@ -37153,6 +37340,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 88
   -- └── db/111 (section 88) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§89 A moved pupil follows his new side (SR-1); the boy playing up reads his match''s balls');
   -- ┌── db/112 (section 89) ──────────────────────────────────────────
   -- ── 89. A moved pupil follows his new side (SR-1); the boy playing up reads his match's balls ──
   -- docs/design/SEASON_ROLLOVER.md §1.2 and §8 (Kameel, 15 Oct 2026, as
@@ -37458,6 +37646,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 89
   -- └── db/112 (section 89) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§90 A correction takes back what it falsified (db/113)');
   -- ┌── db/113 (section 90) ──────────────────────────────────────────
   -- ── 90. A correction takes back what it falsified (db/113) ──
   -- GA-I36 A2 with NOTIFICATIONS S5. A void re-asks every notice its ball
@@ -37764,6 +37953,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 90
   -- └── db/113 (section 90) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§91 When a result becomes official (db/114)');
   -- ┌── db/114 (section 91) ──────────────────────────────────────────
   -- ── 91. When a result becomes official (db/114) ──
   -- docs/design/OFFICIAL_RESULT.md S1 (D1–D14, Q1–Q8). A confirmation is one
@@ -38172,6 +38362,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 91
   -- └── db/114 (section 91) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§92 A family''s consents are the family''s (db/115, REACH R-B)');
   -- ┌── db/115 (section 92) ──────────────────────────────────────────
   -- ── 92. A family's consents are the family's (db/115, REACH R-B) ──
   -- Kameel, 16 Oct 2026. Passport consent: office only. Scouting consent:
@@ -38350,6 +38541,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 92
   -- └── db/115 (section 92) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§93 who reads a child''s data (db/116)');
   -- ┌── db/116 (section 93) ──────────────────────────────────────────
   -- ┌── section 93: who reads a child's data (db/116) ──
   -- READERS_child_data §7, decided by Kameel on 21 Oct 2026. One label per
@@ -38691,6 +38883,7 @@ $v49$;
   -- └── end of section 93
   -- └── db/116 (section 93) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§94 The dated side: a family keeps the season of the side a boy was on (SR-2); the move vo');
   -- ┌── db/117 (section 94) ──────────────────────────────────────────
   -- ── 94. The dated side: a family keeps the season of the side a boy was on (SR-2); the move voids his seats (SR-4) ──
   -- docs/design/SEASON_ROLLOVER.md §1.3, §2.10, §3.1 step 2a, §8.2 (Kameel,
@@ -39170,6 +39363,7 @@ $v49$;
   -- └── db/117 (section 94) ──────────────────────────────────────────
 
 
+  RAISE NOTICE '%', pg_temp._v_section('§95 db/118');
   -- ┌── db/118 (section 95) ──────────────────────────────────────────
   -- Names, login emails, retirements and bowler changes (db/118). Sections
   -- 92-94 are db/115-117's; 96 and 97 are kept for db/119 and db/120.
@@ -39439,6 +39633,7 @@ $v49$;
   -- └── db/118 (section 95) ──────────────────────────────────────────
 
 
+  RAISE NOTICE '%', pg_temp._v_section('§96 His family means a link live today (db/119)');
   -- ┌── db/119 (section 96) ──────────────────────────────────────────
   -- ── 96. His family means a link live today (db/119) ──
   -- The Opus review of #176: is_family_of() read no date and no pad scope.
@@ -39590,6 +39785,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 96
   -- └── db/119 (section 96) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§97 Push switched off, own rows only (db/120, NOTIFICATIONS S4)');
   -- ┌── db/120 (section 97) ──────────────────────────────────────────
   -- ── 97. Push switched off, own rows only (db/120, NOTIFICATIONS S4) ──
   -- D20: a person's own preference, per kind or per kind and child; never
@@ -39824,6 +40020,7 @@ $v49$;
   -- └── end of section 97
   -- └── db/120 (section 97) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§98 the Laws audit of 28 Oct 2026 (db/121)');
   -- ┌── db/121 (section 98) ──────────────────────────────────────────
   -- ┌── section 98: the Laws audit of 28 Oct 2026 (db/121) ──
   -- Kameel's decisions (audit/AUDIT_scoring_laws_2026-10-28.md §6), the ones
@@ -39965,6 +40162,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 98
   -- └── db/121 (section 98) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§99 Kameel''s four decisions of 29 Oct 2026 (db/122)');
   -- ┌── db/122 (section 99) ──────────────────────────────────────────
   -- ── 99. Kameel's four decisions of 29 Oct 2026 (db/122) ──
   -- Staged by _v122_stage(); every read and write is the caller's own under
@@ -40400,6 +40598,7 @@ $v49$;
   -- └── end of section 99
   -- └── db/122 (section 99) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§100 Notices follow the side (db/123, REACH R-E)');
   -- ┌── db/123 (section 100) ─────────────────────────────────────────
   -- ── 100. Notices follow the side (db/123, REACH R-E) ──
   -- REACH §6.5: a notice with a team and no child reaches the side
@@ -40572,6 +40771,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 100
   -- └── db/123 (section 100) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§101 The union passport (db/124, Kameel 29 Oct 2026)');
   -- ┌── db/124 (section 101) ─────────────────────────────────────────
   -- ── 101. The union passport (db/124, Kameel 29 Oct 2026) ──
   -- "CSA Schools/Provincial Union will be able to access a child's full
@@ -41096,6 +41296,7 @@ $v49$;
   PERFORM set_config('app.scope', '', true);
   -- └── end of section 101
   -- └── db/124 (section 101) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§102 The union selector''s list (db/125, Kameel 30 Oct 2026)');
   -- ┌── db/125 (section 102) ─────────────────────────────────────────
   -- ── 102. The union selector's list (db/125, Kameel 30 Oct 2026) ──
   -- docs/design/UNION_SELECTOR_FIND.md, slice S1: a selector lists only the
@@ -41564,6 +41765,7 @@ $v49$;
   -- └── end of section 102
   -- └── db/125 (section 102) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§103 Match-day safety (db/126, Kameel 30 Oct 2026)');
   -- ── 103. Match-day safety (db/126, Kameel 30 Oct 2026) ──
   -- "A claim over a match whose token another device held is a confirmed
   -- take-over. It shows the server's last-ball time, and an audit row
@@ -41743,6 +41945,7 @@ $v49$;
   PERFORM set_config('app.match_id', '', true);
   -- └── end of section 103
   -- └── db/126 (section 103) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§104 The fixture class (db/127, RECOGNITION R3; Q1–Q3, decided 7 Oct 2026)');
   -- ┌── db/127 (section 104) ──────────────────────────────────────────
   -- ── 104. The fixture class (db/127, RECOGNITION R3; Q1–Q3, decided 7 Oct 2026) ──
   -- "fixture_class(match) in SQL and its JS twin: competitive, festival,
@@ -41837,6 +42040,7 @@ $v49$;
   -- └── end of section 104
   -- └── db/127 (section 104) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§105 The SA day (db/128; Season rollover, the quiet-week item)');
   -- ┌── db/128 (section 105) ─────────────────────────────────────────
   -- ── 105. The SA day (db/128; Season rollover, the quiet-week item) ──
   -- "Every 'live today' check moves to sa_today() in one migration."
@@ -41924,6 +42128,7 @@ $v49$;
   -- └── end of section 105
   -- └── db/128 (section 105) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§106 The moved boy''s own reach is dated (Season rollover, S2''s last slice)');
   -- ┌── db/129 (section 106) ─────────────────────────────────────────
   -- ── 106. The moved boy's own reach is dated (Season rollover, S2's last slice) ──
   -- docs/design/SEASON_ROLLOVER.md §0, §1.3, §2.2; Kameel 15 Oct 2026: D1,
@@ -42119,6 +42324,7 @@ $v49$;
   -- └── end of section 106
   -- └── db/129 (section 106) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§107 Finishing the match (db/130; Kameel, 4 Nov 2026, option A)');
   -- ┌── db/130 (section 107) ─────────────────────────────────────────
   -- ── 107. Finishing the match (db/130; Kameel, 4 Nov 2026, option A) ──
   -- "Whoever holds scoring.finalise at the home side finishes the match from
@@ -42225,6 +42431,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 107
   -- └── db/130 (section 107) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§108 REACH R-G: a spectator reads every side''s team posts (§6.7)');
   -- ┌── db/131 (section 108) ─────────────────────────────────────────
   -- ── 108. REACH R-G: a spectator reads every side's team posts (§6.7) ──
   -- docs/design/REACH_parent_pupil.md §2.3, §6.7, §7: Kameel, 4 Nov 2026,
@@ -42317,6 +42524,7 @@ $v49$;
   -- └── end of section 108
   -- └── db/131 (section 108) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§109 REACH R-H: the team sheet to the parent (§3.5, §6.8; STEP4 Q10)');
   -- ┌── db/131 (section 109) ─────────────────────────────────────────
   -- ── 109. REACH R-H: the team sheet to the parent (§3.5, §6.8; STEP4 Q10) ──
   -- Kameel 27 Sep 2026: "signed in, her own child's side and fixture only,
@@ -42465,6 +42673,7 @@ $v49$;
   -- └── end of section 109
   -- └── db/131 (section 109) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§110 REACH R-I: what a pupil reaches of a team-mate through `players` (§4 M4)');
   -- ┌── db/131 (section 110) ─────────────────────────────────────────
   -- ── 110. REACH R-I: what a pupil reaches of a team-mate through `players` (§4 M4) ──
   -- player_read lets a pupil read his team-mates' rows (player.profile.read
@@ -42528,6 +42737,7 @@ $v49$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 110
   -- └── db/131 (section 110) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§111 The pilot''s hardening (db/132; Kameel, 4 Nov 2026, "as recommended")');
   -- ┌── db/132 (section 111) ─────────────────────────────────────────
   -- ── 111. The pilot's hardening (db/132; Kameel, 4 Nov 2026, "as recommended") ──
   -- Staged by _v132_stage(); every call is the caller's own, through
@@ -42855,6 +43065,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   -- └── end of section 111
   -- └── db/132 (section 111) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§112 Fixtures: one ground at a time, ''postponed'', the side told');
   -- ┌── db/133 (section 112) ─────────────────────────────────────────
   -- ── 112. Fixtures: one ground at a time, 'postponed', the side told ──
   -- Pilot item 2; Kameel, 4 Nov 2026 (db/133's header quotes the three
@@ -43125,6 +43336,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   -- └── end of section 112
   -- └── db/133 (section 112) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§143 A fixture is live from its first ball');
   -- ┌── db/165 (section 143) ─────────────────────────────────────────
   -- ── 143. A fixture is live from its first ball ──
   -- Placed after §112 (its neighbour: f8 there is live from its first
@@ -43183,6 +43395,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── db/165 (section 143) ─────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§113 Two phones scoring one match: the second account is told');
   -- ┌── db/135 (section 113) ─────────────────────────────────────────
   -- ── 113. Two phones scoring one match: the second account is told ──
   -- docs/design/TWO_PHONES.md slice 1 (Kameel, 5 Nov 2026, all seven as
@@ -43314,6 +43527,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   -- └── end of section 113
   -- └── db/135 (section 113) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§114 A second account: who may decide it, and the record it leaves');
   -- ┌── db/136 (section 114) ─────────────────────────────────────────
   -- ── 114. A second account: who may decide it, and the record it leaves ──
   -- docs/design/TWO_PHONES.md slice 2 (R4–R6); Kameel, 5 Nov 2026. Rows are
@@ -43523,6 +43737,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 114
   -- └── db/136 (section 114) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§115 An appointment''s season is fixed (db/137; Kameel, 4 Nov 2026, "do both follow-ups nex');
   -- ┌── db/137 (section 115) ─────────────────────────────────────────
   -- ── 115. An appointment's season is fixed (db/137; Kameel, 4 Nov 2026, "do both follow-ups next") ──
   -- Staged by _v137_stage(); every change is the caller's own, through
@@ -43621,6 +43836,7 @@ select g.id as link_id, player_school(g.player_id) as school_id, g.player_id,
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 115
   -- └── db/137 (section 115) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§116 Her own links in every state: my_links (GA-I20 A2, N4)');
   -- ┌── GA-I20 A2 (section 116) ───────────────────────────────────────
   -- ── 116. Her own links in every state: my_links (GA-I20 A2, N4) ──
   -- docs/design/GA-I20_parent_action_list.md §3.3, §3.4, §5.2 N4 and §7 A2.
@@ -43785,6 +44001,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 116
   -- └── GA-I20 A2 (section 116) ──────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§117 The owner''s key''s reads of a child are on the record');
   -- ┌── db/139 (section 117) ─────────────────────────────────────────
   -- ── 117. The owner's key's reads of a child are on the record ──
   -- Kameel, 5 Nov 2026 (the guardian's terms Q6): log the key's reads like
@@ -43849,6 +44066,7 @@ $v116$;
   -- └── end of section 117
   -- └── db/139 (section 117) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§118 Milestones say where they came from; the family told at the seal');
   -- ┌── db/140 (section 118) ─────────────────────────────────────────
   -- ── 118. Milestones say where they came from; the family told at the seal ──
   -- RECOGNITION R4 (RECOGNITION_design.md §10, D3, D6, §7). Rows are
@@ -44073,6 +44291,7 @@ $v116$;
   -- └── end of section 118
   -- └── db/140 (section 118) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§119 Personal bests: who reads them, which matches count (R5)');
   -- ┌── db/141 (section 119) ─────────────────────────────────────────
   -- ── 119. Personal bests: who reads them, which matches count (R5) ──
   -- docs/design/RECOGNITION_design.md D1, D22–D24 and the reconciliation's R5
@@ -44224,6 +44443,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 119
   -- └── db/141 (section 119) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§120 Player of the Match, the coach''s path (db/142; RECOGNITION R6, D5, D9, D10, D18, D21)');
   -- ┌── db/142 (section 120) ─────────────────────────────────────────
   -- ── 120. Player of the Match, the coach's path (db/142; RECOGNITION R6, D5, D9, D10, D18, D21) ──
   -- Staged by _v142_stage(); every act is the caller's own, through
@@ -44541,6 +44761,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 120
   -- └── db/142 (section 120) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§121 School record boards: who reads them, which matches count (R9)');
   -- ┌── db/143 (section 121) ─────────────────────────────────────────
   -- ── 121. School record boards: who reads them, which matches count (R9) ──
   -- docs/design/RECOGNITION_design.md D22–D25, A3, A11 and the
@@ -44798,6 +45019,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 121
   -- └── db/143 (section 121) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§122 Player of the Match, the captain''s nomination (db/144; RECOGNITION R7, D8, D14–D18)');
   -- ┌── db/144 (section 122) ─────────────────────────────────────────
   -- ── 122. Player of the Match, the captain's nomination (db/144; RECOGNITION R7, D8, D14–D18) ──
   -- Staged by _v144_stage(); every act is the caller's own, through
@@ -45163,6 +45385,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 122
   -- └── db/144 (section 122) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§123 Who decides an honour, and the owner''s key holds none of it (db/145; RECOGNITION R5c:');
   -- ┌── db/145 (section 123) ─────────────────────────────────────────
   -- ── 123. Who decides an honour, and the owner's key holds none of it (db/145; RECOGNITION R5c: A5, A6, D4, D5, D7, F9, F10) ──
   -- Staged by _v145_stage(); every act is the caller's own, through
@@ -45448,6 +45671,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 123
   -- └── db/145 (section 123) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§124 Colours: the side''s coach nominates, the school decides (db/146; RECOGNITION R8: A17,');
   -- ┌── db/146 (section 124) ─────────────────────────────────────────
   -- ── 124. Colours: the side's coach nominates, the school decides (db/146; RECOGNITION R8: A17, D2, D5, D8, D9, D10, D15) ──
   -- Staged by _v146_stage(); every act is the caller's own, through
@@ -45778,6 +46002,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 124
   -- └── db/146 (section 124) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§125 db/148 . RECOGNITION R10: a correction reaches the awards');
   -- ┌── db/148 (section 125). RECOGNITION R10: a correction reaches the awards
   -- docs/design/RECOGNITION_design.md §5 F4, D19–D21; the reconciliation's R10
   -- row: "a POTM whose century becomes 99 is flagged, not withdrawn".
@@ -46104,6 +46329,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/148 (section 125) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§126 The ball log asks once a match, and fails closed (db/152)');
   -- ┌── db/152 (section 126) ─────────────────────────────────────────
   -- ── 126. The ball log asks once a match, and fails closed (db/152) ──
   -- ball_event_live runs as its owner and states ball_event's read
@@ -46372,6 +46598,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 126
   -- └── db/152 (section 126) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§127 The stream overlay names no child (db/149; PUBLIC_DATA D2; Kameel 11 Nov 2026, Q1(e))');
   -- ┌── db/149 (section 127) ─────────────────────────────────────────
   -- ── 127. The stream overlay names no child (db/149; PUBLIC_DATA D2; Kameel 11 Nov 2026, Q1(e)) ──
   -- Staged by _v149_stage(); every read is broadcast_state() through
@@ -46477,6 +46704,7 @@ $v116$;
   -- └── end of section 127
   -- └── db/149 (section 127) ──────────────────────────────────────────
 
+  RAISE NOTICE '%', pg_temp._v_section('§128 db/150 : who fielded the wicket');
   -- ┌── db/150 (section 128): who fielded the wicket ────────────────────
   -- RECOGNITION R12. The rule (events.mjs fieldersFit), the door on every
   -- insert, the views reading through ball_event's own policies (invoker),
@@ -46595,6 +46823,7 @@ $v116$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/150 (section 128) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§129 A Pilot Match is kept out of every derived read (db/151; PILOT_MATCH_PHASE2 §2.4, §3.');
   -- ┌── db/151 (section 129) ─────────────────────────────────────────
   -- ── 129. A Pilot Match is kept out of every derived read (db/151; PILOT_MATCH_PHASE2 §2.4, §3.4, §4) ──
   -- As scrbrd_app throughout; the owner's acts go through the _v151_ doors.
@@ -47059,6 +47288,7 @@ $v116$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 129
   -- └── db/151 (section 129) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§130 A team-mate''s figures to a pupil (REACH-D2; REACH §6.6 path (b))');
   -- ┌── REACH-D2 (section 130) ───────────────────────────────────────
   -- ── 130. A team-mate's figures to a pupil (REACH-D2; REACH §6.6 path (b)) ──
   -- Kameel, 7 Nov 2026: a pupil no longer reads team-mates' career, season
@@ -47363,6 +47593,7 @@ $m130$;
   PERFORM set_config('app.user_id', '', true);
   -- └── end of section 130
   -- └── REACH-D2 (section 130) ───────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§131 The big screen: the host side by position all season when its roster holds a marked b');
   -- ┌── db/153 (section 131) ─────────────────────────────────────────
   -- ── 131. The big screen: the host side by position all season when its roster holds a marked boy, the away side always, for the host's staff only; the caption names no child (db/153, db/149; PUBLIC_BY_TERMS §2.5, slice 1; Kameel 12 Nov 2026 (a), (b), "Season roster") ──
   -- Staged by _v153_stage(), its own fixture, side and readers; every read
@@ -47758,6 +47989,7 @@ $m130$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/153 (section 131) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§132 Switched off is hidden for that user, but still records: a DRS review stores while th');
   -- ┌── db/154 (section 132) ─────────────────────────────────────────
   -- ── 132. Switched off is hidden for that user, but still records: a DRS review stores while the feature is off (db/154); a fixture in a sport not granted, the reader's outward read and the child-data modules' own gates still refuse (Kameel 13 and 14 Nov 2026) ──
   -- Each module is hidden for the whole of Hilton (_v154_hide(), a school
@@ -47875,6 +48107,7 @@ $m130$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/154 (section 132) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§133 Public by terms, slice 3: each answer for the surface its wording named; a no on ever');
   -- ┌── db/155 (section 133) ─────────────────────────────────────────
   -- ── 133. Public by terms, slice 3: each answer for the surface its wording named; a no on every surface its wording could reach and whatever happens to its giver's link since; and, switched off, every public read as it was (db/155; PUBLIC_BY_TERMS §11 row 3, §5.1, §6.1-6.2, §10) ──
   -- Staged by _v155_stage(): seven Hilton U16B boys and their links, and a
@@ -48328,6 +48561,7 @@ $m130$;
       '§133 (body): a new form takes a default, or an old signature is not db/155''s wrapper');
   END;
   -- └── db/155 (section 133) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§134 Switched off is hidden on the read side as well: the overlay''s officials while Offici');
   -- ┌── db/156 (section 134) ─────────────────────────────────────────
   -- ── 134. Switched off is hidden on the read side as well: the overlay's officials while Officials is off, the whole overlay while Broadcast is off, and a DRS review across schools while its own school has DRS off (db/156; Kameel 13 Nov 2026) ──
   -- Staged by _v156_stage(): Hilton's 1XI at home to Westville's, live, its
@@ -48659,6 +48893,7 @@ $m130$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/156 (section 134) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§135 A managed host''s API roles reach nothing of SCRBRD''s in public: not by a grant of the');
   -- ┌── db/157 (section 135) ─────────────────────────────────────────
   -- ── 135. A managed host's API roles reach nothing of SCRBRD's in public: not by a grant of their own, not through PUBLIC, not on an object made later; what is not SCRBRD's is left and named; and scrbrd_app's reach and the owner's do not move (db/157) ──
   -- Labels:
@@ -48790,6 +49025,7 @@ $m130$;
              coalesce(_v157_reach('anon'), '(nothing)')));
   END;
   -- └── db/157 (section 135) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§136 "Ask SCRBRD to add my school": an account with no school asks, with the school''s name');
   -- ┌── db/158 (section 136) ─────────────────────────────────────────
   -- ── 136. "Ask SCRBRD to add my school": an account with no school asks, with the school's name, its town and its job; the asker reads her own and the platform reads every one, and nobody else reads any; only the platform answers, once; the cap, the refusals and the ninety days hold; nothing is created or linked; and nothing reaches PUBLIC or a managed host's API roles (db/158, EXPERIENCE_PASS Q22) ──
   -- Labels:
@@ -49285,6 +49521,7 @@ $m130$;
     END LOOP;
   END;
   -- └── db/158 (section 136) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§137 The home page''s live read says the chase''s target and whether the match was revised,');
   -- ┌── db/159 (section 137) ─────────────────────────────────────────
   -- ── 137. The home page's live read says the chase's target and whether the match was revised, and nothing else new: the old thirteen columns, and every row they gave, as db/133 left them (db/159; EXPERIENCE_PASS Q14) ──
   -- _seed_159() builds Hilton's nine live fixtures today (header of the
@@ -49400,6 +49637,7 @@ $m130$;
   END;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/159 (section 137) ─────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§138 The follow list is its owner''s alone, holds two ids and a date, goes with the account');
   -- ┌── db/160 (section 138) ─────────────────────────────────────────
   -- ── 138. The follow list is its owner's alone, holds two ids and a date, goes with the account, and filters only what the public read already answers (db/160; EXPERIENCE_PASS Q8) ──
   -- _seed_160() builds its own school (V160) and fixtures, an archived
@@ -49648,6 +49886,7 @@ $m130$;
   PERFORM set_config('app.user_id', '', true);
   PERFORM set_config('app.scope', '', true);
   -- └── db/160 (section 138) ─────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§139 "The school has answered your request": one notice to the waiting parent, the same wo');
   -- ┌── db/161 (section 139) ─────────────────────────────────────────
   -- ── 139. "The school has answered your request": one notice to the waiting parent, the same words for a yes and a no; never a pupil; nobody else reads it (db/161; EXPERIENCE_PASS Q15) ──
   -- Each case seeds its own people (_seed_161: a Hilton office of its own,
@@ -49760,6 +49999,7 @@ $m130$;
   PERFORM _v161_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/161 (section 139) ─────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§140 A fixture''s officials are read signed in only while Officials is on for the fixture''s');
   -- ┌── db/166 (section 140) ─────────────────────────────────────────
   -- ── 140. A fixture's officials are read signed in only while Officials is on for the fixture's school, db/156's choice; whoever may appoint still reads and writes them at the table; the appointments stay stored (db/166; SCRBRD-144; Kameel 13 Nov 2026) ──
   -- Staged by _v166_stage(): Hilton's 1XI at home to Westville's, one
@@ -49943,6 +50183,7 @@ $m130$;
       '§140 (body): match_official_shown_while_on is not one RESTRICTIVE SELECT policy asking official_shown(match_id) beside match_official_read');
   END;
   -- └── db/166 (section 140) ──────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§144 The owner''s key is logged off the read path, named the platform');
   -- ┌── db/167 (section 144) ─────────────────────────────────────────
   -- ── 144. The owner's key is logged off the read path, named the platform ──
   -- PLATFORM_CONTROLS slice 6a (Q7, Kameel, 31 Oct 2026; fast-tracked 19
@@ -50201,6 +50442,7 @@ $m130$;
   -- db/169: fixture setup for the older sections ends here. The two
   -- sections about a pupil's own state run without the fixture triggers.
   PERFORM _v169_legacy_drop();
+  RAISE NOTICE '%', pg_temp._v_section('§141 "I am a pupil here": the pupil''s claim, recognised and waiting, and the basic view''s');
   -- ┌── db/168 (section 141) ─────────────────────────────────────────
   -- ── 141. "I am a pupil here": the pupil's claim, recognised and waiting, and the basic view's own reads (db/168; SCRBRD-140 honesty model, Migration A) ──
   -- Each case seeds its own people (_v168_account: a first Google sign-in,
@@ -50330,6 +50572,7 @@ $m130$;
   PERFORM _v168_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/168 (section 141) ─────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§142 "Allow his own sign-in": the yes, the gate in the core access check, and the office''s');
   -- ┌── db/169 (section 142) ─────────────────────────────────────────
   -- ── 142. "Allow his own sign-in": the yes, the gate in the core access check, and the office's tick (db/169; SCRBRD-140 honesty model, Migration B) ──
   -- Each case seeds its own people (_v169_pupil: a Hilton boy of a given age
@@ -50535,6 +50778,7 @@ $m130$;
   PERFORM _v169_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/169 (section 142) ─────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§145 Pro mode per fixture');
   -- ┌── db/170 (section 145) ─────────────────────────────────────────
   -- ── 145. Pro mode per fixture ──
   -- The redesign's question 1: one tap a ball unless the fixture's coach
@@ -50938,6 +51182,7 @@ $m130$;
   PERFORM set_config('app.user_id', '', true);
   -- └── db/173 (section 148) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
+  RAISE NOTICE '%', pg_temp._v_section_summary();
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
 END $$;
 
