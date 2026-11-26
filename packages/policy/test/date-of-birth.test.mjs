@@ -106,6 +106,10 @@ group("Every refusal has words the office can read");
   reasons.add("id_number_check_digit_failed");
   const missing = [...reasons].filter((x) => !BIRTH_DATE_MESSAGE[x]);
   ok(`all ${reasons.size} outcomes are spelled out`, missing.length === 0, missing.join(", "));
+  // db/176 (Kameel, 26 Nov 2026, Q2): "Record it" after three refused tries
+  // today; the same sentence whatever was typed, and no date in it.
+  ok("three refused tries a day: said once, with no date and nothing of what is on file",
+     /^Three dates of birth for him were refused today\. Try again tomorrow, or ask the school office\.$/.test(BIRTH_DATE_MESSAGE.born_tries_used ?? ""));
 }
 
 console.log("\n" + "─".repeat(52));

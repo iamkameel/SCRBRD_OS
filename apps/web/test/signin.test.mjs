@@ -317,6 +317,10 @@ group("A pupil under 18 says who he is (db/168, Q3): it asks for nothing and ope
     ok("db/176: a yes the office must finish says her answer is kept, naming nobody at the office",
        /Your answer is kept/.test(heldWords("recogniser_lapsed", "Sipho")) && /school office must finish/.test(heldWords("recogniser_lapsed", "Sipho"))
          && !/recogniser|lapsed/.test(heldWords("recogniser_lapsed", "Sipho")));
+    // db/176 (Kameel, 26 Nov 2026, Q7): an office person who is his own
+    // guardian; another person at the office opens him.
+    ok("db/176: his own guardian at the office is told another person there opens him, and the yes is kept",
+       /^He is your own child: another person at the school office opens Sipho's account from its list\. The yes is kept\.$/.test(heldWords("own_child", "Sipho") ?? ""));
     ok("D: who signed the form and its day are optional, and checked when given", formReady({ signedBy: "N Mother", signedOn: "2026-11-02" }) && formReady({}) && formReady({ signedBy: "", signedOn: "" })
        && !formReady({ signedBy: "N", signedOn: "" }) && !formReady({ signedBy: "", signedOn: "2 Nov" }));
     ok("...and the office is told when neither was recorded", /were not recorded/.test(officeSigninWords({ ...base, inForce: true, yesHow: "office", yesBy: "N Office" }, "Sipho")));

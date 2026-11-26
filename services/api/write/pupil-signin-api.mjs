@@ -43,6 +43,8 @@ export const OWN_SIGNIN_STATUS = Object.freeze({
   not_in_force: 409,
   form_signer_invalid: 422,
   form_date_invalid: 422,
+  // db/176 (Kameel, 26 Nov 2026, Q7): the office's signed form for his own child.
+  own_child: 403,
 });
 
 /**

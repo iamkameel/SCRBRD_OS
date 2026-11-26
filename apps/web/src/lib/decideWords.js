@@ -31,6 +31,8 @@ export const DECIDE_WORDS = {
   // db/169 (Kameel, 20 Nov, D): the form names who signed it and the day.
   form_form_signer_invalid: "Who signed the consent form needs two letters or more, as written on it, or leave it blank.",
   form_form_date_invalid: "The date the form was signed cannot be after today, or before he was born.",
+  // db/176 (Kameel, 26 Nov 2026, Q7): the signed form for one's own child.
+  form_own_child: "He is your own child: another person at the school office records his signed form.",
 };
 const DECIDE_FALLBACK = "That request was not answered. Try again, or ask the platform office.";
 const DECIDE_UNREACHABLE = "SCRBRD could not be reached. The request may or may not have been answered. Check the list before trying again.";

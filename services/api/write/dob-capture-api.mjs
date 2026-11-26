@@ -28,6 +28,13 @@
  * disagrees with the ID number on file, whoever writes it, so the capture
  * below meets that rule too: the date it is given is compared with the
  * number already on his record, not only with one typed beside it.
+ *
+ * THREE REFUSED TRIES A DAY (Kameel, 26 Nov 2026, Q2). "Record it" stays open
+ * to a caller who may manage the boy. Each try the database refuses is
+ * recorded (db/176's player_born_refused(): who, when, which boy, never the
+ * date), and from anyone but his school's office, after three in the school's
+ * day no try is taken for him until the next (born_tries_used, 429), whatever
+ * the date. The office is not counted: it reads the ID number on file.
  */
 import { runAsPrincipal } from "../auth/auth-db.mjs";
 import { resolveBirthDate, BORN_REFUSED_BY_DB } from "@scrbrd/policy/date-of-birth";
@@ -77,6 +84,7 @@ export function dobCaptureRoutes({ pool, secret }) {
     // POST /api/players/:id/date-of-birth { born?, idNumber? }
     capture: async (req, res) => {
       let office = false;
+      /** @type {any} */ let refused = null;
       try {
         const b = req.body || {};
         const dob = resolveBirthDate({ born: b.born, idNumber: b.idNumber });
@@ -94,11 +102,31 @@ export function dobCaptureRoutes({ pool, secret }) {
           // Kameel, 25 Nov 2026). Refused before the write, so the answer is
           // the same whether or not one is already on his record.
           if (idNumber && !office) throw err("id_number_needs_the_office", 403);
-          const { rows } = await client.query(
-            `update player set born = $2, id_number = coalesce(id_number, $3)
-              where id = $1 and born is null
-              returning id, school_id, team_code, full_name`,
-            [req.params.id, born, idNumber]);
+          // Q2: no try once three are refused today, from anyone but the
+          // office. NULL (one who may not manage him) goes on to the write,
+          // which his row's policy refuses as before.
+          if (!office) {
+            const left = (await client.query(`select player_born_tries_left($1) as n`, [req.params.id])).rows[0]?.n;
+            if (left === 0) throw err("born_tries_used", 429);
+          }
+          // The write under a savepoint, so a refusal of the database's is
+          // recorded in this same transaction and the record commits.
+          await client.query("SAVEPOINT born_try");
+          /** @type {any[]} */ let rows;
+          try {
+            ({ rows } = await client.query(
+              `update player set born = $2, id_number = coalesce(id_number, $3)
+                where id = $1 and born is null
+                returning id, school_id, team_code, full_name`,
+              [req.params.id, born, idNumber]));
+          } catch (/** @type {any} */ e) {
+            if (!bornRefusal(e)) throw e;
+            await client.query("ROLLBACK TO SAVEPOINT born_try");
+            await client.query(`select player_born_refused($1)`, [req.params.id]);
+            refused = e;
+            return;
+          }
+          await client.query("RELEASE SAVEPOINT born_try");
           if (!rows.length) throw err("not_permitted", 403);
           const p = rows[0];
           // `born`, not p.born: the DATE column comes back through pg as a
@@ -108,6 +136,7 @@ export function dobCaptureRoutes({ pool, secret }) {
           res.json({ id: p.id, schoolId: p.school_id, teamCode: p.team_code, fullName: p.full_name,
                      born, bornFrom: dob.source, ...(dob.warning ? { warning: dob.warning } : {}) });
         });
+        if (refused) throw refused;
       } catch (/** @type {any} */ e) {
         const named = bornRefusal(e);
         if (named?.error === "id_number_disagrees_with_date_of_birth" && !office) {

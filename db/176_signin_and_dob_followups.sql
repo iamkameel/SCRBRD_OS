@@ -23,7 +23,16 @@
 --     link the rule dated from the old date is listed for the office, which
 --     reopens or ends it by its own act (Q4: "the office reopens each ended
 --     link by a tap, from a list"); §3.5, the log shows a change's dates only
---     while he is still at the school of the change.
+--     while he is still at the school of the change, and (Kameel, 26 Nov
+--     2026, Q4) has not left it.
+--   * Kameel, 26 Nov 2026 (Q7, as recommended): an office person who is the
+--     boy's own guardian gives her yes as a guardian's; the decider is another
+--     office person, or the one who recognised him. The re-dating design's Q8
+--     (26 Nov) already holds her from his date: player_born_own_child().
+--   * Kameel, 26 Nov 2026 (Q2, as recommended): "Record it" stays open to a
+--     caller who may manage the boy; refused tries are capped at three a day
+--     per boy, and each refusal is recorded (who, when, which boy; never the
+--     date typed).
 -- Safe to run twice.
 --
 -- ── WHAT MOVES ─────────────────────────────────────────────────────
@@ -51,11 +60,17 @@
 --       the request's note says it was his own sign-in either way.
 --   ~ pupil_signin_after_yes() (db/169, as db/173 left it), replaced whole,
 --       guarded: the request it files names the caller as asked_by; the
---       decider is the office person acting now, or else the office person
---       who recognised the account, only while he still holds that right
---       (family_may_link_for(), as the family list asks of its uploader).
---       Otherwise nothing is granted and the door answers recogniser_lapsed:
---       the yes stands, and the office's retry opens him as its own act.
+--       decider is the office person acting now, unless she is his own
+--       guardian, or else the office person who recognised the account, only
+--       while he still holds that right (family_may_link_for(), as the family
+--       list asks of its uploader) and is not the caller. Otherwise nothing is
+--       granted and the door answers own_child (the caller is the office, and
+--       his guardian) or recogniser_lapsed: the yes stands, and another office
+--       person's retry opens him as its own act.
+--   ~ pupil_signin_office_set() (db/169), patched by one needle, guarded:
+--       "The signed consent form is on file" is refused (own_child) to an
+--       office person who is his own guardian; her yes is a guardian's, given
+--       by "Allow". A withdrawal is anyone's at the office, as before.
 --   + born_links_to_review(school, player)  the office's list after a
 --       correction: each guardian link of a boy at the school whose end date
 --       the rule worked out from a date of birth since corrected (his 18th
@@ -64,7 +79,8 @@
 --       old and the corrected 18th birthdays. Listed, never changed.
 --   ~ audit_log() (as db/173 left it), patched by needle, guarded: a
 --       date-of-birth change's `was` and `became` go to a reader of his age
---       only while he is still at the school of the change; a grant of his
+--       only while he is still at the school of the change and has not left
+--       it (db/116's player_departed_from()); a grant of his
 --       own `player` role on a yes reads as such, with who recognised him.
 --   ~ db/175's terms gate (live), re-emitted over db/175's bodies, guarded:
 --       app_can() and its two copies, is_family_of(), my_alert_choices(),
@@ -79,6 +95,15 @@
 --   ~ pupil_claims() (db/169's), patched by needle: a recognised claim whose
 --       boy's yes is in force and whose account waits reads 'yes_waits' to the
 --       office; + pupil_accounts_waiting(school), the count, for its queue.
+--   + player_born_refusal  one row for each try at a missing date of birth
+--       that the database refused: which boy, his school, who (and whether
+--       his school's office), when. Never the date. RLS on, no policy, no
+--       privilege.
+--   + player_born_tries_left(player), player_born_refused(player)  "Record
+--       it"'s count and its record, to a caller who may manage the boy: three
+--       refused tries a day (the school's day) from anyone but his school's
+--       office, then none that day. The office's tries are recorded and never
+--       counted: it reads the ID number on file.
 --
 -- ── WHAT IS NOT HERE ───────────────────────────────────────────────
 --   * Re-dating a link, and the office's tap that reopens one (the re-dating
@@ -92,7 +117,8 @@
 -- roster boy of its own: what it holds stops counting from the statement after
 -- the paste. Such an account asks for nothing while its claim waits (db/168),
 -- so it holds no role unless the office gave one; count them first (DEPLOYING).
--- No row of any table is changed; role_request gains one empty column. The
+-- No row of any table is changed; role_request gains one empty column, and
+-- player_born_refusal is new and empty. The
 -- terms gate's new test changes no live link's reach: the one door that writes
 -- 'withdrawn' (guardian_consent_withdraw(), db/08 as db/128 re-dated it) acts
 -- on 'granted' only, so every 'withdrawn' link carries its consent_at (count
@@ -127,8 +153,10 @@ BEGIN
      OR to_regprocedure('player_born_office(uuid)') IS NULL OR to_regclass('player_born_change') IS NULL
      OR to_regprocedure('player_born_confirm(uuid)') IS NULL OR to_regclass('guardian_link_ending') IS NULL
      OR to_regprocedure('my_terms_due()') IS NULL OR to_regprocedure('majority_on(date)') IS NULL
-     OR to_regprocedure('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)') IS NULL THEN
-    RAISE EXCEPTION 'db/176: db/168 (the claim), db/169 (the gate), db/172 and db/173 (the date''s record), db/174 (family_may_link_for()) or db/175 (my_terms_due()) is missing; apply them first';
+     OR to_regprocedure('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)') IS NULL
+     OR to_regprocedure('player_departed_from(uuid,uuid)') IS NULL OR to_regprocedure('player_born_own_child(uuid)') IS NULL
+     OR to_regprocedure('audit_person_label(uuid)') IS NULL OR to_regprocedure('app_pad_scoped()') IS NULL THEN
+    RAISE EXCEPTION 'db/176: db/168 (the claim), db/169 (the gate), db/172 and db/173 (the date''s record), db/174 (family_may_link_for()), db/175 (my_terms_due()) or db/116 (player_departed_from()) is missing; apply them first';
   END IF;
 END $guard$;
 
@@ -141,10 +169,10 @@ DROP TABLE IF EXISTS pg_temp._v176_bodies;
 CREATE TEMP TABLE _v176_bodies (fn text PRIMARY KEY, was text, mine text, file text);
 INSERT INTO _v176_bodies VALUES
   ('pupil_signin_open(uuid)',                          '9f48a4d15b197910c45640601d96c889', '70709518105ed2828ebe7b8aa5bb72e5', 'db/173'),
-  ('pupil_signin_after_yes(uuid,text)',                '9af7035afb366ee70ff3c122e8b0789f', '043e96aaa8b1170ac7ca5783f82a5550', 'db/173'),
+  ('pupil_signin_after_yes(uuid,text)',                '9af7035afb366ee70ff3c122e8b0789f', '65d8f68ff709c11e1bf0a423d640ba2d', 'db/173'),
   ('role_request_grant_as(uuid,uuid,text,uuid,text)',  'dbccd62440044dab42cdb41f2cde8af2', '938e0e25f48be58848379a8bd4c8ed38', 'db/169'),
   ('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
-                                                       '5323dd10910de37e623e80302ea9cf93', 'a8f471be03f2c36df458873511876edb', 'db/173'),
+                                                       '5323dd10910de37e623e80302ea9cf93', '0d42d645ff8c532d2d234d44240e1362', 'db/173'),
   -- db/175's, live: the terms gate's bodies (§5b), its record's trigger (§5c).
   ('app_can(text,uuid,text,uuid,uuid)',                'ec80878c0ff17f1f7179e39369397c9d', '7ecd1c9fc7c38bafbcad24f8ff6216bc', 'db/175'),
   ('app_can_but_player(text,uuid,text,uuid,uuid)',     '39702504ad4107c15239bd0fe99c2e7a', '23e4fb25a4a33d2eb288fb411cea811d', 'db/175'),
@@ -160,7 +188,9 @@ INSERT INTO _v176_bodies VALUES
   ('my_terms_due()',                                   '1e79db6a87ff52f351bb1b5fb5ecd3c7', 'd986b6ccc09d014e82df046a0396399b', 'db/175'),
   ('guardian_terms_record_append_only()',              '5d636289abb7edf3170f720dd54cfd84', '31b27e7573c1484217e18c7d53b0959c', 'db/175'),
   -- db/169's, as it re-emitted db/168's: the office's claims list (§5e).
-  ('pupil_claims(uuid)',                               'bcc0557a1a5bb474114cc9f9d8f77b05', 'baf25e11b3396a4ec46e2ddb472a5a4b', 'db/169');
+  ('pupil_claims(uuid)',                               'bcc0557a1a5bb474114cc9f9d8f77b05', 'baf25e11b3396a4ec46e2ddb472a5a4b', 'db/169'),
+  -- db/169's: the office's signed form (§5g).
+  ('pupil_signin_office_set(uuid,boolean,text,date)',  '0d691221817949d8f9e6841753fd9b70', '1e3d1c6df6626fbf8678fb044f4aeb7f', 'db/169');
 DO $bodies$
 DECLARE r record; v text; n_mine int := 0; n_was int := 0;
 BEGIN
@@ -280,6 +310,9 @@ COMMENT ON COLUMN role_request.asked_by IS
 -- to (the family list's condition 4, Kameel, 18 Nov 2026: the question db/174
 -- asks of its uploader, family_may_link_for()). If he does not, nothing is
 -- granted: the yes stands, and the office's retry opens him as its own act.
+-- Never the caller as his own guardian (Kameel, 26 Nov 2026, Q7): an office
+-- person who is his guardian gives a guardian's yes, and another office
+-- person, or the recogniser if he is someone else, decides.
 CREATE OR REPLACE FUNCTION pupil_signin_after_yes(p_player uuid, p_version text) RETURNS text AS $$
 DECLARE c pupil_claim%ROWTYPE; v_user uuid; v_req uuid; v_ok boolean; v_why text; v_decider uuid;
 BEGIN
@@ -309,11 +342,15 @@ BEGIN
     UPDATE pupil_claim SET state = 'open' WHERE id = c.id;
     RETURN NULL;
   END IF;
-  -- db/176: the office acting now, or the recogniser while his right holds.
-  IF pupil_claim_office(c.school_id) THEN
+  -- db/176: the office acting now, not as his own guardian (Q7); or the
+  -- recogniser while his right holds, if he is not the caller.
+  IF pupil_claim_office(c.school_id) AND NOT player_born_own_child(p_player) THEN
     v_decider := app_user_id();
-  ELSIF c.known_by IS NOT NULL AND family_may_link_for(c.known_by, c.school_id, 'pupil') THEN
+  ELSIF c.known_by IS NOT NULL AND c.known_by IS DISTINCT FROM app_user_id()
+        AND family_may_link_for(c.known_by, c.school_id, 'pupil') THEN
     v_decider := c.known_by;
+  ELSIF pupil_claim_office(c.school_id) THEN
+    RETURN 'own_child';
   ELSE
     RETURN 'recogniser_lapsed';
   END IF;
@@ -387,8 +424,11 @@ GRANT EXECUTE ON FUNCTION born_links_to_review(uuid, uuid) TO scrbrd_app;
 -- By exact needle, as db/172 and db/173 patched it, and only over db/173's
 -- body or this file's (§0). The re-dating design §3.5 and the map's class A2:
 -- the dates of a change go to a reader of his age while he is still at the
--- school of the change; after he leaves, that school's log keeps the event and
--- who made it, without the dates, and the other school reads his date never.
+-- school of the change and (Kameel, 26 Nov 2026, Q4) has not left it: his
+-- record there, and a membership there still open today, read as db/116's
+-- player_departed_from() reads a departure. After he leaves, moved or not,
+-- that school's log keeps the event and who made it, without the dates, and
+-- another school reads his date never.
 CREATE OR REPLACE FUNCTION pg_temp._v176_patch(p_fn text, p_needle text, p_repl text) RETURNS void AS $$
 DECLARE v_src text; v_n integer;
 BEGIN
@@ -402,12 +442,12 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 SELECT pg_temp._v176_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
   E'''was'', CASE WHEN app_can(''player.age.read'', bc.school_id, bp.team_code, bc.player_id, NULL) THEN bc.was END,',
-  E'-- db/176: the dates while he is still at the school of the change.\n'
-  || E'                 ''was'', CASE WHEN bp.school_id = bc.school_id\n'
+  E'-- db/176: the dates while he is at the school of the change and has not left it.\n'
+  || E'                 ''was'', CASE WHEN bp.school_id = bc.school_id AND NOT player_departed_from(bc.player_id, bc.school_id)\n'
   || E'                                AND app_can(''player.age.read'', bc.school_id, bp.team_code, bc.player_id, NULL) THEN bc.was END,');
 SELECT pg_temp._v176_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,integer)',
   E'''became'', CASE WHEN app_can(''player.age.read'', bc.school_id, bp.team_code, bc.player_id, NULL) THEN bc.became END)),',
-  E'''became'', CASE WHEN bp.school_id = bc.school_id\n'
+  E'''became'', CASE WHEN bp.school_id = bc.school_id AND NOT player_departed_from(bc.player_id, bc.school_id)\n'
   || E'                                   AND app_can(''player.age.read'', bc.school_id, bp.team_code, bc.player_id, NULL) THEN bc.became END)),');
 
 
@@ -588,6 +628,88 @@ SELECT pg_temp._v176_patch('audit_log(uuid,text[],timestamptz,timestamptz,text,i
   || E'          LEFT JOIN role_request yq ON yq.assignment_id = ra.id AND yq.note = \'His own sign-in: a yes on record\'\n');
 
 
+-- ── 5g · The office's signed form is not his own guardian's ────────
+-- Kameel, 26 Nov 2026 (Q7): an office person who is the boy's own guardian
+-- (player_born_own_child(), the re-dating design's Q8) gives her yes as a
+-- guardian's, by "Allow" on the family screen, under the terms she agreed.
+-- "The signed consent form is on file" for him is another office person's to
+-- record. By exact needle, over db/169's body or this file's (§0).
+SELECT pg_temp._v176_patch('pupil_signin_office_set(uuid,boolean,text,date)',
+  E'    -- D: optional until counsel (TODO(counsel), §1); checked when given.\n',
+  E'    -- db/176 (Q7): his own guardian\'s yes is a guardian\'s, by "Allow".\n'
+  || E'    IF player_born_own_child(p_player) THEN\n'
+  || E'      RETURN QUERY SELECT false, \'own_child\'::text, pupil_signin_in_force(p_player), NULL::text; RETURN;\n'
+  || E'    END IF;\n'
+  || E'    -- D: optional until counsel (TODO(counsel), §1); checked when given.\n');
+
+
+-- ── 5h · "Record it": three refused tries a day for a boy ──────────
+-- Kameel, 26 Nov 2026 (Q2): "Record it" (a missing date of birth, written
+-- through services/api/write/dob-capture-api.mjs) stays open to a caller who
+-- may manage the boy (player.profile.manage, the row's own update policy). A
+-- try the database refuses is recorded here: which boy, who, whether his
+-- school's office, when; never the date typed. From anyone but his school's
+-- office, three refused tries in the school's day, then no try that day. The
+-- office's own are recorded and never counted: the ID number on file is its
+-- to read (the map, A3).
+CREATE TABLE IF NOT EXISTS player_born_refusal (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  player_id  uuid NOT NULL REFERENCES player(id) ON DELETE CASCADE,
+  school_id  uuid,
+  -- Who, and his label as it was (audit_person_label(), db/79). No foreign
+  -- key: the record outlives the account, as player_born_change's does.
+  by_id      uuid,
+  by_name    text,
+  by_office  boolean NOT NULL DEFAULT false,
+  at         timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX IF NOT EXISTS player_born_refusal_player ON player_born_refusal (player_id, at);
+ALTER TABLE player_born_refusal ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON player_born_refusal FROM PUBLIC;
+REVOKE ALL ON player_born_refusal FROM scrbrd_app;
+COMMENT ON TABLE player_born_refusal IS
+  'db/176 (Kameel, 26 Nov 2026, Q2): one row for each try at a missing date of birth that the database refused, through "Record it": which boy, his school, who, whether his school''s office, when. Never the date typed. Counted by player_born_tries_left(): three a day from anyone but his school''s office.';
+
+-- The tries left today for this boy: to a caller who may manage him, NULL to
+-- anyone else. Holds the boy's lock until the caller's transaction ends, so
+-- two tries at once are counted one after the other.
+CREATE OR REPLACE FUNCTION player_born_tries_left(p_player uuid) RETURNS integer AS $$
+DECLARE v_school uuid; v_team text;
+BEGIN
+  IF app_user_id() IS NULL OR app_pad_scoped() THEN RETURN NULL; END IF;
+  SELECT p.school_id, p.team_code INTO v_school, v_team FROM player p WHERE p.id = p_player;
+  IF v_school IS NULL
+     OR NOT app_can('player.profile.manage', v_school, v_team, p_player, '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN NULL;
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('player_born_try:' || p_player::text, 176));
+  RETURN greatest(0, 3 - (SELECT count(*)::int FROM player_born_refusal r
+                           WHERE r.player_id = p_player AND NOT r.by_office
+                             AND (r.at AT TIME ZONE 'Africa/Johannesburg')::date = sa_today()));
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION player_born_tries_left(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION player_born_tries_left(uuid) TO scrbrd_app;
+
+-- A refused try, recorded: by a caller who may manage him, at a boy whose date
+-- is still missing (the only date "Record it" writes). The tries left after
+-- it; NULL, and nothing recorded, otherwise.
+CREATE OR REPLACE FUNCTION player_born_refused(p_player uuid) RETURNS integer AS $$
+DECLARE v_school uuid; v_team text; v_born date; v_me uuid := app_user_id();
+BEGIN
+  IF v_me IS NULL OR app_pad_scoped() THEN RETURN NULL; END IF;
+  SELECT p.school_id, p.team_code, p.born INTO v_school, v_team, v_born FROM player p WHERE p.id = p_player;
+  IF v_school IS NULL OR v_born IS NOT NULL
+     OR NOT app_can('player.profile.manage', v_school, v_team, p_player, '00000000-0000-0000-0000-000000000000'::uuid) THEN
+    RETURN NULL;
+  END IF;
+  INSERT INTO player_born_refusal (player_id, school_id, by_id, by_name, by_office)
+  VALUES (p_player, v_school, v_me, audit_person_label(v_me), coalesce(player_born_office(v_school), false));
+  RETURN player_born_tries_left(p_player);
+END $$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+REVOKE ALL ON FUNCTION player_born_refused(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION player_born_refused(uuid) TO scrbrd_app;
+
+
 -- ── 6 · Each body is this file's now ───────────────────────────────
 DO $after$
 DECLARE r record; v text;
@@ -604,10 +726,18 @@ BEGIN
        IS DISTINCT FROM (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'born_unconfirmed(uuid)'::regprocedure)
      OR (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'pupil_accounts_waiting(uuid)'::regprocedure)
        IS DISTINCT FROM (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'born_unconfirmed(uuid)'::regprocedure)
+     OR (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'player_born_tries_left(uuid)'::regprocedure)
+       IS DISTINCT FROM (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'born_unconfirmed(uuid)'::regprocedure)
+     OR (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'player_born_refused(uuid)'::regprocedure)
+       IS DISTINCT FROM (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'born_unconfirmed(uuid)'::regprocedure)
+     OR has_table_privilege('scrbrd_app', 'player_born_refusal', 'SELECT, INSERT, UPDATE, DELETE')
+     OR NOT (SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = 'player_born_refusal'::regclass)
      OR has_function_privilege('scrbrd_app', 'guardian_terms_record_append_only()', 'EXECUTE')
      OR has_function_privilege('scrbrd_app', 'pupil_signin_open(uuid)', 'EXECUTE')
      OR has_function_privilege('scrbrd_app', 'pupil_signin_after_yes(uuid,text)', 'EXECUTE')
-     OR has_function_privilege('scrbrd_app', 'role_request_grant_as(uuid,uuid,text,uuid,text)', 'EXECUTE') THEN
+     OR has_function_privilege('scrbrd_app', 'role_request_grant_as(uuid,uuid,text,uuid,text)', 'EXECUTE')
+     OR NOT has_function_privilege('scrbrd_app', 'pupil_signin_office_set(uuid,boolean,text,date)', 'EXECUTE')
+     OR has_function_privilege('public', 'pupil_signin_office_set(uuid,boolean,text,date)', 'EXECUTE') THEN
     RAISE EXCEPTION 'db/176: a door''s rights are not as this file leaves them';
   END IF;
   IF (SELECT md5(pg_get_expr(p.polqual, p.polrelid)) FROM pg_policy p

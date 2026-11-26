@@ -231,6 +231,34 @@ try {
   ok("...and the number itself is kept", (await q(`select id_number from player where id = $1`, [P_U13]))[0].id_number === "1104075800085");
   ok("the gap is gone", !(await gaps(registrar)).some((r) => r.player_id === P_U13));
 
+  group("\"Record it\": three refused tries a day for a boy, each one recorded (db/176; Kameel, 26 Nov 2026, Q2)");
+  // A boy with no date and an ID number on file that carries 2012-05-05.
+  await dropBornConstraint();
+  const triesBoy = (await q(
+    `insert into player (school_id, team_code, full_name, squad_no, playing_role, born, id_number)
+     values ($1, 'U16A', 'Tries Boy', 176, 'batter', null, '1205055800082') returning id`, [HIL]))[0].id;
+  await restoreBornConstraint();
+  const tries = [];
+  for (const d of ["2012-05-06", "2012-05-07", "2012-05-08"]) tries.push(await capture(triesBoy, director, { born: d }));
+  ok("the director's three wrong dates are each refused in the one sentence",
+     tries.every((t) => t.status === 422 && t.body?.error === "born_needs_the_office"), JSON.stringify(tries.map((t) => t.body)));
+  const fourth = await capture(triesBoy, director, { born: "2012-05-05" });
+  ok("...and a fourth, the right one, is not tried today",
+     fourth.status === 429 && fourth.body?.error === "born_tries_used", JSON.stringify(fourth.body));
+  ok("...nothing landed", (await q(`select born from player where id = $1`, [triesBoy]))[0].born === null);
+  const sarahId = (await q(`select id from app_user where lower(email) = 'sarah@example.invalid'`))[0].id;
+  const rec = await q(`select by_id, by_office, school_id from player_born_refusal where player_id = $1 order by at`, [triesBoy]);
+  ok("each refusal is recorded: who, which boy, his school, not the office",
+     rec.length === 3 && rec.every((r) => r.by_id === sarahId && r.by_office === false && r.school_id === HIL), JSON.stringify(rec));
+  const cols = await q(`select column_name, data_type from information_schema.columns
+                         where table_schema = 'public' and table_name = 'player_born_refusal' order by column_name`);
+  ok("...and never the date typed: the record has no date of any kind but its own time",
+     cols.map((c) => c.column_name).join() === "at,by_id,by_name,by_office,id,player_id,school_id"
+       && !cols.some((c) => c.data_type === "date"), JSON.stringify(cols));
+  const officeTry = await capture(triesBoy, registrar, { born: "2012-05-05" });
+  ok("the office, which reads the number on file, is not counted: its date goes in",
+     officeTry.status === 200 && officeTry.body?.born === "2012-05-05", JSON.stringify(officeTry.body));
+
   group("correcting a recorded date is the office's, and every change is kept (db/172)");
   const u16 = (await q(`select to_char(born,'YYYY-MM-DD') b from player where id = $1`, [P_U16]))[0].b;
   const u16New = `${u16.slice(0, 5)}${u16.slice(5, 7) === "03" ? "04" : "03"}${u16.slice(7)}`;

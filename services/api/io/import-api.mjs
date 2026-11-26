@@ -276,6 +276,10 @@ export const IMPORTS = {
     // whole file's transaction; a label, never an authority.
     setup: `select set_config('app.born_how', 'import', true)`,
     office: `select player_born_office($1::uuid) as office`,
+    // His date on record as this caller may read it (player_masked: his age
+    // to a reader of it, NULL to anyone else), for a line that carries the
+    // same one (Kameel, 26 Nov 2026, Q2).
+    bornOnRecord: `select to_char(m.born, 'YYYY-MM-DD') as born from player_masked m where m.id = $1`,
     idOnFile: `select p.id_number is not null and p.id_number is distinct from $2 as differs
                  from player p where p.id = $1`,
     refusals: {
@@ -600,10 +604,18 @@ export async function runImport(pool, secret, bearer, kind, { csv, schoolId, com
         // none). The ID number on file is the office's alone to read (the map,
         // A3; Kameel, 25 Nov 2026: an ID number is the office's to write), and
         // a recorded date is the office's to change (Kameel, 20 Nov 2026), so
-        // the answer to anyone else may depend on neither.
-        if (def.adults && found.rowCount === 1 && values.born && !office) {
-          refused.push({ line, column: "born", message: BORN_ON_ROSTER_IS_THE_OFFICE });
-          continue;
+        // the answer to anyone else may depend on neither. Except (Kameel,
+        // 26 Nov 2026, Q2) a line whose date is the one on his record, as this
+        // caller may read it, so a roster file can be sent again: it passes,
+        // and writes nothing to his date. To one who may not read his age the
+        // record reads no date, and every line is refused alike.
+        if (def.adults && def.bornOnRecord && found.rowCount === 1 && values.born && !office) {
+          const onRecord = (await client.query(def.bornOnRecord, [found.rows[0].id])).rows[0]?.born ?? null;
+          if (onRecord === null || onRecord !== String(values.born)) {
+            refused.push({ line, column: "born", message: BORN_ON_ROSTER_IS_THE_OFFICE });
+            continue;
+          }
+          values.born = null;
         }
         if (def.idOnFile && found.rowCount === 1 && values.id_number) {
           if (!office) {

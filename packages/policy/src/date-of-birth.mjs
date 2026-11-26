@@ -156,6 +156,8 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
   // the boy's own guardian.
   born_own_child: "Another person at the school office records this date of birth: he is your own child.",
   own_child: "Another person at the school office does this: he is your own child.",
+  // db/176 (Kameel, 26 Nov 2026, Q2): "Record it", three refused tries a day for a boy.
+  born_tries_used: "Three dates of birth for him were refused today. Try again tomorrow, or ask the school office.",
   // "Coming of age" (db/173).
   confirm_not_permitted: "Only the school office confirms a date of birth.",
 });

@@ -495,11 +495,15 @@ try {
     const byDirector = await importCsv("players", director, {
       csv: `full_name,team_code,born\nK Dlamini,U16B,${to}\n`, schoolId: HIL, commit: true });
     ok("...and committing it changes nothing", byDirector.body?.committed === false && (await bornOf("K Dlamini")) === was);
+    // Kameel, 26 Nov 2026 (Q2): a line whose date is the one on his record,
+    // as she may read it, passes, so a roster file can be sent again; it
+    // writes nothing to his date.
+    const changedBefore = (await changedOf("K Dlamini")).length;
     const sameByDirector = await importCsv("players", director, {
       csv: `full_name,team_code,born\nK Dlamini,U16B,${was}\n`, schoolId: HIL, commit: true });
-    ok("...and his file carrying the date already on record is refused in the same words, so it says nothing of what is on file",
-       sameByDirector.body?.committed === false && JSON.stringify(sameByDirector.body?.errors) === JSON.stringify(dry.body?.errors),
-       JSON.stringify(sameByDirector.body?.errors));
+    ok("...while his file carrying the date already on record goes in, so a roster file can be sent again",
+       sameByDirector.body?.committed === true && (sameByDirector.body?.errors ?? []).length === 0, JSON.stringify(sameByDirector.body));
+    ok("...and writes nothing to his date", (await bornOf("K Dlamini")) === was && (await changedOf("K Dlamini")).length === changedBefore);
     const namesOnly = await importCsv("players", director, {
       csv: "full_name,team_code\nK Dlamini,U16B\n", schoolId: HIL, commit: true });
     ok("...while his file of names and sides goes in", namesOnly.body?.committed === true, JSON.stringify(namesOnly.body?.errors));
