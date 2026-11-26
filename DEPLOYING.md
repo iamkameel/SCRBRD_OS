@@ -2573,8 +2573,9 @@ Recorded in `db/SHIPPED.sha256` by #371 (df071d36).
 `db/169_pupil_signin_gate.sql` (PR #376, `claude/wip-hm-b`; SCRBRD-140 honesty
 model, Migration B, on Kameel's answers of 18 and 20 Nov). A pupil under 18
 reads his own page only while a yes is in force: a guardian's "Allow his own
-sign-in", or the office's record that the signed consent form is on file. Not
-yet pasted. Before it, on each database:
+sign-in", or the office's record that the signed consent form is on file.
+Pasted on the demo and production, 25 Nov 2026, from 7a93c9a6, after the
+read-only count (0 accounts closed on either). Before it, on each database:
 
 1. `db/168` is pasted first (`--apply`'s predecessor check and db/169's §0
    both refuse otherwise).
@@ -2617,8 +2618,92 @@ To paste:
 - It resets `lock_timeout` with its last statement, so a pooled SQL Editor
   connection is handed back as it came.
 
-Not pasted yet.
+Pasted on the demo and production, 25 Nov 2026, from c07f97ec.
 <!-- ── end db/170 ── -->
+<!-- ── db/171: the end of a match, the server's half ── -->
+#### The end of a match: the scorer's part, the coach's notice, the pen put down (db/171)
+
+`db/171_slice4_followups.sql` (PR #378, branch claude/wip-s4-followups; redesign
+slice 4's follow-ups, DESIGN_DIRECTION Q2 (a), Kameel 20 Nov 2026: "keep the
+separation"). The server refuses a finish asked only as the scorer
+(`coach_confirms`); whoever may confirm at the home side is told once when a
+live fixture's log decides it; and the scorer's end screen puts the pen down
+(`scoring_release()`), so the coach's Confirm does not wait out a 90 s lease.
+The official result stays db/114's. Its proof is db/99 §146.
+
+To paste:
+
+- **After db/169 and db/170, in that order.** db/169 re-emits `app_can()`, and
+  db/171 copies `app_can()`'s live body into `app_can_but_scorer()` at the
+  paste, so the copy carries db/169's gate. It fails loudly, changing nothing,
+  if the body is not as it expects.
+- **As one transaction:** the SQL Editor's single run, or `psql -1 -v
+  ON_ERROR_STOP=1 -f`. Statement by statement, its new functions would stand
+  executable by PUBLIC until the grants block ran.
+- **Not while a match is being finished.** Between the paste and the API built
+  with it, a scorer's Finish answers `coach_confirms` through the old API as an
+  unworded 422. A match merely live is fine: the three triggers hold their
+  tables' lock until the paste commits (well under a second), so a ball write
+  waits that long, bounded by the file's ten-second `lock_timeout`; a paste
+  that timed out on its lock is simply run again.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  171, and the API refuses to start on a database without it.
+- It can be pasted again: CREATE OR REPLACE throughout and one `CREATE INDEX IF
+  NOT EXISTS`. It resets `lock_timeout` with its last statement.
+
+Not pasted yet. Hash to check: `sha256 05e2fa904ea6283f6cffc1c78195abb1df1fde47a70acb6368e2753231bcf40a`.
+<!-- ── end db/171 ── -->
+<!-- ── db/172: a date of birth, corrected by the office ── -->
+#### A date of birth: the office corrects it, every change is recorded (db/172)
+
+`db/172_dob_audited_correction.sql` (branch claude/wip-dob-followup; Kameel,
+20 Nov 2026: "The office corrects it; every change is audited", and "Date of
+birth should be match with an ID No."). A date of birth that disagrees with the
+ID number on his record is refused in the database, whoever writes it through
+the application. A recorded date, and an ID number on file, are the school
+office's alone to change. Every change to a date is written to
+`player_born_change` (before, after, who, when, how, and for a correction its
+required reason, Kameel 25 Nov 2026), which the office reads on Edit Profile;
+the changes join `audit_log()` as the kind `dob` for its readers (the dates to
+a reader of the boy's age, never the reason). The roster import's silent
+overwrite is folded into the same rule. Its proof is db/99 §147.
+
+To paste:
+
+- **After db/171.** It needs db/168's `pupil_claim_office()` and re-emits no
+  function of db/169, db/170 or db/171. It patches `audit_log()` in place, and
+  only over db/148's body (the last to touch it) or its own: anything else
+  fails the paste loudly, changing nothing. It matters more once db/169 is in,
+  because db/169 opens a pupil's own sign-in by the date on his record.
+- **Read its NOTICE.** The paste counts the rows whose date already disagrees
+  with their ID number, and names the count, never a boy. Nothing fails because
+  of them: such a row stands until its date or its number is next written, and
+  then the write must agree. Give the count to the office, which puts each date
+  right on Edit Profile to the date its ID number carries. A boy whose ID number
+  is the wrong one is a question for Kameel: no route corrects an ID number yet.
+- **Then, on the managed host, check the API roles reach nothing new:**
+  ```sql
+  SELECT * FROM api_role_reach('anon');
+  SELECT * FROM api_role_reach('authenticated');
+  SELECT * FROM api_role_reach('service_role');
+  ```
+  Each answers no rows (db/157). This is the one check the local verify cannot
+  make.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  172, and the API refuses to start on a database without it.
+- **No roster imports between the paste and the API's deploy.** The API before
+  it does not word db/172's refusals, so an import in that window fails on a
+  raw name (it fails closed: nothing is written).
+- It can be pasted again: CREATE OR REPLACE, `IF NOT EXISTS`, and a `DROP
+  TRIGGER IF EXISTS` before each trigger. It takes a short lock on `player` for
+  its two triggers (ten-second `lock_timeout`, reset by its last statement); a
+  paste that timed out on its lock is simply run again.
+- §147's `(definer)` case logs in as the application for a moment, which only a
+  superuser login can do. On the managed host it is skipped and says so; it runs
+  locally and on CI.
+
+Not pasted yet. Hash to check: `sha256 273369f0c7f68464f33493b461f24a5ec4562d406dc09a0c36111102a136f68a`.
+<!-- ── end db/172 ── -->
 
 ### 5 · Cloud Run, the first time
 

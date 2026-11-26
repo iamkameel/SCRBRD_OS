@@ -202,6 +202,38 @@ export const reachOneMate = (n) => REACH_ONE_MATE.replaceAll("$2::uuid", `$${n}:
 const OFFICIALS_ON = (matchCol) =>
   `(feature_enabled('officials', match_school(${matchCol}), null::uuid) and my_feature_enabled('officials'))`;
 
+/**
+ * WHO HOLDS THE SCORING, AS A NAME (match_duties' scoring row; the pad's
+ * other-phone screen and Today's line, redesign slice 13). A scorer can be a
+ * pupil, and fixture.read on a shared fixture reaches the other school and
+ * spectators, so the name is decided here and not by the screen:
+ *
+ *   - the holder reading his own row: his own name;
+ *   - a reader who may not read the holder's account at the holder's school
+ *     (user.read there: the other school, a spectator, anybody else): no
+ *     name, and the screen says "Someone else". Asked explicitly, not left to
+ *     app_user's row security, so a wider app_user read later widens nothing
+ *     here;
+ *   - a pupil, for a reader at his school: initial and surname
+ *     (docs/policy/PUBLIC_DATA.md rule 4; the audit log's own rule for a
+ *     pupil, db/79), never his full name. A pupil is an account that is a
+ *     player, or one the reader can see holds a player or selfaccess role;
+ *   - an adult, for a reader at his school: his name, as before (an adult
+ *     doing a public job is outside the public rule).
+ *
+ * Over `s` (scoring_session) and `u` (app_user, left-joined on the holder).
+ */
+const SCORER_NAME = `case when u.id is null then null
+                        when u.id = app_user_id() then u.name
+                        when not app_can('user.read', u.school_id, null::text, u.id,
+                                         '00000000-0000-0000-0000-000000000000'::uuid) then null
+                        when u.player_id is not null or u.role in ('player', 'selfaccess')
+                          or exists (select 1 from role_assignment ra
+                                      where ra.person_id = u.id and ra.role in ('player', 'selfaccess'))
+                          then case when position(' ' in btrim(u.name)) = 0 then upper(left(btrim(u.name), 1))
+                                    else broadcast_name(btrim(u.name), 'initials') end
+                        else u.name end`;
+
 // The dismissals that are not the bowler's, as a SQL list, from the one set
 // the reducer reads — so a query cannot restate the law differently.
 const NOT_THE_BOWLERS = [...NON_DELIVERY].map((d) => `'${d}'`).join(", ");
@@ -419,6 +451,29 @@ export const READ_QUERIES = {
                   (injury_left_on(player_id, school_id) is not null) as left_school
              from injury_masked
             order by date_injured desc`,
+  },
+  /**
+   * HIS OPEN INJURIES AS THE HOME SAYS THEM: "Injured · back Fri 4 Dec"
+   * (redesign slices 8 and 9; Kameel's question 6 (a), 19 Nov: never the
+   * injury's name on Home). Whose, and the return date, for each injury still
+   * open, and nothing else: no name, severity, phase, note or physio comes
+   * back, whatever the reader's tier, so the clinical words never reach the
+   * Home or the availability answer. The full `injuries` read stays behind
+   * his Health history.
+   *
+   * Open is judged as the Injuries screen judges it (lib/injury.js
+   * isOpenInjury): not cleared where the reader reads the phase, still
+   * restricted where he reads the status tier alone. Both come from
+   * injury_masked under the caller's own row security, so the read widens
+   * nothing and no row comes back that `injuries` would not give him.
+   */
+  injury_status: {
+    masked: true,
+    text: `select player_id, school_id, rtw_date,
+                  (injury_left_on(player_id, school_id) is not null) as left_school
+             from injury_masked
+            where coalesce(phase <> 'cleared', restricted, false)
+            order by player_id, rtw_date`,
   },
   /**
    * ONE INJURY'S REVIEWS, as a dated history (GA-I19 D3, db/111). Each row
@@ -1644,7 +1699,7 @@ export const READ_QUERIES = {
             where o.match_id = $1 and not o.withdrawn
               and ${OFFICIALS_ON("o.match_id")}
             union all
-           select 'scoring', coalesce(u.name, ''),
+           select 'scoring', coalesce(${SCORER_NAME}, ''),
                   s.state::text,
                   case when s.lease_until is not null then 'lease held' else '' end,
                   s.updated_at, null::text,
@@ -4208,7 +4263,8 @@ function composeRatings(rows) {
 }
 
 // "recognition" (db/142): the honours audit, joined into audit_log().
-const AUDIT_KINDS = new Set(["access", "scoring", "amendment", "scorebook", "support", "role", "duty", "recognition"]);
+// "dob" (db/172): every change to a boy's date of birth.
+const AUDIT_KINDS = new Set(["access", "scoring", "amendment", "scorebook", "support", "role", "duty", "recognition", "dob"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**

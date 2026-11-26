@@ -685,6 +685,30 @@ export function roleGrants(role, capability) {
 /** Roles that may score, derived rather than listed — canScore's successor. */
 export const SCORING_ROLES = Object.freeze(ROLES.filter((r) => roleGrants(r, "scoring.edit")));
 
+/**
+ * Who confirms a result the log has decided (redesign slice 4; DESIGN_DIRECTION
+ * Q2, Kameel, 20 Nov 2026, option (a): "the coach confirms the result"). The
+ * act is db/130's finish, under scoring.finalise at the home side; a role that
+ * holds scoring.finalise only to close an innings — the scorer — does not
+ * confirm: his part ends at the last ball. db/171's match_finalise() refuses
+ * the same roles (coach_confirms), through app_can_but_scorer(), and
+ * separation.test.mjs holds that file to this list.
+ */
+export const RESULT_CONFIRM_EXCLUDED_ROLES = Object.freeze(["scorer"]);
+
+/**
+ * Does this role name confirm a decided result? Scope is NOT considered here
+ * (couldConfirmResult() in apps/web asks it per assignment, at the home side).
+ * @param {string} role
+ * @returns {boolean}
+ */
+export function roleConfirmsResult(role) {
+  return roleGrants(role, "scoring.finalise") && !RESULT_CONFIRM_EXCLUDED_ROLES.includes(role);
+}
+
+/** The roles that confirm a decided result, derived. */
+export const RESULT_CONFIRMING_ROLES = Object.freeze(ROLES.filter(roleConfirmsResult));
+
 /** Every capability named by some role but not defined. Guards typos. */
 export function unknownCapabilities() {
   const bad = [];

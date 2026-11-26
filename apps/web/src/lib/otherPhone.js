@@ -16,6 +16,9 @@
  *     the token is, worked out by the server against the caller's own token:
  *     this_device, you, another, lapsed) and `who`, the holder's name as the
  *     server returns it. The office's roster and Today already make this read.
+ *     The server decides the name (read-api.mjs SCORER_NAME): none for a
+ *     reader outside the holder's school, a pupil in initials, an adult in
+ *     full. No name is "Someone else" here; this file never shortens one.
  *   - the pad's own sync status (lib/sync.js PadSync status()): whether it is
  *     attached, why not, and what is waiting on this phone.
  *

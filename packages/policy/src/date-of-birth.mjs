@@ -134,4 +134,32 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
     "The ID number carries a different date of birth to the one typed. One of them belongs to somebody else.",
   id_number_check_digit_failed:
     "Saved, but that ID number fails its own check digit — worth reading back against the document.",
+  // db/172's own refusals, which the database makes whoever writes: a date
+  // that disagrees with the ID number already on his record, and a recorded
+  // date changed by anyone but the school office.
+  born_correction_is_the_office:
+    "Only the school office may change a date of birth already on his record.",
+  id_number_change_is_the_office:
+    "Only the school office may change an ID number already on his record.",
+  born_in_future: "A date of birth cannot be in the future.",
+  // A correction carries its reason (Kameel, 25 Nov 2026).
+  reason_required: "Say why you are correcting it, for example \"birth certificate seen\".",
+  reason_too_long: "Keep the reason to 200 characters.",
+  born_correction_needs_a_reason: "A date of birth on record is corrected on his Edit Profile, with the reason.",
+  // Said instead of a disagreement with the ID number on file to a person who
+  // may not read ID numbers (review N1): it tells him neither that one is on
+  // file nor what date it carries.
+  born_needs_the_office: "The school office must record this date of birth.",
 });
+
+/**
+ * The refusals db/172 makes in the database itself (its trigger on player,
+ * and player_born_correct()), by the names it raises them under. A route
+ * that writes born reads a Postgres error's message against this list.
+ */
+export const BORN_REFUSED_BY_DB = Object.freeze([
+  "id_number_disagrees_with_date_of_birth",
+  "born_correction_is_the_office",
+  "id_number_change_is_the_office",
+  "born_correction_needs_a_reason",
+]);

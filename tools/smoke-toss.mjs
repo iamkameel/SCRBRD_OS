@@ -236,6 +236,10 @@ try {
   // through db/168's SECURITY DEFINER functions (pupil_claim_send(),
   // my_pupil_state(), the office's pupil_claims() and its decisions, the
   // purge), which decide who sees a row.
+  // player_born_change (db/172) is every change to a boy's date of birth:
+  // RLS on, nothing granted to scrbrd_app, written only by the trigger
+  // player_born_record() and read only through player_born_changes(), the
+  // office's (N1). No policy, by design.
   // No policy, by design, like pending_claim and school_register.
   // pupil_signin_consent (db/169, SCRBRD-140 Migration B) is every yes and
   // no for a pupil's own sign-in, append-only: RLS on, nothing granted to
@@ -247,7 +251,7 @@ try {
                                           "auth_identity", "pending_claim", "auth_epoch", "auth_session",
                                           "school_register", "request_cooldown", "passport_union_read",
                                           "milestone_family_notice", "recognition_audit", "ball_log_pin",
-                                          "pupil_claim", "pupil_signin_consent"]);
+                                          "pupil_claim", "pupil_signin_consent", "player_born_change"]);
   const policyless = (await q(
     `select c.relname, count(p.polname)::int as policies
        from pg_class c

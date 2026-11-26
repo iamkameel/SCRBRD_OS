@@ -1163,6 +1163,17 @@ function asInjury(r) {
 }
 
 /**
+ * One open injury as a Home says it (the `injury_status` read): whose, the
+ * return date, and whether he has left the injury's school. The server sends
+ * nothing else, so there is nothing clinical here to drop.
+ */
+function asInjuryStatus(r) {
+  return { player: r.player_id, school: r.school_id ?? null, open: true,
+           rtw: r.rtw_date ? String(r.rtw_date).slice(0, 10) : null,
+           leftSchool: r.left_school === true ? true : null, live: true };
+}
+
+/**
  * One review of an injury: a dated look, and the state it left him in
  * (db/111, injury_review_masked). `phase`, `nextReviewOn` are the nature tier
  * and `note`, `by` the clinical tier, null where the reader may not read
@@ -1497,6 +1508,7 @@ const ADAPT = {
   sponsor_categories: asSponsorCategory,
   sponsorships: asSponsorship,
   injuries: asInjury,
+  injury_status: asInjuryStatus,
   injury_reviews: asInjuryReview,
   injury_worklist: asWorkItem,
   my_children: asChild,

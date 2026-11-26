@@ -79,6 +79,29 @@ group("A. PII/clinical resources read the MASKED views (not base tables)");
   ok("injuries query uses injury_masked", /from injury_masked/.test(READ_QUERIES.injuries.text));
   ok("players flagged masked:true", READ_QUERIES.players.masked === true && READ_QUERIES.injuries.masked === true);
   ok("matches is NOT masked (no PII)", !READ_QUERIES.matches.masked);
+  // The Home's line and the answer card's suggestion (Kameel's question 6 (a)):
+  // whose, the return date, whether he left; no clinical column is selected.
+  const home = READ_QUERIES.injury_status.text;
+  const selected = home.slice(home.indexOf("select") + 6, home.indexOf("from injury_masked"));
+  ok("injury_status reads injury_masked under the caller's own row security", /from injury_masked/.test(home) && READ_QUERIES.injury_status.masked === true);
+  ok("...and selects only whose, the return date and whether he left",
+     selected.replace(/\s+/g, " ").trim() === "player_id, school_id, rtw_date, (injury_left_on(player_id, school_id) is not null) as left_school");
+  ok("...never a watched column of `injuries`", RESTRICTED_FIELDS.injuries.every((c) => !new RegExp(`\\b${c}\\b`).test(selected)));
+  ok("...so nothing it returns is logged as a clinical read", !Object.hasOwn(RESTRICTED_FIELDS, "injury_status"));
+}
+
+group("A. match_duties names the scorer only at his school, a pupil in initials (the other-phone screen)");
+{
+  const t = READ_QUERIES.match_duties.text;
+  const arm = t.slice(t.indexOf("select 'scoring'"), t.indexOf("from scoring_session"));
+  ok("the scoring row's name is decided in the read, never a bare u.name", !/coalesce\(u\.name/.test(arm) && /when u\.id = app_user_id\(\) then u\.name/.test(arm));
+  ok("...none for a reader who may not read the holder's account at his school",
+     /when not app_can\('user\.read', u\.school_id, null::text, u\.id,[^)]*\) then null/.test(arm.replace(/\s+/g, " ")));
+  ok("...a pupil (a player account, or a player or selfaccess role) in initials",
+     /u\.player_id is not null or u\.role in \('player', 'selfaccess'\)/.test(arm) && /broadcast_name\(btrim\(u\.name\), 'initials'\)/.test(arm));
+  ok("...and the checks come in that order: himself, his school, a pupil, then an adult in full",
+     arm.indexOf("app_user_id()") < arm.indexOf("'user.read'") && arm.indexOf("'user.read'") < arm.indexOf("u.player_id")
+     && arm.indexOf("u.player_id") < arm.lastIndexOf("else u.name end"));
 }
 
 group("A. The handler does no RBAC of its own");

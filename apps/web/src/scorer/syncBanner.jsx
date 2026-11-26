@@ -225,6 +225,9 @@ export function bannerFor(st, match, asideCount = 0, extra = {}) {
     case "moved_on":
       return { reason, tone: "stop", lead: "Another device has scored this match since this one last held it.", action: "scorehere",
         text: `This pad shows the server's log${saved ? `; ${saved}` : ""}.` };
+    // db/171: the scorer's end screen put the pen down; FinishGate says so.
+    case "released":
+      return null;
     case "handed_over":
       return { reason, tone: "note", lead: "You handed this match over.", text: saved ? `Nothing recorded here is sent; ${saved}.` : "Nothing recorded here is sent." };
     case "token_moved":

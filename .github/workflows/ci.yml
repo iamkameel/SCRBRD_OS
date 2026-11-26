@@ -23,7 +23,9 @@
 #
 # Beside them, "RLS verifier" runs db/99 once against a database built from
 # nothing. Both "API walks" and "Browser walks" wait for it and fail when it
-# fails, as they did when each walk job ran the verifier itself.
+# fails, as they did when each walk job ran the verifier itself. On a pull
+# request it runs only when the PR touches what it proves ("What changed",
+# below); on main it always runs.
 #
 # They run in parallel; none gates another. A broken browser install must not
 # hide a failing authorisation test.
@@ -147,9 +149,13 @@ jobs:
           POSTGRES_PASSWORD: scrbrd
           POSTGRES_DB: scrbrd
         ports: ["5432:5432"]
+        # --shm-size: Docker's default /dev/shm is 64 MB, and Postgres puts a
+        # parallel query's shared memory there; with the larger work_mem below
+        # a parallel hash could outgrow it.
         options: >-
           --health-cmd "pg_isready -U scrbrd -d scrbrd"
           --health-interval 2s --health-timeout 3s --health-retries 30
+          --shm-size 1g
     steps:
       - uses: actions/checkout@v4
       # No version here on purpose: package.json's packageManager field names
@@ -179,6 +185,32 @@ jobs:
           exit 1
 
 
+      # The service container is thrown away when the job ends, so its
+      # database needs no durability (Kameel, 25 Nov 2026): no fsync, no
+      # waiting on the WAL at commit, no full-page images, and more memory
+      # than the image's defaults (128 MB shared_buffers, 4 MB work_mem) on a
+      # runner with 16 GB. A service container takes no command line, so the
+      # settings go in with ALTER SYSTEM and the container restarts to read
+      # them (shared_buffers needs the restart; the rest would reload). This
+      # changes only this job's container: docker-compose.yml, a developer's
+      # database and production are untouched.
+      - name: Tune the throwaway database
+        env:
+          PG: ${{ job.services.postgres.id }}
+        run: |
+          for s in "fsync = off" "synchronous_commit = off" "full_page_writes = off" \
+                   "shared_buffers = '2GB'" "work_mem = '64MB'" "maintenance_work_mem = '512MB'" \
+                   "max_wal_size = '8GB'" "checkpoint_timeout = '30min'"; do
+            docker exec "$PG" psql -U scrbrd -d scrbrd -v ON_ERROR_STOP=1 -qc "ALTER SYSTEM SET $s"
+          done
+          docker restart "$PG" >/dev/null
+          for i in $(seq 1 60); do
+            docker exec "$PG" pg_isready -q -U scrbrd -d scrbrd && break
+            [ "$i" = 60 ] && { echo "::error::Postgres did not come back after the restart"; docker logs "$PG" | tail -20; exit 1; }
+            sleep 1
+          done
+          docker exec "$PG" psql -U scrbrd -d scrbrd -Atc "SELECT string_agg(name || '=' || setting || coalesce(unit, ''), ' ' ORDER BY name) FROM pg_settings WHERE name IN ('fsync','synchronous_commit','full_page_writes','shared_buffers','work_mem','maintenance_work_mem','max_wal_size','checkpoint_timeout')"
+
       # Each walk against a freshly seeded database. The runner resets between
       # them and refuses to start if a smoke walk exists on disk that nothing
       # executes — which is how smoke-squad went unrun for a week. The browser
@@ -186,12 +218,80 @@ jobs:
       - name: Walks (shard ${{ matrix.shard }}/4)
         run: node tools/run-smoke-api.mjs --shard ${{ matrix.shard }}/4 --no-rls-verify
 
+  # Whether this run needs the RLS verifier (Kameel, 25 Nov 2026).
+  #
+  # WHAT IS SKIPPED, AND WHY. On a pull request, "RLS verifier" (db/99, two
+  # to three and a half hours) is skipped when the PR's diff against its base
+  # touches none of:
+  #
+  #   db/**                    the schema, the seed and db/99 itself
+  #   packages/policy/**       what the RLS generator reads
+  #   services/api/**          the generator, and the migration names the
+  #                            migrator imports
+  #   tools/migrate.mjs, tools/db-url.mjs, tools/reset-objects.mjs
+  #                            the migrator and the two tools it imports
+  #   package.json, pnpm-lock.yaml, pnpm-workspace.yaml
+  #                            what gets installed, and how @scrbrd/policy
+  #                            resolves for the generator
+  #   .github/workflows/**     how any of it is run
+  #
+  # Nothing else reaches the database the verifier builds or the SQL it runs,
+  # so a PR touching only the client, the docs or a walk cannot change what it
+  # proves, and making it wait hours for a verdict on code it did not change
+  # held up every merge. On a push to main it always runs in full, so every
+  # merged commit is still verified. Anything this job cannot decide (no merge
+  # commit, a failed diff) runs it.
+  #
+  # The diff: a pull_request run checks out the PR merged into its base, so
+  # the merge commit's first parent is the base and the diff between them is
+  # exactly what the PR changes. fetch-depth 2 brings both parents.
+  # --no-renames lists a file moved out of db/ under its old name too.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      verifier: ${{ steps.decide.outputs.verifier }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Does this run need the RLS verifier?
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          need() { echo "verifier=true" >> "$GITHUB_OUTPUT"; echo "RLS verifier runs: $1"; exit 0; }
+          [ "$EVENT" = "pull_request" ] || need "a $EVENT run always runs it"
+          BASE="${BASE:-HEAD^1}"; TIP="${TIP:-HEAD}"
+          [ "$TIP" != HEAD ] || git rev-parse -q --verify HEAD^2 >/dev/null || need "HEAD is not a merge commit, so the PR's diff is unknown"
+          files=$(git diff --no-renames --name-only "$BASE" "$TIP") || need "git diff failed"
+          echo "$(printf '%s\n' "$files" | grep -c .) files changed against the base."
+          while IFS= read -r f; do
+            case "$f" in
+              db/*|packages/policy/*|services/api/*|.github/workflows/*|\
+              tools/migrate.mjs|tools/db-url.mjs|tools/reset-objects.mjs|\
+              package.json|pnpm-lock.yaml|pnpm-workspace.yaml)
+                need "the PR changes $f" ;;
+            esac
+          done <<< "$files"
+          echo "verifier=false" >> "$GITHUB_OUTPUT"
+          echo "RLS verifier skipped: the PR changes nothing it proves."
+
   # The live policy assertions, db/99, against a database built by the migrator
   # from nothing — the same file the Supabase verify bundle is cut from. Its own
   # job so it runs beside the walks instead of after them; it is the longest
   # single thing CI does (about 90 min on a runner, 29 Oct 2026).
+  #
+  # It took two to three and a half hours a run by Nov 2026 and held up every
+  # merge. So on a pull request it runs only when the PR can change what it
+  # proves (Kameel, 25 Nov 2026), which "What changed" below decides; on every
+  # push to main it runs in full, whatever changed. Skipped, it is reported
+  # as skipped, and "API walks" and "Browser walks" read that skip as a pass
+  # only when "What changed" succeeded and said the verifier was not needed.
   verifier:
     name: RLS verifier
+    needs: [changes]
+    if: ${{ needs.changes.outputs.verifier == 'true' }}
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -201,9 +301,13 @@ jobs:
           POSTGRES_PASSWORD: scrbrd
           POSTGRES_DB: scrbrd
         ports: ["5432:5432"]
+        # --shm-size: Docker's default /dev/shm is 64 MB, and Postgres puts a
+        # parallel query's shared memory there; with the larger work_mem below
+        # a parallel hash could outgrow it.
         options: >-
           --health-cmd "pg_isready -U scrbrd -d scrbrd"
           --health-interval 2s --health-timeout 3s --health-retries 30
+          --shm-size 1g
     steps:
       - uses: actions/checkout@v4
       # No version here on purpose: package.json's packageManager field names
@@ -226,6 +330,32 @@ jobs:
           done
           exit 1
 
+      # The service container is thrown away when the job ends, so its
+      # database needs no durability (Kameel, 25 Nov 2026): no fsync, no
+      # waiting on the WAL at commit, no full-page images, and more memory
+      # than the image's defaults (128 MB shared_buffers, 4 MB work_mem) on a
+      # runner with 16 GB. A service container takes no command line, so the
+      # settings go in with ALTER SYSTEM and the container restarts to read
+      # them (shared_buffers needs the restart; the rest would reload). This
+      # changes only this job's container: docker-compose.yml, a developer's
+      # database and production are untouched.
+      - name: Tune the throwaway database
+        env:
+          PG: ${{ job.services.postgres.id }}
+        run: |
+          for s in "fsync = off" "synchronous_commit = off" "full_page_writes = off" \
+                   "shared_buffers = '2GB'" "work_mem = '64MB'" "maintenance_work_mem = '512MB'" \
+                   "max_wal_size = '8GB'" "checkpoint_timeout = '30min'"; do
+            docker exec "$PG" psql -U scrbrd -d scrbrd -v ON_ERROR_STOP=1 -qc "ALTER SYSTEM SET $s"
+          done
+          docker restart "$PG" >/dev/null
+          for i in $(seq 1 60); do
+            docker exec "$PG" pg_isready -q -U scrbrd -d scrbrd && break
+            [ "$i" = 60 ] && { echo "::error::Postgres did not come back after the restart"; docker logs "$PG" | tail -20; exit 1; }
+            sleep 1
+          done
+          docker exec "$PG" psql -U scrbrd -d scrbrd -Atc "SELECT string_agg(name || '=' || setting || coalesce(unit, ''), ' ' ORDER BY name) FROM pg_settings WHERE name IN ('fsync','synchronous_commit','full_page_writes','shared_buffers','work_mem','maintenance_work_mem','max_wal_size','checkpoint_timeout')"
+
       - name: Verifier
         run: node tools/migrate.mjs --reset --seed && node tools/migrate.mjs --verify
 
@@ -246,10 +376,14 @@ jobs:
   # was the single job that ran the walks, the verifier and the RLS output
   # check; it fails now exactly when that job would have. `if: always()` so it
   # reports when a shard failed or was cancelled instead of showing as
-  # skipped. Anything but success from any of them fails it.
+  # skipped. Anything but success from any of them fails it, with one
+  # exception (Kameel, 25 Nov 2026): a verifier SKIPPED because "What changed"
+  # succeeded and said this PR touches nothing it proves passes. A verifier
+  # skipped for any other reason (that job failed or was cancelled), or one
+  # that ran and failed or was cancelled, still fails it.
   walks:
     name: API walks
-    needs: [api-shard, verifier]
+    needs: [changes, api-shard, verifier]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -257,13 +391,19 @@ jobs:
         env:
           SHARDS: ${{ needs.api-shard.result }}
           VERIFIER: ${{ needs.verifier.result }}
+          CHANGES: ${{ needs.changes.result }}
+          WANTED: ${{ needs.changes.outputs.verifier }}
         run: |
           if [ "$SHARDS" != "success" ]; then
             echo "::error::API walks: the shards finished as '$SHARDS', not 'success'"
             exit 1
           fi
+          if [ "$VERIFIER" = "skipped" ] && [ "$CHANGES" = "success" ] && [ "$WANTED" = "false" ]; then
+            echo "All four API shards passed. The RLS verifier was skipped: this PR changes nothing it proves."
+            exit 0
+          fi
           if [ "$VERIFIER" != "success" ]; then
-            echo "::error::API walks: the RLS verifier finished as '$VERIFIER', not 'success'"
+            echo "::error::API walks: the RLS verifier finished as '$VERIFIER', not 'success' (What changed: '$CHANGES', verifier wanted: '$WANTED')"
             exit 1
           fi
           echo "All four API shards and the RLS verifier passed."
@@ -409,6 +549,11 @@ jobs:
           exit 1
 
 
+      # No database tuning here (25 Nov). These shards were never the slow part,
+      # and a tuned run lost its runner mid-walk with Chromium on the same
+      # machine; the extra memory is the likely cause. The verifier and the API
+      # shards keep the tuning.
+
       # The repo depends on playwright-core, which drives a browser but does not
       # download one. The full package is pulled in here only to fetch Chromium
       # and its system libraries; tools/chromium.mjs then finds it through
@@ -460,10 +605,11 @@ jobs:
   # showing as skipped, which a required check reads as passing or as missing
   # depending on the setting. Anything but success from the shards fails it.
   # It also waits for the RLS verifier, which each shard used to run first and
-  # fail on, so a broken policy still turns this check red.
+  # fail on, so a broken policy still turns this check red. A verifier skipped
+  # because the PR changes nothing it proves passes, as in "API walks" above.
   browser:
     name: Browser walks
-    needs: [browser-shard, verifier]
+    needs: [changes, browser-shard, verifier]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -471,10 +617,16 @@ jobs:
         env:
           SHARDS: ${{ needs.browser-shard.result }}
           VERIFIER: ${{ needs.verifier.result }}
+          CHANGES: ${{ needs.changes.result }}
+          WANTED: ${{ needs.changes.outputs.verifier }}
         run: |
           if [ "$SHARDS" != "success" ]; then
             echo "::error::Browser walks: the shards finished as '$SHARDS', not 'success'"
             exit 1
+          fi
+          if [ "$VERIFIER" = "skipped" ] && [ "$CHANGES" = "success" ] && [ "$WANTED" = "false" ]; then
+            echo "All four browser shards passed. The RLS verifier was skipped: this PR changes nothing it proves."
+            exit 0
           fi
           if [ "$VERIFIER" != "success" ]; then
             echo "::error::Browser walks: the RLS verifier finished as '$VERIFIER', not 'success'"
