@@ -503,6 +503,7 @@ try {
      && await injLink.getAttribute("data-to") === "family");
   await injLink.click({ timeout: 4000 }).catch(() => {});
   await afterReads(parent.page, 2000);
+  await parent.page.locator('[data-testid="health"], [data-testid="health-none"]').first().waitFor({ timeout: 8000 }).catch(() => {});
   ok("...which opens Family with his Health open", await parent.page.locator('[data-testid="os-main"]').getAttribute("data-page") === "family"
      && await ptid("health").count() === 1);
   ok("back on Notices", await nav(parent.page, /^Notices$/));
