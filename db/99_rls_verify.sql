@@ -20470,7 +20470,7 @@ BEGIN
     -- revoked defaults (where the roles are there: on the host, and in the
     -- full run once §135 has staged the host).
     FOREACH v IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
-      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles r WHERE r.rolname = v)
+      PERFORM _assert(NOT EXISTS (SELECT 1 FROM pg_roles x WHERE x.rolname = v)
                       OR NOT has_table_privilege(v, 'player_born_refusal', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'),
                       format('§151 (grants): the record of refused tries is open to %s', v));
     END LOOP;
