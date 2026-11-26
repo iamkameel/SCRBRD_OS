@@ -97,7 +97,7 @@ export const TRAILS = Object.freeze({
   S9:  { read: "weather",            reads: ["weather"],              window: "the fixture's day",                  denominator: "the read's own words",                unit: null,    screen: null },
   S10: { read: "playing-conditions", reads: ["playing-conditions"],   window: "this fixture",                       denominator: "the conditions document",             unit: null,    screen: { route: "competitions", label: "Open the conditions" } },
   S11: { read: "workload",           reads: ["workload"],             window: "the 7 days to today",                denominator: "overs begun, every match",            unit: "overs", screen: TRAINING },
-  S12: { read: "notifications",      reads: ["notifications"],        window: "as published",                       denominator: null,                                  unit: null,    screen: { route: "notifications", label: "Open Alerts" } },
+  S12: { read: "notifications",      reads: ["notifications"],        window: "as published",                       denominator: null,                                  unit: null,    screen: { route: "notifications", label: "Open Notices" } },
   S13: { read: "coaching_points",    reads: ["coaching_points"],      window: "as written",                         denominator: null,                                  unit: null,    screen: { route: "skills", label: "Open his development panel" } },
 });
 

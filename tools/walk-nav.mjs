@@ -93,7 +93,7 @@ const OLD_WORDS = [
   ["Competitions", "competitions"], ["Leagues", "leagues"], ["Officials", "officials"], ["Squad", "squad"],
   ["Profiles", "profiles"], ["Selection", "selection"], ["Injuries", "injuries"], ["Analytics", "analytics"],
   ["Skills", "skills"], ["Training", "training"], ["Fields", "fields"], ["To resolve", "readiness"],
-  ["Alerts", "notifications"], ["Notifications", "notifications"], ["Safeguarding", "safeguarding"],
+  ["Alerts", "notifications"], ["Notifications", "notifications"], ["Notices", "notifications"], ["Safeguarding", "safeguarding"],
   ["Settings", "settings"], ["Rulebook", "rulebook"],
   // Slice 6: the office's entries are the School home's sections, the platform's the Platform home's.
   ["Staff", "staff"], ["Management", "management"], ["Modules", "modules"], ["Sponsors", "sponsors"],

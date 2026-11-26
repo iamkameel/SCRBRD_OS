@@ -270,3 +270,38 @@ export function takeDoor(childId) {
   _door = null;
   return p;
 }
+
+/**
+ * A door from a notice into one fixture on the family's or the pupil's
+ * Matches (redesign slice 17, "See the fixture"): which match to open, and,
+ * for a parent, which of her children the notice is about, so his Matches is
+ * the one shown. In memory for the one hop, never on the device (a child
+ * behind the terms is never remembered), and good for a few seconds only: a
+ * door the next screen did not take is not taken on some later visit.
+ */
+let _fixtureDoor = /** @type {{ match: string, child: string | null, at: number } | null} */ (null);
+const FIXTURE_DOOR_MS = 15000;
+/** @param {string} matchId  @param {string | null} [childId] */
+export function fixtureDoorTo(matchId, childId = null) { _fixtureDoor = { match: matchId, child: childId, at: Date.now() }; }
+/** The door, if one is waiting: the family's Matches chooses its child by it. */
+export function peekFixtureDoor() {
+  return _fixtureDoor && Date.now() - _fixtureDoor.at <= FIXTURE_DOOR_MS ? _fixtureDoor : null;
+}
+/**
+ * Take the door, once, against this child's fixtures as his own read returned
+ * them: the fixture to open and how (one still to come opens its detail, one
+ * live or played its match), or null. A fixture that is not among his is not
+ * opened, and the door is spent all the same.
+ * @param {any[]} matches  @param {any} child  @param {number} now
+ * @returns {{ kind: "fixture" | "match", match: any } | null}
+ */
+export function takeFixtureDoor(matches, child, now) {
+  const door = peekFixtureDoor();
+  _fixtureDoor = null;
+  if (!door || !child || (door.child && door.child !== child.id)) return null;
+  const f = fixturesOf(matches, child, now);
+  const ahead = [...f.upcoming, ...f.postponed].find((m) => m.id === door.match);
+  if (ahead) return { kind: "fixture", match: ahead };
+  const went = [...f.live, ...f.played].find((m) => m.id === door.match);
+  return went ? { kind: "match", match: went } : null;
+}

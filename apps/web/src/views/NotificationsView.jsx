@@ -9,9 +9,24 @@ import { liftable } from "../lib/staffRegister.js";
 import { LiftPause } from "./liftPause.jsx";
 import { holdsAsHeld } from "../lib/held.js";
 import { requestFix } from "../lib/fixNote.js";
+import { personaOf, useNav } from "../lib/features.js";
+import { ownRecordId } from "../lib/family.js";
+import { byDay, followSubject, schoolNames, schoolOf, subjectLink, timeWords } from "../lib/noticeList.js";
+import { DayHeading, ReportButton, SchoolLine, SubjectLink, UnreadDot, UnreadWord } from "./noticeParts.jsx";
 
 /**
- * Notices (docs/design/NOTIFICATIONS.md D17).
+ * Notices (docs/design/NOTIFICATIONS.md D17): the staff's, and the pupil's (DESIGN_DIRECTION §2.1: the bell is his
+ * way in, Player 5). The parent's is views/family/family.jsx FamilyNotices; both draw the list the same way
+ * (redesign slice 17, Flow C, lib/noticeList.js):
+ *
+ *   - in day groups, "Today", "Yesterday", "Mon 23 Nov", by Johannesburg's day, each notice with its time;
+ *   - an unread notice carries a dot, and its title's button says "Unread" to a screen reader;
+ *   - opened, a notice links to its subject where this reader's app has the screen for it ("See the fixture");
+ *     the link only navigates, and the screen it opens asks its own read. None on a withdrawn notice;
+ *   - a notice names its school only when this person's notices come from more than one.
+ *
+ * A pupil reads here exactly what my_notifications returns to him, and nothing more: nothing on this screen
+ * widens or narrows the list. His links are his own app's (his Matches, his Me), never a staff screen.
  *
  * The list and the count come from the one store every badge reads
  * (lib/notifications.js): the rows the server agreed to send this person, and
@@ -49,7 +64,12 @@ function NotificationsView({ role, onNav = null }) {
   // Retry bumps the read's own nonce: the same reads, the same role, nothing wider.
   const [nonce, setNonce] = useState(0);
   const { list, rows, unread, opened, open, markAll } = useNotifications(role, nonce, { fresh: true });
-  // "0 unread alerts" over a read that failed, or one that is still coming, is
+  // Who is reading, for the subject's link: the menu he holds (useNav), and, for a pupil, his own record.
+  const nav = useNav(role);
+  const persona = personaOf(role);
+  const reader = { persona, nav, self: persona === "pupil" ? ownRecordId() : null };
+  const schoolFor = schoolOf(rows, schoolNames());
+  // "0 unread" over a read that failed, or one that is still coming, is
   // a figure nobody counted. The count is said only of an answer (GA-I08).
   const said = readState(list, { what: "the notices" });
   const counted = (said.state === "ok" || said.state === "empty") && unread != null;
@@ -80,9 +100,10 @@ function NotificationsView({ role, onNav = null }) {
 
   const ic = (/** @type {string} */ t) => t==="fixture"?"stumps":t==="injury"?"bandage":t==="lift"?"bus":t==="recognition"?"medal":t==="availability"?"calendar":"megaphone";
   const uc = (/** @type {string} */ u) => u==="high"?D.rose:u==="medium"?D.amber:D.textMuted;
+  const days = byDay(rows);
   return (
     <div className="os-page">
-      <SectionHeader title="Notifications" sub={counted ? `${unread} unread alerts` : "Unread alerts not counted"} color={D.rose}
+      <SectionHeader title="Notices" sub={counted ? (unread > 0 ? `${unread} unread` : "Nothing unread") : "Unread notices not counted"} color={D.rose}
         actions={counted && unread>0 && (
           <button type="button" className="pressBtn" onClick={() => { void markAll(); }} data-testid="notifications-mark-all"
             style={{minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",color:D.textSecondary,cursor:"pointer",fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em"}}>
@@ -90,33 +111,42 @@ function NotificationsView({ role, onNav = null }) {
           </button>
         )}/>
       {said.state!=="ok"&&<Card><ReadState read={said} onRetry={()=>setNonce(n=>n+1)} icon="bell" testId="notifications-read-state"/></Card>}
-      <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
-        {rows.map((n) => {
+      {/* Day groups (Flow C): Today, Yesterday, then the weekday and the date, by Johannesburg's day. */}
+      {days.map((g) => (
+      <section key={g.day ?? "undated"} data-testid="notice-day" data-day={g.day ?? undefined} style={{display:"flex",flexDirection:"column",gap:"8px",marginBottom:"8px"}}>
+        <DayHeading words={g.words}/>
+        {g.rows.map((n) => {
           const isOpen = openId === n.id;
           const got = result[n.id] ?? opened[n.id];
           // The body: in the list for a news.read notice; on open for a tiered one.
           const body = n.body ?? (got && !got.gone && !got.withdrawn && !got.failed ? got.body : null);
           const sentence = got && (got.gone || got.withdrawn || got.failed) ? got.sentence : null;
+          // The subject's link, once the notice is open and its open answered with the notice itself (never a
+          // withdrawn stub, nor "no longer available"); a read notice with nothing more to fetch is open at once.
+          const settled = got ? !(got.gone || got.withdrawn || got.failed) : (n.read && !n.tiered);
+          const link = isOpen && settled && busy !== n.id ? subjectLink(n, reader) : null;
+          const school = schoolFor(n);
           return (
             <Card key={n.id} data-testid="notice-row" data-unread={n.read ? undefined : "true"} data-tiered={n.tiered ? "true" : undefined}
               sx={{padding:0,background:n.read?"transparent":D.indigo+"08",border:`1px solid ${n.read?D.border:D.indigo+"22"}`}}>
-              <div style={{display:"flex",gap:"12px",alignItems:"flex-start",padding:"6px 16px 14px"}}>
+              <div style={{display:"flex",gap:"12px",alignItems:"flex-start",padding:"6px 16px 8px"}}>
                 <div aria-hidden="true" style={{width:"36px",height:"36px",marginTop:"8px",borderRadius:D.md,background:uc(n.urgency)+"18",border:`1px solid ${uc(n.urgency)}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",flexShrink:0,color:textOn(uc(n.urgency))}}>
                   <Icon name={ic(n.type)}/>
                 </div>
-                <div style={{flex:1,minWidth:0}}>
+                <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"stretch"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px"}}>
                     {/* The title is the control: opening the notice reads it and marks it read. */}
                     <button type="button" onClick={() => { void toggle(n); }} aria-expanded={isOpen} data-testid="notice-open"
                       style={{flex:1,minWidth:0,minHeight:"44px",padding:0,margin:0,background:"none",border:"none",textAlign:"left",cursor:"pointer",
                         fontFamily:D.body,fontSize:"13px",fontWeight:n.read?400:700,color:D.textPrimary}}>
-                      {n.title}{!n.read && <span className="sr-only"> (unread)</span>}
+                      {n.title}{!n.read && <UnreadWord/>}
                     </button>
-                    <div style={{display:"flex",alignItems:"center",gap:"6px",flexShrink:0}}>
-                      <span style={{fontFamily:D.mono,fontSize:"12px",color:D.textMuted}}>{n.time ? String(n.time).slice(0, 10) : ""}</span>
-                      {!n.read&&<div aria-hidden="true" style={{width:"7px",height:"7px",borderRadius:"50%",background:uc(n.urgency)}}/>}
+                    <div style={{display:"flex",alignItems:"center",gap:"8px",flexShrink:0}}>
+                      <span data-testid="notice-time" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,fontVariantNumeric:"tabular-nums"}}>{timeWords(n.time)}</span>
+                      {!n.read && <UnreadDot/>}
                     </div>
                   </div>
+                  <SchoolLine name={school}/>
                   {body && (isOpen || !n.tiered) && <p data-testid="notice-body" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5,margin:0}}>{body}</p>}
                   {!body && n.tiered && !isOpen && <p style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,lineHeight:1.5,margin:0}}>Open to read.</p>}
                   {isOpen && busy === n.id && <p role="status" style={{fontFamily:D.body,fontSize:"12px",color:D.textMuted,margin:0}}>Opening…</p>}
@@ -124,7 +154,7 @@ function NotificationsView({ role, onNav = null }) {
                   {dso && n.type === "safeguarding" && (
                     <button type="button" className="pressBtn" data-testid="notice-open-inbox"
                       onClick={() => { if (!n.read) void open(n.id); requestFix({ page: "safeguarding", find: ['[data-testid="sg-inbox"]'] }); onNav("safeguarding"); }}
-                      style={{marginTop:"6px",minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
+                      style={{alignSelf:"flex-start",marginTop:"6px",minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
                         color:D.textPrimary,cursor:"pointer",fontFamily:D.head,fontSize:"12px",fontWeight:700}}>
                       Open the inbox <span aria-hidden="true">›</span>
                     </button>
@@ -137,31 +167,29 @@ function NotificationsView({ role, onNav = null }) {
                         requestFix({ page: "matches", find: ['[data-testid="mc-finish"]'], fallback: ['[data-testid="mc-confirm-result-panel"]', '[data-testid="mc-official"]'] });
                         onNav("matches");
                       }}
-                      style={{marginTop:"6px",minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
+                      style={{alignSelf:"flex-start",marginTop:"6px",minHeight:"44px",padding:"0 16px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
                         color:D.textPrimary,cursor:"pointer",fontFamily:D.head,fontSize:"12px",fontWeight:700}}>
                       Confirm the result <span aria-hidden="true">›</span>
                     </button>
                   )}
                   {isOpen && sentence && <p data-testid="notice-sentence" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,margin:0}}>{sentence}</p>}
+                  {onNav && link && <SubjectLink link={link} onFollow={() => followSubject(link, onNav)}/>}
                   <div style={{display:"flex",gap:"5px",marginTop:"6px",alignItems:"center",flexWrap:"wrap"}}>
                     <Badge color={uc(n.urgency)}>{n.urgency}</Badge>
                     <Badge color={D.textMuted}>{n.type}</Badge>
-                    {reportable(n) && !reported[n.id]?.done && (
-                      <button type="button" className="pressBtn" data-testid="notice-report" disabled={reporting === n.id}
-                        onClick={() => { void sendReport(n.id); }} aria-label={`Report this notice: ${n.title}`}
-                        style={{marginLeft:"auto",minHeight:"44px",minWidth:"44px",padding:"0 14px",borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",
-                          color:D.textSecondary,cursor:"pointer",fontFamily:D.head,fontSize:"12px",fontWeight:700,letterSpacing:"0.04em"}}>
-                        {reporting === n.id ? "Reporting…" : "Report"}
-                      </button>
-                    )}
                   </div>
-                  {reported[n.id] && <p role="status" data-testid="notice-reported" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5,margin:"6px 0 0"}}>{reported[n.id].words}</p>}
+                  {/* Report (D11): a quiet text button at the notice's foot, one tap. */}
+                  {reportable(n) && !reported[n.id]?.done && (
+                    <ReportButton title={n.title} busy={reporting === n.id} onReport={() => { void sendReport(n.id); }}/>
+                  )}
+                  {reported[n.id] && <p role="status" data-testid="notice-reported" style={{fontFamily:D.body,fontSize:"12px",color:D.textSecondary,lineHeight:1.5,margin:"6px 0"}}>{reported[n.id].words}</p>}
                 </div>
               </div>
             </Card>
           );
         })}
-      </div>
+      </section>
+      ))}
     </div>
   );
 }

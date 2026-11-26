@@ -51,7 +51,7 @@ import { FollowedSchools } from "../follow/Followed.jsx";
 //                  who is ready.
 //   3. Who is out  injuries, from the availability tier only.
 //   4. This week   training and fixtures, as a list.
-//   5. Alerts      last, unread only.
+//   5. Notices     last, unread only.
 //
 // EVERY READ HERE IS ONE THE APP ALREADY HAD. There is no new capability and
 // no new API route: a section a role's capabilities do not reach is not
@@ -471,10 +471,10 @@ function DaySheet({ role, live = true, demoNote = "sample fixtures, no server co
         {/* 4b. Last match, and the side's season, in a line each (§3.10). */}
         {lastMatch}
 
-        {/* 5. Alerts — last, and only unread. Addressed to a person rather
+        {/* 5. Notices — last, and only unread (the bell's word for everyone, slice 17). Addressed to a person rather
             than read out of a scoped table, so every role that reaches this
             screen has the section; what is IN it is still scoped by news.read. */}
-        {(!fan || unread.length > 0 || said(reads?.alerts)) && <BentoCard level="c" title="Alerts" data-testid="day-alerts">
+        {(!fan || unread.length > 0 || said(reads?.alerts)) && <BentoCard level="c" title="Notices" data-testid="day-alerts">
           {unread.length === 0 ? draw(reads?.alerts, (
             <EmptyState message="Nothing unread." icon="bell"/>
           )) : (

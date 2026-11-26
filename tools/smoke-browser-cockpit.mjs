@@ -656,7 +656,7 @@ try {
   await linkTo("S11", pageIs("training"), "opens Training, where the week's load is");
   await linkTo("S1", async () => (await pageIs("logistics")()) && /Transport/i.test(await inner(c.page, "os-main")), "opens Logistics on Transport");
   await linkTo("S8", async () => (await c.page.$eval('[data-testid="match-details"]', (e) => e.getAttribute("data-match")).catch(() => "")) === DAY, "opens this fixture's duties");
-  await linkTo("S12", pageIs("notifications"), "opens Alerts");
+  await linkTo("S12", pageIs("notifications"), "opens Notices");
   await linkTo("S4a", pageIs("squad"), "opens Squad, where the day's lifts are");
   await linkTo("S10", pageIs("competitions"), "opens Competitions, where the conditions are");
   await backTo(c.page, "coach@example.invalid", DAY);

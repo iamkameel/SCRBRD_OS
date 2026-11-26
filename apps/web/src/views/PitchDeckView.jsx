@@ -602,7 +602,7 @@ function SchoolSlide({ role }) {
             {!isOff(features, "training") && <Stat i={2} n={summary?.sessionsThisWeek ?? "—"} cap="Sessions this week"/>}
             {!isOff(features, "injuries") && <Stat i={3} n={summary?.injuriesActive ?? "—"} cap="Injuries open" tone={summary?.injuriesActive ? T.semantic.warning : undefined}/>}
             <Stat i={4} n={pct(summary?.winRatePct)} cap="Win rate" sub={summary?.scopeMatches ? `${summary.scopeMatches} matches in scope` : undefined}/>
-            <Stat i={5} n={unread ?? "—"} cap="Unread alerts"/>
+            <Stat i={5} n={unread ?? "—"} cap="Unread notices"/>
           </>
         )}
       </div>

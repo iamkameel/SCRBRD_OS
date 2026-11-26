@@ -10,13 +10,13 @@
  * §5 G7: his line on a played row is folded from that match's own log, one
  * read per match, kept for the page's life (useFold.js).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { T } from "../../design/tokens.js";
 import { useLive } from "../../lib/live.js";
 import { ReadState } from "../../ui/primitives.jsx";
 import { readState } from "../../lib/readState.js";
 import { resultText } from "../../lib/matchCentre.js";
-import { fixturesOf, lineFor, opponentOf, endOf } from "../../lib/family.js";
+import { fixturesOf, lineFor, opponentOf, endOf, takeFixtureDoor } from "../../lib/family.js";
 import { MatchView } from "../matchcentre/MatchView.jsx";
 import { Icon } from "../../ui/icons.jsx";
 import { MatchCard } from "../../ui/matchCard.jsx";
@@ -115,6 +115,13 @@ export function ChildMatches({ child, role, self = false, head = null }) {
   const { rows: matches, loading, error } = matchesRead;
   const matchesSaid = readState(matchesRead, { what: "the fixture list" });
   const [open, setOpen] = useState(null);
+  // A notice's "See the fixture" (redesign slice 17, lib/noticeList.js): once his own fixtures read has answered,
+  // the fixture it named opens as his row would, if it is among his. Nothing is opened that his list does not hold.
+  useEffect(() => {
+    if (loading) return;
+    const door = takeFixtureDoor(matches, child, now());
+    if (door) setOpen(door);
+  }, [loading, matches, child]);
   if (open?.kind === "fixture") return <FixtureDetail match={open.match} child={child} role={role} self={self} onBack={() => setOpen(null)}/>;
   if (open?.kind === "match") return <MatchFor match={open.match} child={child} role={role} self={self} matches={matches} onBack={() => setOpen(null)}/>;
   const { live, upcoming, postponed, played } = fixturesOf(matches, child, now());
