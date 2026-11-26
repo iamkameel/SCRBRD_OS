@@ -24,6 +24,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { IMPORTS } from "../../../services/api/io/import-api.mjs";
 import { isCapability } from "@scrbrd/policy/capabilities";
 import { roleGrants } from "@scrbrd/policy/roles";
+import { comingOfAgeLine, comingOfAgeWritten } from "../src/lib/comingOfAge.js";
 import { IMPORT_KINDS, MAX_FILE_BYTES, adultTick, checkSummary, errorWords, importSummary, kindsHeld, mayImport, refusalWords } from "../src/lib/importScreen.js";
 import { NOT_STAFF, rolesPresent, staffFrom } from "../src/lib/staff.js";
 import { ROLES } from "../src/design/roles.js";
@@ -97,11 +98,20 @@ group("The words");
   ok("a prototype name is not a code", /did not answer/.test(refusalWords({ code: "constructor" })));
   ok("the size cap sits under the server's 256 KB body limit", MAX_FILE_BYTES < 256 * 1024);
   // db/173: the office's tick for the lines that make a boy 18, and the lines left out for anyone else.
-  const t = adultTick({ needsTick: true, adults: { count: 2, lines: [{ line: 3, fullName: "A Botha" }, { line: 9, fullName: "B Cele" }] } });
-  ok("the office is asked to tick the count it was shown", t?.count === 2 && /checked these 2 dates of birth against the school's register/.test(t.words), t);
-  ok("...naming each line", t?.lines.join("|") === "Line 3: A Botha is 18 by this date.|Line 9: B Cele is 18 by this date.");
-  ok("...one is singular", /checked this date of birth/.test(adultTick({ needsTick: true, adults: { count: 1, lines: [] } })?.words ?? ""));
-  ok("no tick when the Check asks for none", adultTick({ needsTick: false, adults: { count: 2, lines: [] } }) === null && adultTick({}) === null);
+  const t = adultTick({ needsTick: true, adults: { count: 2, hash: "h1", tickable: true,
+    lines: [{ line: 3, fullName: "A Botha", now: true, ofAgeOn: "2026-01-01" }, { line: 9, fullName: "B Cele", now: false, ofAgeOn: "2026-12-20" }] } });
+  ok("the office is asked to tick the lines it was shown, by their hash", t?.count === 2 && t.hash === "h1" && t.required === true
+     && /checked these 2 dates of birth against the school's register/.test(t.words), t);
+  ok("...naming each line, 18 now or within 60 days", t?.lines.join("|") === "Line 3: A Botha is 18 by this date.|Line 9: B Cele turns 18 on 2026-12-20 by this date.");
+  ok("...one is singular", /checked this date of birth/.test(adultTick({ needsTick: true, adults: { count: 1, hash: "h", tickable: true, lines: [] } })?.words ?? ""));
+  ok("lines within 60 days alone: offered, not required", adultTick({ needsTick: false, adults: { count: 1, hash: "h", tickable: true, lines: [] } })?.required === false);
+  ok("no tick when the Check offers none, or gives no hash", adultTick({ needsTick: false, adults: { count: 2, lines: [] } }) === null && adultTick({}) === null
+     && adultTick({ needsTick: true, adults: { count: 1, tickable: true, lines: [] } }) === null);
+  // db/173: a row of "Coming of age", in words.
+  ok("Coming of age: a boy 18 soon", comingOfAgeLine({ fullName: "R Pillay", teamCode: "U16A", born: "2008-12-20", ofAgeOn: "2026-12-20" }, "2026-11-26")
+     === "R Pillay (U16A): 18 on 20 December 2026, born 20 December 2008");
+  ok("...and one already 18", /: 18 since 1 March 2026, born 1 March 2008$/.test(comingOfAgeLine({ fullName: "S Naidoo", teamCode: null, born: "2008-03-01", ofAgeOn: "2026-03-01" }, "2026-11-26")));
+  ok("...and how his date was written", comingOfAgeWritten({ how: "import" }) === "Written by a roster import." && comingOfAgeWritten({ how: null }) === "Written before dates were recorded.");
   ok("an Import says how many lines were left out, for the office",
      importSummary({ rows: 3, inserted: 2, leftOut: [{}] }) === "Imported 3 rows: 2 added. 1 line left out, for the school office.");
 }

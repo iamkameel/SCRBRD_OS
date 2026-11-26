@@ -100,7 +100,11 @@ group("injuredLine: his open injury in one line, no diagnosis, and nobody else's
   }), types.map((t) => L([inj({ type: t })])));
   ok("...nor the severity, the notes, the physio or the day he was hurt", !/moderate|notes|Physio|20 Nov/i.test(L([inj({})])));
   ok("what a Home keeps of a row: whose, open, the return date; never the injury's name or anything clinical",
-     homeInjuryRows([inj({})]).every((r) => Object.keys(r).sort().join() === "leftSchool,phase,player,restricted,rtw" && !("type" in r) && !("notes" in r) && !("severity" in r)));
+     homeInjuryRows([inj({})]).every((r) => Object.keys(r).sort().join() === "leftSchool,open,player,rtw" && !("type" in r) && !("notes" in r) && !("severity" in r)));
+  // The server's narrow read (`injury_status`, lib/live.js asInjuryStatus): only open rows, nothing clinical in them.
+  const narrow = (o) => ({ player: ME.id, school: "s1", open: true, rtw: "2026-12-04", leftSchool: null, live: true, ...o });
+  ok("from the narrow read: 'Injured · back Fri 4 Dec', and 'Injured' with no return date", L([narrow({})]) === "Injured · back Fri 4 Dec" && L([narrow({ rtw: null })]) === "Injured");
+  ok("...a team-mate's narrow row, or one whose school he has left: nothing", L([narrow({ player: "p-mate" })]) === null && L([narrow({ leftSchool: true })]) === null);
   ok("cleared, or a status-only row not restricted: nothing", L([inj({ phase: "cleared" })]) === null && L([inj({ phase: null, restricted: false })]) === null);
   ok("a status-only row still restricted: open", L([inj({ phase: null, type: null })]) === "Injured · back Fri 4 Dec");
   ok("a team-mate's row (a coach-parent's read of the side): never his line", L([inj({ player: "p-mate" })]) === null);
@@ -109,6 +113,10 @@ group("injuredLine: his open injury in one line, no diagnosis, and nobody else's
   const cards = readFileSync(new URL("../src/views/family/cards.jsx", import.meta.url), "utf8");
   const fn = cards.slice(cards.indexOf("export function InjuryLine"));
   ok("the Home's card draws the line alone: it reads no injury field itself", /injuredLine\(rows, child, humanDate\)/.test(fn) && !/\.(type|severity|notes|physio)\b/.test(fn));
+  ok("...from the narrow `injury_status` read, never the clinical `injuries` read", /useLive\("injury_status", role\)/.test(fn.slice(0, 600)) && !/useLive\("injuries"/.test(fn.slice(0, 600)));
+  const parts = readFileSync(new URL("../src/views/family/parts.jsx", import.meta.url), "utf8");
+  const block = parts.slice(parts.indexOf("export function AvailabilityBlock"), parts.indexOf("export function AvailabilityBlock") + 800);
+  ok("the answer card's suggestion reads the same narrow read, never `injuries`", /useLive\("injury_status", role\)/.test(block) && !/useLive\("injuries"/.test(block));
 }
 
 group("injuredAnswer: a fixture before his return suggests Not available; a suggestion, never a write (question 6 (a), slice 9)");

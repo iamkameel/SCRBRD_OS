@@ -75,7 +75,7 @@ function ImportLive({ role }) {
   const shown = checked && checked.kind === now.kind && checked.schoolId === now.schoolId && checked.text === now.text ? checked.report : null;
   const tick = shown ? adultTick(shown) : null;
   const tickedNow = tick != null && ticked === checked;
-  const offered = mayImport(checked, now) && (tick == null || tickedNow);
+  const offered = mayImport(checked, now) && (tick == null || !tick.required || tickedNow);
   const wipe = () => { setResult(null); setRefusal(null); };
 
   const pick = async (ev) => {
@@ -94,7 +94,7 @@ function ImportLive({ role }) {
     try {
       const report = await api(`/api/import/${encodeURIComponent(kind.id)}`, { method: "POST", timeoutMs: 60000,
         body: { csv: file.text, schoolId: school, ...(commit ? { commit: true } : {}),
-                ...(commit && tickedNow && tick ? { adultsChecked: tick.count } : {}) } });
+                ...(commit && tickedNow && tick ? { adultsChecked: tick.hash } : {}) } });
       if (commit && report?.committed === true) { setResult(importSummary(report)); setChecked(null); }
       else setChecked({ kind: kind.id, schoolId: school, text: file.text, report });
     } catch (e) {

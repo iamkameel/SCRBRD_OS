@@ -152,6 +152,12 @@ export const BIRTH_DATE_MESSAGE = Object.freeze({
   born_needs_the_office: "The school office must record this date of birth.",
   // db/173 (Kameel, 25 Nov 2026): an ID number, first or not, is the office's.
   id_number_needs_the_office: "The school office must record this ID number.",
+  // Kameel, 26 Nov 2026 (the re-dating design's Q8): an office person who is
+  // the boy's own guardian.
+  born_own_child: "Another person at the school office records this date of birth: he is your own child.",
+  own_child: "Another person at the school office does this: he is your own child.",
+  // "Coming of age" (db/173).
+  confirm_not_permitted: "Only the school office confirms a date of birth.",
 });
 
 /**
@@ -168,6 +174,7 @@ export const BORN_REFUSED_BY_DB = Object.freeze([
   // from anyone but the school office.
   "born_needs_the_office",
   "id_number_needs_the_office",
+  "born_own_child",
 ]);
 
 /**

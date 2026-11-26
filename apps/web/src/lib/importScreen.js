@@ -94,18 +94,24 @@ export function importSummary(report) {
 
 /**
  * db/173: the office's one tick for the lines whose first date makes a boy 18
- * ("I have checked these {n} dates against the register"), or null when the
- * Check asks for none. The count is what Import sends back as `adultsChecked`.
+ * today or within 60 days ("I have checked these {n} dates against the
+ * register"), or null when the Check asks for none. Import sends back the
+ * hash the Check gave for those very lines as `adultsChecked`.
  * @param {any} report a dry-run report
- * @returns {{ count: number, words: string, lines: string[] } | null}
+ * @returns {{ count: number, hash: string, required: boolean, words: string, lines: string[] } | null}
  */
 export function adultTick(report) {
   const n = report?.adults?.count ?? 0;
-  if (!report?.needsTick || !n) return null;
+  if (!report?.adults?.tickable || !n || !report.adults.hash) return null;
   return {
     count: n,
+    hash: String(report.adults.hash),
+    // Required while a line makes him 18 today; otherwise without it those dates stay unconfirmed.
+    required: report.needsTick === true,
     words: `I have checked ${n === 1 ? "this date" : `these ${n} dates`} of birth against the school's register`,
-    lines: (report.adults.lines ?? []).map((/** @type {any} */ l) => `Line ${l.line}: ${l.fullName} is 18 by this date.`),
+    lines: (report.adults.lines ?? []).map((/** @type {any} */ l) => l.now
+      ? `Line ${l.line}: ${l.fullName} is 18 by this date.`
+      : `Line ${l.line}: ${l.fullName} turns 18 on ${l.ofAgeOn} by this date.`),
   };
 }
 

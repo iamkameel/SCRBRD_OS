@@ -48,6 +48,8 @@ const RESOURCE = {
   // Reading an injury is reading AVAILABILITY. The diagnosis is masked below,
   // behind medical.details.read.
   injuries:     { table: "injury",      r: "medical.status.read",  c: "medical.write",         u: "medical.write",         d: "medical.write" },
+  // The Home's line: whose, open and the return date only, so nothing to mask.
+  injury_status: { table: null,         r: "medical.status.read",  c: null,                    u: null,                    d: null },
   matches:      { table: "match",       r: "fixture.read",         c: "fixture.create",        u: "fixture.update",        d: "fixture.cancel" },
   competitions: { table: "competition", r: "competition.read",     c: "competition.manage",    u: "competition.manage",    d: "competition.manage" },
   scoring:      { table: null,          r: "fixture.read",         c: "scoring.edit",          u: "scoring.edit",          d: "scoring.finalise" },
@@ -259,6 +261,9 @@ const SOURCE = {
   coaches: () => COACHES,
   staff: () => STAFF,
   injuries: () => INJURIES,
+  // As the server's `injury_status` read: open injuries, cut to whose and when back.
+  injury_status: () => INJURIES.filter((i) => i.phase !== "cleared")
+    .map((i) => ({ player: i.player, open: true, rtw: i.rtw ?? null, leftSchool: null })),
   matches: () => MATCHES,
   competitions: () => COMPETITIONS,
   grounds: () => GROUNDS,
@@ -280,7 +285,8 @@ function anchorsOf(resource, row) {
     case "coaches":
     case "staff":
       return { school: row.school ?? DEMO_SCHOOL, team: row.team ?? null, person: row.id ?? null };
-    case "injuries": {
+    case "injuries":
+    case "injury_status": {
       // An injury row carries no school or team of its own — it links to a
       // player. Resolve the anchors through that player, exactly as the SQL
       // policy does (`SELECT p.team_code FROM player p WHERE p.id =

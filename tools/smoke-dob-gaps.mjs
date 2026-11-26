@@ -276,6 +276,24 @@ try {
                         && r.subjectKind === "pupil")
        && !JSON.stringify(asHead).includes(WHY), JSON.stringify(asHead).slice(0, 400));
   ok("...and a coach reads none of it", (await auditOf(coach)).length === 0);
+  // db/173: "Coming of age", the office's: the seed's S Naidoo, 18 on a date
+  // nobody at the office wrote. Nobody else reads or confirms it.
+  const NAIDOO = "aaaaaaaa-0000-0000-0000-000000000003";
+  const coa = async (token) => api(`/api/schools/${HIL}/coming-of-age`, { token });
+  const listed = await coa(registrar);
+  ok("the office reads Coming of age, the seed's adult on it",
+     listed.status === 200 && (listed.body?.rows ?? []).some((r) => r.playerId === NAIDOO && r.how === "owner"), JSON.stringify(listed.body).slice(0, 300));
+  for (const [who, token] of [["the director of sport", director], ["the principal", principal], ["a coach", coach], ["another school's office", wesOffice]]) {
+    ok(`${who} may not read it`, (await coa(token)).status === 403);
+    const c = await api(`/api/players/${NAIDOO}/date-of-birth/confirm`, { method: "POST", token, body: {} });
+    ok(`...nor confirm his date`, c.status === 403 && c.body?.error === "not_permitted", JSON.stringify(c.body));
+  }
+  const conf = await api(`/api/players/${NAIDOO}/date-of-birth/confirm`, { method: "POST", token: registrar, body: {} });
+  ok("the office confirms his date", conf.status === 200 && conf.body?.confirmed === true && conf.body?.unchanged === false, JSON.stringify(conf.body));
+  ok("...and he is off the list", !((await coa(registrar)).body?.rows ?? []).some((r) => r.playerId === NAIDOO));
+  const twice = await api(`/api/players/${NAIDOO}/date-of-birth/confirm`, { method: "POST", token: registrar, body: {} });
+  ok("...a second confirm is answered unchanged", twice.status === 200 && twice.body?.unchanged === true, JSON.stringify(twice.body));
+
   // B Khumalo now carries 1104075800085: only its own date may stand.
   const offId = await correct(P_U13, registrar, { born: "2011-04-08", reason: WHY });
   ok("a correction that disagrees with his ID number is refused",

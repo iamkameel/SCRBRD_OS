@@ -322,6 +322,9 @@ try {
        own.length > 0 ? /^Injured( · back \w{3} \d{1,2} \w{3})?\b/.test(line) : await tid(s.page, "home-injury").count() === 0, [own.length, line]);
     ok("...and no diagnosis on Home: not the injury's name, anywhere on it",
        own.every((r) => !r.injury_type || !new RegExp(String(r.injury_type).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(homeNow)) && !/hamstring|strain|Grade 2/i.test(homeNow), homeNow.match(/hamstring|strain|Grade 2/i)?.[0]);
+    const reads = asked.filter((u) => u.includes("/api/read/")).map((u) => u.replace(/^.*\/api\/read\//, ""));
+    ok("...read from `injury_status`, and his Home never asks for the clinical `injuries` read",
+       reads.includes("injury_status") && !reads.includes("injuries"), reads.join());
   }
   const fh = await floors(s.page);
   ok(`Home at phone width: nothing read under 12px (${fh.small.length})`, fh.small.length === 0, fh.small.slice(0, 4).join(" · "));
