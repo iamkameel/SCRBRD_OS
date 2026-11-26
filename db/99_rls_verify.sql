@@ -20437,6 +20437,18 @@ BEGIN
     -- but his school's office are all that day. The office's own is recorded
     -- and not counted; yesterday's do not count today; nobody else counts or
     -- records one; a boy whose date is on record has no try to refuse.
+    --
+    -- The day pinned for the case (CI on #412, 26-27 Nov 2026). A try is
+    -- stamped by the wall clock (db/176's default, clock_timestamp()) and
+    -- counted against sa_today(), which reads now(): the start of THIS
+    -- transaction. A request's two clocks agree to the millisecond; this
+    -- file's do not once a run crosses midnight in Johannesburg before here
+    -- (BEGIN at 21:16, §151 at 01:40): every try was the next day's and none
+    -- counted. So for the case sa_today() reads the wall clock's day as the
+    -- case begins (db/128's pinned clock, _v128_clock()), the day the tries
+    -- are stamped, and it is put back at the case's end. Nothing it asserts
+    -- changes: the same count, of the same rows, against the day they fall on.
+    PERFORM _v128_clock(clock_timestamp());
     B := _v176_nodate('v176tries');
     PERFORM _as(REG);
     n := player_born_refused(B);
@@ -20467,6 +20479,7 @@ BEGIN
     n := player_born_refused(B2);
     PERFORM _assert(n IS NULL AND _v176_refusals(B2) = '',
                     format('§151 (tries): a try at a date on record was recorded (%s left): %s', n, _v176_refusals(B2)));
+    PERFORM _v128_clock(NULL);
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The list is scrbrd_app's alone; the gate, the yes's door and
