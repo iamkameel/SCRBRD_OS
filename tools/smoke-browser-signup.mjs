@@ -304,9 +304,12 @@ try {
     await tid(P, "join-send").click();
     await P.waitForSelector('[data-testid="join-sent"]', { timeout: 6000 }).catch(() => {});
     const sentOn = sentence(await tid(P, "join-sent").innerText());
-    ok("the request is sent, and the answer says nothing is linked automatically", /nothing is linked automatically/.test(sentOn), sentOn);
-    ok("...the request carries the child as the note, and no player", h.posts.length === 1 && h.posts[0].role === "guardian" && h.posts[0].schoolId === HIL
-       && h.posts[0].note === "Child: James Whitfield · Relationship: Mother" && !("playerId" in h.posts[0]), h.posts);
+    // db/174: where a school's family list links at once, a match says "You're linked";
+    // every other answer is this one sentence, which promises only what is true.
+    ok("the request is sent, and the answer says nothing about a child is shown until the school has checked",
+       /Nothing about any child is shown to you until the school has checked who you are/.test(sentOn), sentOn);
+    ok("...the request carries the child as the note, and no player and no date (none was typed)", h.posts.length === 1 && h.posts[0].role === "guardian" && h.posts[0].schoolId === HIL
+       && h.posts[0].note === "Child: James Whitfield · Relationship: Mother" && !("playerId" in h.posts[0]) && !("born" in h.posts[0]), h.posts);
     // The same form for a child who is on no list at all, at the other school.
     await tid(P, "join-another").click();
     await tid(P, `join-school-${WES}`).click();

@@ -560,8 +560,9 @@ try {
     // The director: the adult line is listed and left out, in one sentence; the rest goes in.
     const file = `full_name,team_code,born\nAdult Lineboy,1XI,${adult}\nMinor Lineboy,U15A,${minor}\n`;
     const dry = await importCsv("players", director, { csv: file, schoolId: HIL });
-    ok("the director's dry run counts the line that makes a boy 18",
-       dry.body?.adults?.count === 1 && dry.body?.adults?.lines?.[0]?.line === 2 && dry.body?.adults?.lines?.[0]?.fullName === "Adult Lineboy",
+    // The tick is the office's (Kameel, 26 Nov 2026, Q1): the director is offered none.
+    ok("the director's dry run offers him no tick for the line that makes a boy 18",
+       dry.body?.adults?.count === 0 && dry.body?.adults?.tickable === false && dry.body?.needsTick === false,
        JSON.stringify(dry.body?.adults));
     ok("...and leaves it out, in one sentence, not as an error",
        dry.body?.leftOut?.length === 1 && dry.body.leftOut[0].line === 2 && dry.body.leftOut[0].column === "born"
