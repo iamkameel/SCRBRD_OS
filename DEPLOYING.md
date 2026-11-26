@@ -2765,7 +2765,8 @@ To paste, in this order:
   and `player_born_change` (ten-second `lock_timeout`, reset by its last
   statement); a paste that timed out on its lock is simply run again.
 
-Not pasted yet. Hash to check: `sha256 97fa4a5e56a738e7a0cf100746bb7dd6e0280ff8e5ba5a2546e77e0d6ac74ed7`.
+Pasted on the demo and production, 26 Nov 2026, from aaafcf9f. Hash-checked:
+`sha256 97fa4a5e56a738e7a0cf100746bb7dd6e0280ff8e5ba5a2546e77e0d6ac74ed7`.
 <!-- ── end db/173 ── -->
 <!-- ── db/174: the family list ── -->
 #### The family list: a parent the school listed is linked on her verified address and his date of birth (db/174)
@@ -2827,7 +2828,8 @@ To paste:
   reset by its last statement); a paste that timed out on its lock is simply
   run again.
 
-Not pasted yet. Hash to check: `sha256 406f9dd8c77b978f8832f928cf3e01698bfa634beaa8354558afa865ec4642c7`.
+Pasted on the demo and production, 26 Nov 2026, from cc76dd33. Hash-checked:
+`sha256 406f9dd8c77b978f8832f928cf3e01698bfa634beaa8354558afa865ec4642c7`.
 <!-- ── end db/174 ── -->
 <!-- ── db/175: the parent's terms gate ── -->
 #### The parent's terms gate: her link reaches her child once she has agreed (db/175)
@@ -2900,7 +2902,8 @@ chases, then Kameel's word):
   its trigger and `my_terms_due()` (the API asks it), so the API keeps running.
   Safe twice; a later paste of db/175 puts the gate back on.
 
-Not pasted yet. Hash to check: `sha256 84de5b81cf952f2a11e18e446cab9c1688e6371cb813ffe6234c5ab81c699e5c`.
+Pasted on the demo and production, 26 Nov 2026, from 954e80a2. Hash-checked:
+`sha256 84de5b81cf952f2a11e18e446cab9c1688e6371cb813ffe6234c5ab81c699e5c`.
 <!-- ── end db/175 ── -->
 
 ### 5 · Cloud Run, the first time
