@@ -53523,6 +53523,15 @@ $m130$;
   --   the claims list without yes_waits           → (asked) red: the office reads recognised
   --   the count without the office's test         → (asked) red: a coach reads the count
   --   the audit log without the yes's request     → (asked) red: the grant is not said to come on her yes
+  -- And on Kameel's answers of 26 Nov 2026 (Q2, Q4, Q7), eight more:
+  --   the log's dates without the departure test  → (log) red: left Hilton without moving, the director reads his dates
+  --   the office arm without the own-child test   → (mother) red: her own yes, at the office, opened him
+  --   the recogniser arm without "not the caller" → (mother) red: her own yes, as his recogniser, opened him
+  --   the signed form without its own-child test  → (mother) red: her form for him recorded as the office's yes
+  --   the count without the school's day          → (tries) red: yesterday's counted today
+  --   the count with the office's own             → (tries) red: the office's refused try counted against him
+  --   the two doors without the manage test       → (tries) red: a coach counts and records a try
+  --   the record without "his date is missing"    → (tries) red: a try at a date on record recorded
   PERFORM _v176_case('gate');
   PERFORM _v176_case('door');
   PERFORM _v176_case('asked');
