@@ -55,6 +55,8 @@ Decisions (Kameel, 20 Nov 2026, on the board): (1) Migration B, a disable: "Drop
 
 26 Nov 2026 (overnight): eight merges recorded, from the git log. #378 (merge 02427bc8, db/171): slice 4's follow-ups, the end of a match on the server; the server refuses a scorer's finish, the coach is told, and the scorer frees the pad. #381 (merge 4ea5130d, db/172): a date of birth corrected by the office, every change recorded with a reason and checked against the ID number. #398 (merge 2bea6ced): the Home reads only an injury's status (whose, open, return date), and the other-phone screen names a pupil scorer by initial. #401 (merge a35067d2): the browser-homes walk dates its day in Johannesburg, as the Home does. #396 (merge 99c5e554): CI skips the RLS verifier on PRs that touch no schema, policy, API, migrator or workflow file, and db/99 times each section. #400 (merge d154522d): architecture diagrams, the system, the data model and how a read is decided (`docs/architecture/SCRBRD_OS_diagrams.md`; docs only). #393 (merge 12fd5328): the coach's follow-ups after slice 11, the organiser's conditions, one number to chase, and his own side's names. #403 (merge ed6ea841): db/171 and db/172 shipped, pasted on the demo and production on 25 Nov. Roster imports may run once #381's API has deployed; DEPLOYING says none should run between the db/172 paste and the API's deploy. The date-of-birth entry is closed by #381; a parent's link end dates following a correction stays a follow-up.
 
+26 Nov 2026 (later): five merges recorded, from the git log. #402 (merge 25a84b14, db/173): a first date of birth, the office's when it makes a boy 18; every first date and ID number recorded; "Coming of age". #399 (merge a16f5e9f, db/174): sign-up honesty, SCRBRD-140 Migration C, the family list. #404 (merge edbe8c0f, db/175): the parent's terms gate (slice 5b), a link reaches the child once she has agreed. #406 (merge a4e2b668): redesign slice 12, one header for everyone, and Settings for a pupil and a parent. #407 (merge 3dfe96f5): the pitch deck's words brought up to date (Kameel's eight, 26 Nov). db/173, db/174 and db/175 were pasted on the demo and production on 26 Nov 2026. Redesign slice 12 is done.
+
 ## Rules
 
 - Order by dependency, not merely severity.
@@ -4258,6 +4260,8 @@ Kameel: to Fable. ADR 0003 keeps captain an attribute, so this is the same scree
 **Partly done 2026-10-30:** a pupil's email, Google claim and sign-in code are the office's alone, and pupil enrolment too (db/122) (#215, commit 81de9e4).
 
 **Partly done 2026-11-20:** Migration A, a pupil's claim and the under-18 basic view (db/168) (#364, merge a5a2f173); pasted on the demo and production 20 Nov (#371, df071d36). ~~Migration B (db/169) stays open.~~ **Migration B done 2026-11-25** (#376, merge 2ca38815; pasted on the demo and production 25 Nov from 7a93c9a6, hash-checked; 0 accounts closed on either database). The date-of-birth follow-up (db/172) stays open.
+
+**Partly done 2026-11-26:** Migration C (db/174), the family list (#399, merge a16f5e9f); pasted on the demo and production 26 Nov.
 
 **Decided 2026-11-20 (Kameel):** Migration B (db/169), Fable's red-team: "All six as recommended" (07:45). A disable keeps the school's yes; his account ending, his roster link moving, or leaving the school (a move to another school included) still end it (13:37, account lifecycle D1). Date of birth: see the follow-up entry below, db/172 (13:38).
 
