@@ -759,7 +759,7 @@ function BoundariesSection({ role }) {
   if (bounds.length === 0) return null;     // the owner's key holds everything
   return (
     <Panel>
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="boundaries-list"
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls={open ? "boundaries-list" : undefined}
         className="pressBtn os-state" data-testid="boundaries-open"
         style={{ width: "100%", minHeight: px(T.floor.target), display: "flex", alignItems: "center", gap: T.space.md, padding: `${T.space.xs} 0`,
           background: "transparent", border: "none", cursor: "pointer", textAlign: "left", borderRadius: T.radius.md }}>
@@ -825,7 +825,8 @@ function WaysToSignInRow() {
           <div style={H()}>Ways to sign in</div>
           <div style={{ ...SUB(), marginTop: "3px" }}>The code from your school office always works. Google too, once you add it.</div>
         </div>
-        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="ways-to-sign-in-more"
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-controls={open ? "ways-to-sign-in-more" : undefined}
+          aria-label={`${open ? "Less" : "More"}: ways to sign in`}
           className="pressBtn os-state" data-testid="ways-to-sign-in-more-toggle"
           style={{ minHeight: px(T.floor.target), minWidth: px(T.floor.target), padding: `0 ${T.space.lg}`, borderRadius: T.radius.pill, cursor: "pointer",
             background: "transparent", border: `1px solid ${T.line.strong}`, color: T.content.primary, fontFamily: T.type.body, fontSize: "14px", fontWeight: 600 }}>

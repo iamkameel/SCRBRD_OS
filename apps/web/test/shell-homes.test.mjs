@@ -191,7 +191,7 @@ group("The shell, drawn signed out (the demo)");
   ok("...and shortens to initials, drawn beside it for the narrow rows", top.includes(">AC</span>") && initialsOf("A Coach") === "AC" && initialsOf("Sarah") === "S" && initialsOf("  ") === "");
   ok("...and no mark beside Raise a concern", !/nav-safeguarding[^]*?badge/.test(top.slice(top.indexOf("nav-safeguarding"), top.indexOf("header-account"))));
   ok("...no bare sign-out glyph, no role chip, and no Switch Role in a real session",
-     !has(top, "persona-signout") && !has(top, "topbar-signout") && !has(top, "topbar-role") && !/Switch Role/.test(top) && !has(top, "topbar-live"));
+     !has(top, "persona-signout") && !has(top, "topbar-signout") && !has(top, "topbar-role") && !/Switch role/i.test(top) && !has(top, "topbar-live"));
   ok("every control in it at least 44px", (top.match(/min-height:(\d+)px/g) ?? []).every((m) => parseInt(m.slice(11), 10) >= 44));
   ok("\"Raise a concern\" is set on one line: it never wraps", /class="os-concern-text"[^>]*white-space:nowrap/.test(top));
   const wide = header({ wide: true });

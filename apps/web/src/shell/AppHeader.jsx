@@ -104,7 +104,7 @@ function AppHeader({ role, persona = null, wide = false, demo = false, home, onN
           aria-label={unread > 0 ? `${bellWord}, ${unread} unread` : bellWord} aria-current={active === bellTo ? "page" : undefined}
           style={{ ...quiet(active === bellTo), position: "relative", fontSize: "18px" }}>
           <Icon name="bell"/>
-          {unread > 0 && <span data-testid="topbar-alerts-badge" aria-hidden="true" style={{ position: "absolute", top: "2px", right: 0, background: T.semantic.critical, color: T.surface.canvas, borderRadius: D.pill, padding: "0 4px", fontFamily: D.mono, fontSize: "12px", lineHeight: 1.25, fontWeight: 700, minWidth: "16px", textAlign: "center" }}>{unread}</span>}
+          {unread > 0 && <span data-testid="topbar-alerts-badge" aria-hidden="true" style={{ position: "absolute", top: "2px", right: 0, background: T.semantic.critical, color: T.surface.canvas, borderRadius: D.pill, padding: "0 4px", fontFamily: D.mono, fontSize: "12px", lineHeight: 1.25, fontWeight: 700, minWidth: "16px", textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{unread}</span>}
         </button>
 
         {/* 3. Raise a concern: everybody's, in words on one line beside its icon. It carries no mark: whether any
@@ -168,16 +168,16 @@ export function initialsOf(/** @type {string | null | undefined} */ name) {
 }
 
 /**
- * A menu that opens from a button: focus moves to its first item (or the checked one), the arrows and Home and End
+ * A menu that opens from a button: focus moves to its first item (or, for a list of choices, the chosen one), the arrows and Home and End
  * move within it, Escape closes it and gives focus back to the button, and a tap outside or a Tab away closes it.
  * @param {boolean} open @param {() => void} close
  * @param {import("react").RefObject<HTMLElement | null>} btn @param {import("react").RefObject<HTMLElement | null>} menu
  */
-function useMenuKeys(open, close, btn, menu) {
+function useMenuKeys(open, close, btn, menu, toChecked = false) {
   useEffect(() => {
     if (!open) return undefined;
     const items = () => /** @type {HTMLElement[]} */ ([...(menu.current?.querySelectorAll('[role^="menuitem"]') ?? [])]);
-    (/** @type {HTMLElement | null} */ (menu.current?.querySelector('[aria-checked="true"]')) ?? items()[0])?.focus();
+    ((toChecked ? /** @type {HTMLElement | null} */ (menu.current?.querySelector('[aria-checked="true"]')) : null) ?? items()[0])?.focus();
     const onKey = (/** @type {KeyboardEvent} */ e) => {
       if (e.key === "Escape") { e.stopPropagation(); close(); btn.current?.focus(); return; }
       if (e.key === "Tab") { close(); return; }
@@ -193,13 +193,13 @@ function useMenuKeys(open, close, btn, menu) {
     document.addEventListener("keydown", onKey, true);
     document.addEventListener("pointerdown", away);
     return () => { document.removeEventListener("keydown", onKey, true); document.removeEventListener("pointerdown", away); };
-  }, [open, close, btn, menu]);
+  }, [open, close, btn, menu, toChecked]);
 }
 
 const sheetStyle = () => ({
   position: "absolute", right: 0, top: "calc(100% + 6px)", background: T.surface.overlay, border: `1px solid ${T.line.normal}`,
   borderRadius: T.radius.lg, overflowY: "auto", minWidth: "220px", maxWidth: "calc(100vw - 16px)", maxHeight: "min(70vh,520px)",
-  zIndex: 200, boxShadow: T.elevation.lg, padding: `${T.space.xs} 0`,
+  zIndex: 200, boxShadow: T.elevation.lg, padding: `${T.space.xs} 0`, overscrollBehavior: "contain",
 });
 const itemStyle = (/** @type {boolean} */ on = false) => ({
   width: "100%", padding: "8px 14px", minHeight: "44px", display: "flex", alignItems: "center", gap: "10px",
@@ -223,7 +223,9 @@ function AccountMenu({ name, demo, role, active, onNav, onSignOut, onRoleChange 
   return (
     <div style={{ position: "relative", flexShrink: 1, minWidth: 0, display: "flex" }}>
       <button type="button" ref={btn} onClick={() => setOpen(!open)} className="pressBtn os-state os-hdr-account" data-testid="header-account"
-        data-short={short ? "true" : "false"} aria-haspopup="menu" aria-expanded={open} aria-label={`${name}: Settings, Sign out`}
+        data-short={short ? "true" : "false"} aria-haspopup="menu" aria-expanded={open}
+        // The name begins with what is shown (WCAG 2.5.3): the initials, where they stand for the name.
+        aria-label={`${short && initialsOf(name) ? `${initialsOf(name)}, ` : ""}${name}: Settings, Sign out`}
         style={{ display: "flex", alignItems: "center", gap: "4px", minHeight: "44px", minWidth: "44px", maxWidth: "100%", padding: "0 10px", flexShrink: 1,
           borderRadius: T.radius.pill, cursor: "pointer", color: T.content.primary,
           background: open || active === "settings" ? T.surface.interactive : "transparent", border: `1px solid ${open || active === "settings" ? T.line.strong : "transparent"}`,
@@ -234,18 +236,18 @@ function AccountMenu({ name, demo, role, active, onNav, onSignOut, onRoleChange 
       </button>
       {open && (
         <div ref={menu} role="menu" aria-label={name} data-testid="header-account-menu" style={sheetStyle()}>
-          <button type="button" role="menuitem" onClick={() => go(() => onNav("settings"))} className="pressBtn os-state" data-testid="nav-settings"
+          <button type="button" role="menuitem" tabIndex={-1} onClick={() => go(() => onNav("settings"))} className="pressBtn os-state" data-testid="nav-settings"
             aria-current={active === "settings" ? "page" : undefined} style={itemStyle(active === "settings")}>
             <span aria-hidden="true" style={{ display: "flex", color: T.content.secondary }}><Icon name="settings"/></span>Settings
           </button>
           {onSignOut && (
-            <button type="button" role="menuitem" onClick={() => go(onSignOut)} className="pressBtn os-state" data-testid="header-signout" style={itemStyle()}>
+            <button type="button" role="menuitem" tabIndex={-1} onClick={() => go(onSignOut)} className="pressBtn os-state" data-testid="header-signout" style={itemStyle()}>
               <span aria-hidden="true" style={{ display: "flex", color: T.content.secondary }}><Icon name="log-out"/></span>Sign out
             </button>
           )}
           {demo && (
             <div style={{ borderTop: `1px solid ${T.line.subtle}`, marginTop: T.space.xs }}>
-              <div style={headStyle()}>Switch Role (Demo)</div>
+              <div style={headStyle()}>Switch role (demo)</div>
               <RoleOptions role={role} onPick={(r) => go(() => { onRoleChange(r); btn.current?.focus(); })}/>
             </div>
           )}
@@ -261,7 +263,7 @@ function DemoRoleMenu({ role, onRoleChange }) {
   const btn = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const menu = useRef(/** @type {HTMLDivElement | null} */ (null));
   const close = useRef(() => setOpen(false)).current;
-  useMenuKeys(open, close, btn, menu);
+  useMenuKeys(open, close, btn, menu, true);
   const rc = ROLES[role];
   return (
     <div style={{ position: "relative", flexShrink: 0 }}>
@@ -273,7 +275,7 @@ function DemoRoleMenu({ role, onRoleChange }) {
       </button>
       {open && (
         <div ref={menu} role="menu" aria-label="Switch role" style={sheetStyle()}>
-          <div style={headStyle()}>Switch Role (Demo)</div>
+          <div style={headStyle()}>Switch role (demo)</div>
           <RoleOptions role={role} onPick={(r) => { onRoleChange(r); setOpen(false); btn.current?.focus(); }}/>
         </div>
       )}
@@ -294,7 +296,7 @@ export function RoleOptions({ role, onPick }) {
         const rc = ROLES[r];
         const current = role === r || canonicalRole(role) === r;
         return (
-          <button type="button" key={r} role="menuitemradio" aria-checked={current} onClick={() => onPick(r)}
+          <button type="button" key={r} role="menuitemradio" aria-checked={current} tabIndex={-1} onClick={() => onPick(r)}
             className="pressBtn os-state" data-testid={`role-option-${r}`} data-selected={current}
             style={{ ...itemStyle(current), fontSize: "12px", gap: "8px" }}>
             <span aria-hidden="true" style={{ display: "flex", color: T.content.secondary }}><Icon name={rc.icon}/></span>

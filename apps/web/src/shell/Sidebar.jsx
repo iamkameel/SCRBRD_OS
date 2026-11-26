@@ -137,7 +137,7 @@ function Sidebar({ role, active, onNav, collapsed, onToggle, notifCount, invites
             the way out, and the header does not repeat them. On a phone the same two are the header's name and its
             short sheet (AppHeader.jsx). `nav-settings` is a destination, like the menu's entries above. */}
         <button onClick={()=>onNav("settings")} className="pressBtn os-state" data-testid="nav-settings"
-          aria-label={`Settings: ${userName || rc.label}`} aria-current={active==="settings"?"page":undefined} data-selected={active==="settings"}
+          aria-label={`${userName || rc.label}: Settings`} aria-current={active==="settings"?"page":undefined} data-selected={active==="settings"}
           style={{
             width:collapsed?"100%":"calc(100% - 4px)", margin:collapsed?"0 0 6px":"0 2px 6px", minHeight:px(T.floor.target),
             padding:collapsed?"12px 0":"6px 8px", display:"flex", alignItems:"center", justifyContent:collapsed?"center":"flex-start", gap:"8px",

@@ -166,7 +166,7 @@ try {
       const s = await open();
       ok(`${email.split("@")[0]} signs in`, await signIn(s.page, email));
       const m = await menuOf(s.page);
-      // The persona header's Settings and Raise a concern carry nav- ids too (PersonaBar.jsx); they are not in the rail.
+      // The rail's foot (the name, to Settings) and the header's Raise a concern carry nav- ids too; they are not the menu.
       const rail = m.filter((x) => !["nav-settings", "nav-safeguarding"].includes(x.key)).map((x) => x.word);
       ok(`${email.split("@")[0]}: ${words.join(" · ")}`, rail.join("|") === words.join("|"),
          `${rail.join(" · ")} | at ${new URL(s.page.url()).pathname}, signed in: ${await tid(s.page, "os-main").count() > 0}, sign-in screen: ${await s.page.locator("#login-email").count() > 0}`);
@@ -190,12 +190,24 @@ try {
     const bar = await menuOf(s.page, true);
     ok("the bar is Today, Matches, Team, Logistics", bar.map((x) => x.word).join("|") === "Today|Matches|Team|Logistics", bar.map((x) => x.word).join(" · "));
     ok("...with no More and no drawer", await tid(s.page, "mnav-more").count() === 0 && await tid(s.page, "drawer").count() === 0);
-    ok("...and the way out in the header's menu", await (async () => {
-      await tid(s.page, "topbar-role").click({ timeout: 4000 }).catch(() => {});
-      const n = await tid(s.page, "topbar-signout").count();
+    // DESIGN_DIRECTION §2.1: the name opens a short sheet, Settings and Sign out; no role switcher in a real session.
+    ok("...and the way out under his name, in its short sheet with Settings", await (async () => {
+      await tid(s.page, "header-account").click({ timeout: 4000 }).catch(() => {});
+      await s.page.waitForTimeout(300);
+      const sheet = tid(s.page, "header-account-menu");
+      const n = await sheet.locator('[data-testid="header-signout"]').count() + await sheet.locator('[data-testid="nav-settings"]').count();
+      const words = (await sheet.innerText().catch(() => "")).replace(/\s+/g, " ").trim();
       await s.page.keyboard.press("Escape");
-      return n === 1;
+      return n === 2 && words === "Settings Sign out";
     })());
+    ok("...with no role chip, no Switch Role and no sign-out glyph in a real session",
+       await tid(s.page, "topbar-role").count() === 0 && !/Switch Role/i.test(await tid(s.page, "topbar").innerText().catch(() => ""))
+       && await tid(s.page, "persona-signout").count() === 0 && await tid(s.page, "topbar-signout").count() === 0);
+    ok("...and the mark, the bell, Raise a concern and his name, left to right", await s.page.evaluate(() => {
+      const at = (id) => document.querySelector(`[data-testid="topbar"] [data-testid="${id}"]`)?.getBoundingClientRect().left ?? -1;
+      const xs = ["header-mark", "topbar-alerts", "nav-safeguarding", "header-account"].map(at);
+      return xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]));
+    }));
     ok("the header fits the phone: nothing sideways", await s.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await s.ctx.close();
   }
@@ -205,10 +217,12 @@ try {
     const s = await open();
     await signIn(s.page, "coach@example.invalid");
     const top = tid(s.page, "topbar");
-    ok("the bell, Raise a concern and the name are in the header",
-       await top.locator('[data-testid="topbar-alerts"]').count() === 1 && await top.locator('[data-testid="nav-safeguarding"]').count() === 1
-       && await top.locator('[data-testid="nav-settings"]').count() === 1);
-    ok("...and not in the menu", await tid(s.page, "nav").locator('[data-testid="nav-notifications"], [data-testid="nav-safeguarding"], [data-testid="nav-settings"]').count() === 0);
+    // At 1366 (DESIGN_DIRECTION §2.1) the rail holds the mark, the name and the way out; the header does not repeat them.
+    ok("the bell and Raise a concern are in the header", await top.locator('[data-testid="topbar-alerts"]').count() === 1 && await top.locator('[data-testid="nav-safeguarding"]').count() === 1);
+    ok("...the name (to Settings) and Sign out are at the rail's foot, and the header repeats neither, nor the mark",
+       await tid(s.page, "sidebar").locator('[data-testid="nav-settings"]').count() === 1 && await tid(s.page, "sidebar").locator('[data-testid="sidebar-signout"]').count() === 1
+       && await top.locator('[data-testid="nav-settings"], [data-testid="header-account"], [data-testid="header-mark"]').count() === 0 && !/Sign out/.test(await top.innerText()));
+    ok("...and none of the three is in the menu", await tid(s.page, "nav").locator('[data-testid="nav-notifications"], [data-testid="nav-safeguarding"], [data-testid="nav-settings"]').count() === 0);
     // Raise a concern says so in words beside its icon (glossary review item 1), and its name starts with them.
     const concern = async () => s.page.evaluate(() => {
       const b = document.querySelector('[data-testid="topbar"] [data-testid="nav-safeguarding"]');
@@ -245,6 +259,36 @@ try {
     await tid(s.page, "nav-settings").click({ timeout: 4000 }).catch(() => {});
     await afterReads(s.page, 1200);
     ok("the name opens Settings", await pageNow(s.page) === "settings");
+    await s.ctx.close();
+  }
+
+  group("The same header for a parent and a pupil, on a phone (DESIGN_DIRECTION §2.1, Player 5)");
+  for (const [email, who, bellTo] of [["parent@example.invalid", "the parent", "notices"], ["pillay@example.invalid", "the pupil", "notifications"]]) {
+    const s = await open(390);
+    await signIn(s.page, email);
+    const bar = tid(s.page, "persona-bar");
+    ok(`${who}: the mark, the bell, Raise a concern and the name, in the one header`,
+       await bar.count() === 1 && (await Promise.all(["header-mark", "topbar-alerts", "nav-safeguarding", "header-account"].map(async (id) => bar.locator(`[data-testid="${id}"]`).count()))).every((n) => n === 1));
+    ok(`${who}: ...no bare sign-out glyph, and no search`, await tid(s.page, "persona-signout").count() === 0 && await bar.locator('[data-testid="topbar-search"]').count() === 0);
+    const badge = (await bar.locator('[data-testid="topbar-alerts-badge"]').innerText().catch(() => "")).trim();
+    await bar.locator('[data-testid="topbar-alerts"]').click({ timeout: 4000 }).catch(() => {});
+    await afterReads(s.page, 1500);
+    ok(`${who}: the bell opens the notices (${bellTo})`, await pageNow(s.page) === bellTo, String(await pageNow(s.page)));
+    if (bellTo === "notices") {
+      // EP §1.7: she keeps Notices on her bar, and the bell shows the same count.
+      const line = await tid(s.page, "family-notices").innerText().catch(() => "");
+      ok(`${who}: ...whose count is the bell's`, badge ? new RegExp(`\\b${badge} unread\\b`).test(line) : /Nothing unread/.test(line), `${badge} | ${line.slice(0, 120)}`);
+    }
+    await bar.locator('[data-testid="header-mark"]').click({ timeout: 4000 }).catch(() => {});
+    await afterReads(s.page, 1200);
+    ok(`${who}: the mark goes back to the first screen`, await pageNow(s.page) === (bellTo === "notices" ? "children" : "myhome"), String(await pageNow(s.page)));
+    await bar.locator('[data-testid="header-account"]').click({ timeout: 4000 }).catch(() => {});
+    await s.page.waitForTimeout(300);
+    await tid(s.page, "header-account-menu").locator('[data-testid="nav-settings"]').click({ timeout: 4000 }).catch(() => {});
+    await afterReads(s.page, 1500);
+    ok(`${who}: the name's sheet opens Settings`, await pageNow(s.page) === "settings");
+    ok(`${who}: no sideways scroll`, await s.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok(`${who}: no page error`, s.errors.length === 0, s.errors.join(" | "));
     await s.ctx.close();
   }
 

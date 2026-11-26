@@ -95,7 +95,13 @@ async function signIn(page, who, { inFlight = false } = {}) {
   return (await page.locator('[data-testid="persona-bar"]').count()) === 1;
 }
 async function signOut(page, { inFlight = false } = {}) {
-  await page.locator('[data-testid="persona-signout"]').click({ timeout: 4000 }).catch(() => {});
+  // The way out (DESIGN_DIRECTION §2.1): the rail's foot on a laptop; on a phone, under the name in the header.
+  const rail = page.locator('[data-testid="sidebar-signout"]');
+  if (await rail.count()) await rail.click({ timeout: 4000 }).catch(() => {});
+  else {
+    await page.locator('[data-testid="header-account"]').click({ timeout: 4000 }).catch(() => {});
+    await page.locator('[data-testid="header-signout"]').click({ timeout: 4000 }).catch(() => {});
+  }
   if (inFlight) await page.waitForTimeout(1200);
   else await afterReads(page, 1200);
   return (await page.locator('[data-testid="os-main"]').count()) === 0;

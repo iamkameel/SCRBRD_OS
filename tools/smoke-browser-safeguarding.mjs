@@ -153,7 +153,7 @@ try {
   ok("nothing on the page is set under 12px", f.small.length === 0, f.small.slice(0, 4).join(" · "));
   ok("nothing pressed on it is under 44px", f.tiny.length === 0, f.tiny.slice(0, 4).join(" · "));
 
-  // The form's own button, in the page: the header's "Raise a concern" says the same words now (TopBar, PersonaBar).
+  // The form's own button, in the page: the header's "Raise a concern" says the same words now (AppHeader).
   ok("he opens the form", await parent.page.locator('[data-testid="os-main"] button:not([disabled])', { hasText: /^Raise a concern$/ }).first()
     .click({ timeout: 4000 }).then(() => parent.page.waitForTimeout(300)).then(() => true, () => false));
   const honesty = await tid(parent.page, "sg-honesty").innerText().catch(() => "");

@@ -1674,11 +1674,11 @@ async function scorerHomeWalk(theme) {
     }));
     const lg = page.locator("button:not([disabled])", { hasText: /Get Started|Log In/ }).first();
     if (await lg.count()) { await lg.click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(500); }
-    // The demonstration's sign-in has no scorer; its role switcher does.
+    // The demonstration's sign-in has no scorer; its role list does, under the name on a phone (DESIGN_DIRECTION §2.1).
     await page.locator("button:not([disabled])", { hasText: "Head Coach" }).first().click({ timeout: 4000 }).catch(() => {});
     await page.locator("button:not([disabled])", { hasText: /^Sign In$/ }).first().click({ timeout: 5000 }).catch(() => {});
-    await page.waitForSelector('[data-testid="topbar-role"]', { timeout: 8000 }).catch(() => {});
-    await page.locator('[data-testid="topbar-role"]').first().click({ timeout: 4000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="header-account"]', { timeout: 8000 }).catch(() => {});
+    await page.locator('[data-testid="header-account"]').first().click({ timeout: 4000 }).catch(() => {});
     await page.locator('[data-testid="role-option-scorer"]').first().click({ timeout: 4000 }).catch(() => {});
     await page.waitForSelector(REGION, { timeout: 8000 }).catch(() => {});
     await page.waitForSelector('[data-testid="resume-a11y-live-match"]', { timeout: 6000 }).catch(() => {});
@@ -1704,7 +1704,7 @@ async function scorerHomeWalk(theme) {
 /**
  * I32: THE STAFF SHELL ON A NARROW PHONE — what a coach or a scorer holds on match day, at the width in NARROW. The
  * demonstration's Head Coach, on the whole page (the bar at the top and the bar at the bottom included, which the
- * region-scoped walks leave out): the Dashboard, the More drawer, the role menu and the search sheet, each opened by
+ * region-scoped walks leave out): the Dashboard, the More drawer, the name's sheet with the demonstration's roles, and the search sheet, each opened by
  * keyboard and closed by Escape with focus back on what opened it, then the Match Centre list and a fixture's own
  * view. Held to narrowAudit's lists by measure().
  */
@@ -1746,7 +1746,8 @@ async function narrowStaffWalk(theme) {
     // A coach's menu is his four homes, all on the bar, with no More (EXPERIENCE_PASS §1.2, Q1).
     ok(`${T_} @${W}: the coach's bar has no More`, await tid("mnav-more").count() === 0);
     if (await tid("mnav-more").count()) await overlay("mnav-more", '[data-testid="drawer"]', "staffdrawer", "More");
-    await overlay("topbar-role", '[role="menu"]', "staffrolemenu", "the role menu");
+    // The name's short sheet (DESIGN_DIRECTION §2.1): Settings, Sign out, and the demonstration's roles under them.
+    await overlay("header-account", '[role="menu"]', "staffrolemenu", "the name's sheet");
     await overlay("topbar-search", '[role="dialog"][aria-label="Search"]', "staffsearch", "search");
 
     // The KPI tiles (ui/primitives.jsx's KPICard: Injuries, Logistics): a label, a figure and a note, each 12px at the least,
@@ -1775,12 +1776,12 @@ async function narrowStaffWalk(theme) {
     ok(`${T_} @${W}: the fixture's tab strip has a More at this width`, await tid("mc-more").count() === 1);
     for (const c of await moreMenuKeys(page)) ok(`${T_} @${W}: More — ${c.name}`, c.pass, c.detail);
     // Slice 6 (Q1): with the School home the director's five homes are all on the bar, and there is no More.
-    await tid("topbar-role").click({ timeout: 4000 }).catch(() => {});
+    await tid("header-account").click({ timeout: 4000 }).catch(() => {});
     await tid("role-option-directorofsport").click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(1200);
     ok(`${T_} @${W}: the director's bar is his five homes, and no More`, await tid("mnav-more").count() === 0 && await tid("mnav-staff").count() === 1);
     // The superadmin's recovery key reaches six homes, so his phone keeps More: the drawer, by keyboard, measured.
-    await tid("topbar-role").click({ timeout: 4000 }).catch(() => {});
+    await tid("header-account").click({ timeout: 4000 }).catch(() => {});
     await tid("role-option-superadmin").click({ timeout: 4000 }).catch(() => {});
     await page.waitForTimeout(1200);
     ok(`${T_} @${W}: the superadmin's bar keeps More for the sixth home`, await tid("mnav-more").count() === 1);
