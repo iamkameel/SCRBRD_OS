@@ -534,6 +534,9 @@ const SUITES = [
   // SCRBRD-060: a knockout's bracket from the published draw, its fixtures and results.
   ["bracket", "services/api/write/bracket.test.mjs"],
   ["migrate",  "tools/migrate.test.mjs"],
+  // db/99 run through one section and rolled back: where the cut falls, and
+  // that every section marker stands where a cut compiles.
+  ["verify-until", "tools/verify-until.test.mjs"],
   // No file under tools/, services/ or packages/ hard-codes the database
   // address outside tools/db-url.mjs, which is what lets a worktree run
   // verification against its own database.
