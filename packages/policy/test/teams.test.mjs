@@ -15,6 +15,7 @@ import {
   teamsForLevel, teamCodeCheck, AGE_GROUPS, LEVELS,
   ageAtCutoff, cutoffFor, CUTOFF_MONTH, CUTOFF_DAY,
   seasonYearFor, seasonLabel, SEASON_SPANS_NEW_YEAR, SEASON_START_MONTH,
+  bandChangeAhead,
 } from "../src/teams.mjs";
 
 let pass = 0, fail = 0;
@@ -151,6 +152,38 @@ group("F2. Age is measured at 1 January of the school year");
      ageAtCutoff(born("not-a-date"), on("2026-06-01")) === null);
   ok("an unparseable match date answers null",
      ageAtCutoff(born("2012-03-15"), new Date("rubbish")) === null);
+}
+
+// ── F2b. Born on 29 February (db/177) ────────────────────
+//
+// The trigger built his birthday in the match's year with make_date(), which
+// raised for 29 February in a year without one, so he could not be put on an
+// age side's sheet; db/177 reads his age as age() does. The client never
+// built that date (it compares month and day), so it already answered. This
+// pins that it answers what the trigger now does, and that bandChangeAhead()
+// names the birthday the ageing-up view now names: 1 March in a year without a
+// 29 February, 29 February in a leap year.
+group("F2b. A boy born on 29 February has an age in every year");
+{
+  const d = (/** @type {string} */ s) => new Date(s + "T00:00:00Z");
+  const day = (/** @type {{birthday: Date} | null} */ c) => c ? c.birthday.toISOString().slice(0, 10) : null;
+  const a27 = ageAtCutoff(d("2012-02-29"), d("2027-06-01"));
+  const a28 = ageAtCutoff(d("2012-02-29"), d("2028-06-01"));
+  ok("14 on 1 January 2027, a year without a 29 February", a27 === 14);
+  ok("15 on 1 January 2028, a leap year", a28 === 15);
+  ok("...each the age of the boy born the day after him",
+     ageAtCutoff(d("2012-03-01"), d("2027-06-01")) === a27 && ageAtCutoff(d("2012-03-01"), d("2028-06-01")) === a28);
+  ok("2027: U14 takes him, U13 does not", isEligible(a27, "U14A") === true && isEligible(a27, "U13A") === false);
+  ok("2028: U15 takes him, U14 does not", isEligible(a28, "U15A") === true && isEligible(a28, "U14A") === false);
+
+  const c27 = bandChangeAhead("2012-02-29", "U14A", d("2027-02-10"));
+  ok("in 2027 his birthday is 1 March, and he ages out of U14",
+     day(c27) === "2027-03-01" && c27?.nextBand === 15);
+  const c28 = bandChangeAhead("2012-02-29", "U15A", d("2028-02-10"));
+  ok("in 2028 it is 29 February, and he ages out of U15",
+     day(c28) === "2028-02-29" && c28?.nextBand === 16);
+  ok("after it in 2028, the next is 1 March 2029",
+     day(bandChangeAhead("2012-02-29", "U15A", d("2028-03-05"))) === "2029-03-01");
 }
 
 // ── F3. A club season is named for two years, and keeps time differently ──

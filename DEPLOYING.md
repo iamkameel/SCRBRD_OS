@@ -3036,6 +3036,55 @@ To paste:
 Pasted on the demo and production, 26 Nov 2026, from 46b31b63. Hash-checked:
 `sha256 518725205d9070b3985a59a004d330c0b5dd7fb258bb6969e44a72f1930343b8`.
 <!-- ── end db/176 ── -->
+<!-- ── db/177: a boy born on 29 February, on a team sheet ── -->
+#### A boy born on 29 February can be put on a team sheet (db/177)
+
+`db/177_feb29_birthdays.sql` (branch claude/wip-db177-feb29, on db/176,
+which is live). Kameel, 26 Nov 2026 (22:42): "count and fix".
+
+- **The fault:** the squad's age check (`match_squad_age_eligible()`, db/08)
+  built his birthday in the match's year with `make_date()`, which raises
+  `date field value out of range` (22008) for 29 February in a year without
+  one. So he could not be put on any age side's sheet in 2026, 2027 or any
+  year but a leap year, whoever wrote the row. The ageing-up list
+  (`player_band_change_due`, db/08 as db/128 re-dated it) built it the same
+  way, so one such boy made every coach's list at his school fail
+  (`band_changes`).
+- **The fix, the age arithmetic alone:** his age on 1 January is read as
+  Postgres's `age()` reads it, from the month and the day; his next birthday
+  is the first of his month plus his day less one, which is 1 March in a year
+  without a 29 February (the day `age()` first reads him a year older, and the
+  day the app's `bandChangeAhead()` already named). Every other date of birth
+  gets the answer it got before. The 1 January cut-off, the open sides, the
+  refusal above U16, every message, `SECURITY DEFINER`, the pinned
+  `search_path`, the view's options and every grant stay as they were.
+  `majority_on()` (the guardian link's end) is not touched.
+
+Production held no such boy among the 11 with a date on 26 Nov 2026, so
+nobody is blocked today, and the count needs nothing new. Its proof is db/99
+§152 (and teams.test.mjs F2b for the app's mirror); its walks are
+`smoke-eligibility` (on a sheet in 2026 and 2028) and `smoke-roster` (the
+ageing-up list).
+
+To paste:
+
+- **After db/176.** It patches `match_squad_age_eligible()` by needle (its
+  seven lines of arithmetic) and re-creates `player_band_change_due`, each only
+  over the body db/08 (the view: db/128) left, or its own on a second paste.
+  Anything else fails the paste loudly, changing nothing. Run it as the schema
+  owner; it refuses any other role. A later paste of db/128 then stops at its
+  own guard, changing nothing.
+- **As one transaction, outside a match:** the SQL Editor's single run, or
+  `psql -1 -v ON_ERROR_STOP=1 -f`. Re-creating the view waits on every read of
+  it (ten-second `lock_timeout`, reset by its last statement); a paste that
+  timed out on its lock is simply run again. No row of any table is changed.
+- **Before the API deploys.** `services/api/expected-migrations.json` lists
+  177, and the API refuses to start on a database without it.
+- It can be pasted again: a second paste finds the patch in place and
+  re-creates the same view.
+
+Not pasted yet. Hash to check: `sha256 87d527cc1f6ae49039b2201e4ae14070fc3593d8f0e4ee7531a921431d7a5c8a`.
+<!-- ── end db/177 ── -->
 
 ### 5 · Cloud Run, the first time
 

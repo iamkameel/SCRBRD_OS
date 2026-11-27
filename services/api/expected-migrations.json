@@ -166,5 +166,6 @@
   "173_dob_first_dates.sql",
   "174_family_register.sql",
   "175_terms_gate.sql",
-  "176_signin_and_dob_followups.sql"
+  "176_signin_and_dob_followups.sql",
+  "177_feb29_birthdays.sql"
 ]

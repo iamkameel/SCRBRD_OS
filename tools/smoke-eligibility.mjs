@@ -164,6 +164,16 @@ try {
   ok("...and a young player may be picked for it",
      (await select("2013-06-01", "1XI")).accepted === true);
 
+  // db/177: the trigger built his birthday in the match's year with
+  // make_date(), which raised for 29 February in a year without one.
+  group("Born on 29 February, in a year without one and in a leap year");
+  ok("13 on 1 January 2026, he may play U13", (await select("2012-02-29", "U13A", 2026)).accepted === true);
+  {
+    const old = await select("2012-02-29", "U14A", 2028);
+    ok("15 on 1 January 2028, he may not play U14, and is told his age",
+       old.accepted === false && /is 15 on 1 January and cannot play U14A: the limit is 14/.test(old.error ?? ""));
+  }
+
   group("An unknown age is not a pass");
   const noDob = await select(null, "U13A");
   ok("a player with no date of birth cannot be selected", noDob.accepted === false);
@@ -178,6 +188,7 @@ try {
     ["2011-03-14", "U13A"], ["2013-01-01", "U13A"], ["2012-12-31", "U13A"],
     ["2011-12-31", "U13A"], ["2012-03-14", "U13A"],
     ["2013-06-01", "U15A"], ["2009-06-01", "U15A"], ["2007-06-01", "1XI"],
+    ["2012-02-29", "U13A"], ["2011-02-28", "U13A"],
   ]) {
     const client = isEligible(ageAtCutoff(born, new Date("2026-06-01")), team);
     const db = (await select(born, team)).accepted;
