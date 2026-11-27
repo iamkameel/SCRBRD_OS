@@ -24,8 +24,9 @@
 --     about to age up: his next birthday, twice, and his age at the cut-off
 --     after it. The view computes them for every boy in an age side that the
 --     reader may see, so one such boy makes the whole read fail: every
---     coach's list at his school (the API's band_changes), except in a leap
---     year before his birthday.
+--     coach's list at his school (the API's band_changes), in any year but a
+--     leap year before his birthday, and in that one too once he is within
+--     its thirty days (his age after it reads 29 February of the next year).
 -- No later file redefines either. The only other make_date() in the schema
 -- built from a typed day is sa_id_born() (db/172), which checks the day first
 -- ("Nested, so make_date() never sees a month that is not one"); it is left
@@ -46,10 +47,11 @@
 --       the session's time zone out of it (age() of two dates is otherwise
 --       read as two instants). For every date of birth on or before the
 --       cut-off the number is the one the old arithmetic gave (every day of
---       1990 to 2030 against match years 2000 to 2035: 538,830 pairs, none
---       differ). For a date after it (a child not yet born on 1 January) the
---       old gave -1 and age() gives 0: both pass every band, and the number
---       is only ever shown in the refusal of a boy over the limit.
+--       1990 to 2030 but 29 February, against match years 2000 to 2035:
+--       357,731 pairs, none differ). For a date after it (a child not yet
+--       born on 1 January) the two can differ by one, both 0 or below: both
+--       pass every band, and the number is shown only in the refusal of a
+--       boy over the limit.
 --   ~ player_band_change_due, re-created, guarded: his birthday in a year is
 --       the first of his month plus his day less one,
 --           make_date(year, extract(month FROM born), 1) + (extract(day FROM born) - 1)
