@@ -94,12 +94,14 @@ export function finishOffer(schoolId, teamCode) {
 /**
  * The result screen's panel when confirming is not this person's: "Your part
  * is done", what is sent or still on the phone, who confirms, and "Back to
- * Today". A pad not signed in also offers a coach the sign-in that returns here.
+ * Today", named for where the scorer came from (`backTo`, the menu's word for
+ * the page under the pad; slice 12b). A pad not signed in also offers a coach
+ * the sign-in that returns here.
  * Once the pad has put the pen down (db/171, `released`), the coach may
  * confirm at once, and the line says so.
- * @param {{ offer: "done"|"sign_in", onSignIn?: (() => void)|null, online?: boolean, balls?: number, pending?: number, onBack?: (() => void)|null, released?: boolean }} props
+ * @param {{ offer: "done"|"sign_in", onSignIn?: (() => void)|null, online?: boolean, balls?: number, pending?: number, onBack?: (() => void)|null, backTo?: string|null, released?: boolean }} props
  */
-export function FinishGate({ offer, onSignIn = null, online = true, balls = 0, pending = 0, onBack = null, released = false }) {
+export function FinishGate({ offer, onSignIn = null, online = true, balls = 0, pending = 0, onBack = null, backTo = null, released = false }) {
   const text = { fontFamily: D.body, fontSize: "15px", lineHeight: 1.45, color: D.textSecondary, margin: 0, textAlign: /** @type {const} */ ("center"), maxWidth: "520px" };
   return (
     <div data-testid="pad-finish-panel" data-offer={offer} data-pending={pending} data-released={released ? "true" : "false"}
@@ -108,7 +110,7 @@ export function FinishGate({ offer, onSignIn = null, online = true, balls = 0, p
       <p role="status" aria-live="polite" data-testid="pad-done-said" style={text}>
         {doneWords({ balls, pending, online })} {released && pending === 0 ? FINISH_GATE_WORDS.released : FINISH_GATE_WORDS.coach}
       </p>
-      {onBack && <Btn variant="primary" size="lg" onClick={onBack} data-testid="pad-done-back">Back to Today</Btn>}
+      {onBack && <Btn variant="primary" size="lg" onClick={onBack} data-testid="pad-done-back">Back to {backTo || "Today"}</Btn>}
       {offer === "sign_in" && online && onSignIn && (
         <>
           <p data-testid="pad-finish-signin-lead" style={{ ...text, fontSize: "14px" }}>{FINISH_GATE_WORDS.sign_in}</p>

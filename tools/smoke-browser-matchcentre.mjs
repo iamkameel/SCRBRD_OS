@@ -923,7 +923,9 @@ try {
       await pickTab(s.page, "scorecard");
       await tid(s.page, "mc-scorecard").waitFor({ timeout: 6000 }).catch(() => {});
       const taps = await s.page.locator('[data-testid="mc-bat-balls"], [data-testid="mc-bowl-balls"]').count();
-      const familyMode = family && !(await tid(s.page, "mc-back").innerText().catch(() => "")).includes("All matches");
+      // Family mode is the persona's own app (os-main carries the persona), not the words on Back, which since slice 12b
+      // name where the reader came from for staff too ("Matches", "Today").
+      const familyMode = family && (await s.page.locator('[data-testid="os-main"][data-persona]').count()) === 1;
       if (familyMode) ok(`${label}, in family mode: no figure opens another child's balls`, taps === 0, String(taps));
       else ok(`${label}: the scorecard's figures open their balls (${taps})`, taps > 0, String(taps));
       const c = await chartsOf(s.page);
@@ -991,8 +993,10 @@ try {
        dosWrites.length === 0, dosWrites.join(" | "));
     ok("...and the pad never opened: the reader is still on the match page", await p.locator(".scorer-shell").count() === 0 && await tid(p, "match-view").count() === 1);
   }
+  ok(`opened from the list, its Back names the list's page: Matches ("${(await tid(p, "mc-back").innerText().catch(() => "")).trim()}")`,
+     (await tid(p, "mc-back").innerText().catch(() => "")).trim() === "Matches");
   await tid(p, "mc-back").click(); await p.waitForTimeout(600);
-  ok("All matches goes back to the list", await tid(p, "match-view").count() === 0 && await tid(p, `match-card-${fx.live}`).count() === 1);
+  ok("Matches goes back to the list", await tid(p, "match-view").count() === 0 && await tid(p, `match-card-${fx.live}`).count() === 1);
   // CRI-1.2, slice 1: the row's sentence is the same function's, from the match's own log folded as Today folds it.
   const cardSays = await tid(p, `mc-card-status-${fx.live}`).innerText().catch(() => "");
   const rowInns = deriveMatch(fx.events[fx.live]).innings;
@@ -1724,6 +1728,9 @@ try {
       && (t === null ? !document.querySelector('[data-testid="match-view"]') : document.querySelector(`[data-testid="mc-tab-${t}"]`)?.getAttribute("aria-selected") === "true"
         && !!document.querySelector(`[data-testid="mc-panel-${t}"]`)), [p, t], { timeout: 6000 }).catch(() => {});
     const FX = `/app/matches/${fx.live}`;
+    // Slice 12b: nothing came before a link, so its Back names the fixed parent, the list's page.
+    ok(`...its Back names the fixed parent: Matches ("${(await tid(dl.page, "mc-back").innerText().catch(() => "")).trim()}")`,
+       (await tid(dl.page, "mc-back").innerText().catch(() => "")).trim() === "Matches");
     ok("...and the link opens that fixture on its Commentary tab",
        await tid(dl.page, "match-view").getAttribute("data-match").catch(() => null) === fx.live
        && await tid(dl.page, "mc-tab-commentary").getAttribute("aria-selected") === "true" && await tid(dl.page, "mc-panel-commentary").count() === 1, path());
@@ -1741,7 +1748,7 @@ try {
     ok("...and again: the Commentary the link opened", await tid(dl.page, "mc-panel-commentary").count() === 1, path());
     await tid(dl.page, "mc-back").click({ timeout: 4000 }).catch(() => {});
     await settled("/app/matches", null);
-    ok("All matches closes the fixture and the address is the list's", await tid(dl.page, "match-view").count() === 0 && path() === "/app/matches", path());
+    ok("Matches, the link's Back, closes the fixture and the address is the list's", await tid(dl.page, "match-view").count() === 0 && path() === "/app/matches", path());
     await dl.page.goBack();
     await settled(`${FX}/commentary`, "commentary");
     await afterReads(dl.page, 300);
@@ -1762,6 +1769,38 @@ try {
     await afterReads(sp.page, 1500);
     ok("...and has the fixture on its Summary, with no Coach tab", await tid(sp.page, "mc-panel-summary").count() === 1 && await tid(sp.page, "mc-tab-coach").count() === 0);
     await sp.ctx.close();
+  }
+
+  group("Slice 12b: Back names where he came from — Today, then a match, reads Today; Matches, then the same match, reads Matches");
+  {
+    const bk = await open({ viewport: PHONE });
+    ok("the director of sport signs in on a phone", await signIn(bk.page, /sarah@example\.invalid|Director/));
+    const P = bk.page;
+    const pageNow = () => P.locator('[data-testid="os-main"]').getAttribute("data-page").catch(() => null);
+    const backSays = async () => (await tid(P, "mc-back").innerText().catch(() => "")).trim();
+    const nowOpen = tid(P, "day-now-open").first();
+    await nowOpen.waitFor({ timeout: 12000 }).catch(() => {});
+    await nowOpen.click({ timeout: 5000 }).catch(() => {});
+    await tid(P, "match-view").waitFor({ timeout: 10000 }).catch(() => {});
+    await afterReads(P, 800);
+    const id = await tid(P, "match-view").getAttribute("data-match").catch(() => null);
+    ok("Today's live match opens on its own page", !!id && await pageNow() === "matches", `${id} ${await pageNow()}`);
+    ok(`...and its Back names where he came from: Today ("${await backSays()}")`, await backSays() === "Today");
+    const box = await tid(P, "mc-back").boundingBox().catch(() => null);
+    const fs = await tid(P, "mc-back").evaluate((e) => parseFloat(getComputedStyle(e).fontSize)).catch(() => 0);
+    ok("...44px to tap, on the 12px floor", !!box && box.height >= 44 && fs >= 12, JSON.stringify({ box, fs }));
+    await tid(P, "mc-back").click({ timeout: 4000 }).catch(() => {});
+    await P.waitForFunction(() => document.querySelector('[data-testid="os-main"]')?.getAttribute("data-page") === "dashboard", null, { timeout: 6000 }).catch(() => {});
+    ok("...which goes back to Today, not to the list, and the address leaves the match", await pageNow() === "dashboard" && await tid(P, "match-view").count() === 0
+       && new URL(P.url()).pathname === "/app", `${await pageNow()} ${new URL(P.url()).pathname}`);
+    ok("Matches, then the same match from its list", !!id && await openMatch(P, id));
+    ok(`...its Back names Matches ("${await backSays()}")`, await backSays() === "Matches");
+    await tid(P, "mc-back").click({ timeout: 4000 }).catch(() => {});
+    await P.waitForTimeout(600);
+    ok("...and closes to the list", await tid(P, "match-view").count() === 0 && await pageNow() === "matches" && new URL(P.url()).pathname === "/app/matches",
+       new URL(P.url()).pathname);
+    ok("no console errors (Back)", bk.errors.length === 0, bk.errors.join(" | "));
+    await bk.ctx.close();
   }
 
   group("CRI-1.4: who is offered Enter scoring — only an assignment that may score this fixture; the pad opens on the tap alone");
@@ -1856,6 +1895,19 @@ try {
        sc1.writes.join(" | "));
     await tid(sc1.s.page, "mc-enter-scoring").click({ timeout: 4000 }).catch(() => {});
     ok("his tap on it opens the pad", await until(sc1.s.page, () => !!document.querySelector(".scorer-shell"), 10000));
+    // Slice 12b (DESIGN_DIRECTION §2.1: "The pad: its own bar. Back, named for where he came from"): he came from Matches.
+    const exitKey = tid(sc1.s.page, "exit-scorer").first();
+    await exitKey.waitFor({ timeout: 8000 }).catch(() => {});
+    const exitSays = (await exitKey.innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+    const exitName = await exitKey.getAttribute("aria-label").catch(() => "");
+    const exitBox = await exitKey.boundingBox().catch(() => null);
+    ok(`...and the pad's Back names where he came from: Matches ("${exitSays}", "${exitName}")`, /^‹? ?Matches$/.test(exitSays) && /^Matches\b/.test(exitName ?? ""));
+    ok("...on one line, 44px to tap", !!exitBox && exitBox.height >= 44 && exitBox.width >= 44 && exitBox.height < 60, JSON.stringify(exitBox));
+    await exitKey.click({ timeout: 4000 }).catch(() => {});
+    await tid(sc1.s.page, "match-view").waitFor({ timeout: 8000 }).catch(() => {});
+    ok("...which closes the pad onto the match he left, whose Back is still Matches",
+       await sc1.s.page.locator(".scorer-shell").count() === 0 && await tid(sc1.s.page, "match-view").getAttribute("data-match").catch(() => null) === fx.brk
+       && (await tid(sc1.s.page, "mc-back").innerText().catch(() => "")).trim() === "Matches");
     ok("no console errors (Enter scoring)", sc1.s.errors.length === 0, sc1.s.errors.join(" | "));
     await sc1.s.ctx.close();
   }

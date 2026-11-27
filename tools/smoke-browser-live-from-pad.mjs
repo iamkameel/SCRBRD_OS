@@ -271,6 +271,14 @@ try {
      await waitFor(async () => (await balls(MATCH)).some((r) => r.kind === "innings_start"), 8000), JSON.stringify(await balls(MATCH)));
   ok("...and the fixture is still scheduled: the toss and the line-up are not play", (await statusOf(MATCH)) === "scheduled", await statusOf(MATCH));
   ok("...on Basic Scoring", await basic(P));
+  // Slice 12b (DESIGN_DIRECTION §2.1: "The pad: its own bar. Back, named for where he came from"): he came from Today.
+  const barKey = async () => P.locator('[data-testid="pad-titlebar"] [data-testid="exit-scorer"]').first().evaluate((e) => {
+    const r = e.getBoundingClientRect();
+    return { t: e.innerText.replace(/\s+/g, " ").trim(), name: e.getAttribute("aria-label"), h: r.height, w: r.width, fs: parseFloat(getComputedStyle(e).fontSize) };
+  }).catch(() => null);
+  const key1 = await barKey();
+  ok(`the pad's bar: Back, named for where he came from, Today (${JSON.stringify(key1)})`, !!key1 && /^‹? ?Today$/.test(key1.t) && /^Today\b/.test(key1.name ?? ""));
+  ok("...on one line, 44px to tap, on the 12px floor", !!key1 && key1.h >= 44 && key1.h < 60 && key1.w >= 44 && key1.fs >= 12);
   ok("the first ball, a single, reaches the server", await run(P, 1, 0, 1, MATCH), JSON.stringify(await balls(MATCH)));
   ok("THE FIXTURE IS LIVE, from its first ball, with no SQL write", await waitFor(async () => (await statusOf(MATCH)) === "live", 5000), await statusOf(MATCH));
 
@@ -320,6 +328,9 @@ try {
   ok("the pad comes back after the reload", await until(P, () => !!document.querySelector('[data-testid="basic-pad"], [data-testid="three-phase-pad"]'), 12000),
     (await text(P)).slice(0, 400));
   ok("...on Basic Scoring", await basic(P));
+  // Reopened by the reload, not by him: nothing came before it, so its Back names the fixed parent, his Today.
+  const key2 = await barKey();
+  ok(`...its Back after the reload names the fixed parent: Today (${JSON.stringify(key2)})`, !!key2 && /^‹? ?Today$/.test(key2.t) && /^Today\b/.test(key2.name ?? ""));
   for (const [i, r] of [0, 2, 0, 1].entries()) ok(`ball ${i + 3} (${r}) reaches the server, sent under the pad's own key`, await run(P, r, 0, i + 3, MATCH));
   ok("the innings ends at its over, at the review gate", await until(P, () => !!document.querySelector('[data-testid="innings-review"]'), 10000), (await text(P)).slice(0, 300));
   await tap(P, "review-confirm");
@@ -376,7 +387,7 @@ try {
      scorerFinish.status === 403 && scorerFinish.body?.error === "coach_confirms", JSON.stringify(scorerFinish.body));
   ok("...and offers the scorer no Finish or Confirm", !(await has(P, "pad-finish")));
   const back = await tid(P, "pad-done-back").first().evaluate((e) => ({ h: e.getBoundingClientRect().height, fs: parseFloat(getComputedStyle(e).fontSize), t: e.textContent.trim() })).catch(() => null);
-  ok(`"Back to Today" is the one primary, a 44px key on the 12px floor (${JSON.stringify(back)})`, !!back && back.t === "Back to Today" && back.h >= 44 && back.fs >= 12
+  ok(`"Back to Today", named for where it goes (slice 12b), is the one primary, a 44px key on the 12px floor (${JSON.stringify(back)})`, !!back && back.t === "Back to Today" && back.h >= 44 && back.fs >= 12
      && (await P.locator("button", { hasText: /^(New Match|Back home)$/ }).count()) === 0);
   ok("the result screen does not scroll sideways at 390", await P.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
      await P.evaluate(() => `${document.documentElement.scrollWidth} > ${window.innerWidth}`));

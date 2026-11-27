@@ -447,6 +447,10 @@ const SUITES = [
   // entry for it; modules; the bar drawn; the 12px and 44px floors.
   ["homes", "apps/web/test/homes.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["shell-homes", "apps/web/test/shell-homes.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
+  // Redesign slice 12b: Back, named for where the person came from. The shell's trail (push, pop, the cut), the
+  // name each Back shows, a direct link naming the fixed parent, the Match Centre's address round trip, no child's
+  // name kept; the pad's key and its result screen's "Back to …".
+  ["back-stack", "apps/web/test/back-stack.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["office", "apps/web/test/office.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   ["icons",    "apps/web/test/icons.test.mjs", ["--import", "./tools/register-jsx.mjs"]],
   // The public home page's sections (SCRBRD-142 phase 1): signed out, the

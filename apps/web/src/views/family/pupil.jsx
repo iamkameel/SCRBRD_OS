@@ -23,6 +23,7 @@ import { fixturesOf, ownRecordId } from "../../lib/family.js";
 import { withOpponents } from "../../lib/matchCentre.js";
 import { CareerWagonWheel, DismissalMethodCard } from "../ProfilesView.jsx";
 import { Action, Back, Card, Line, NoneOr, Page, Title } from "./parts.jsx";
+import { pageName } from "../../lib/backStack.js";
 import { ReadState } from "../../ui/primitives.jsx";
 import { readState } from "../../lib/readState.js";
 import { InjuryLine, LastMatchCard, LiveCard, NewsCard, NextFixtureCard, NoticesCard, SeasonCard, TrainingCard } from "./cards.jsx";
@@ -86,7 +87,7 @@ export function PupilHome({ role, onNav, onOpenScorer }) {
     return (
       <>
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <MatchFor match={open.match} child={me} role={role} self matches={matches} backLabel="Home" onBack={() => setOpen(null)}/>
+        <MatchFor match={open.match} child={me} role={role} self matches={matches} backLabel={pageName("myhome")} onBack={() => setOpen(null)}/>
       </>
     );
   }
@@ -94,7 +95,7 @@ export function PupilHome({ role, onNav, onOpenScorer }) {
     return (
       <Page testid="pupil-home">
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <FixtureDetail match={open.match} child={me} role={role} self backLabel="Home" onBack={() => setOpen(null)}/>
+        <FixtureDetail match={open.match} child={me} role={role} self backLabel={pageName("myhome")} onBack={() => setOpen(null)}/>
       </Page>
     );
   }
@@ -455,7 +456,7 @@ export function PupilMe({ role, onNav }) {
   // no Set target, no Why, no notes and no coaching point.
   if (show.skills) return (
     <div data-testid="pupil-skills" style={{ display: "grid", gap: "12px", alignContent: "start" }}>
-      <div style={{ padding: "16px 16px 0" }}><Back testid="skills-back" onClick={() => setShow((s) => ({ ...s, skills: false }))}>Me</Back></div>
+      <div style={{ padding: "16px 16px 0" }}><Back testid="skills-back" onClick={() => setShow((s) => ({ ...s, skills: false }))}>{pageName("me")}</Back></div>
       <Suspense fallback={<Page><Line quiet>Opening your skills…</Line></Page>}>
         <SkillsView role={role}/>
       </Suspense>

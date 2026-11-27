@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { T } from "../design/tokens.js";
+import { pageName } from "../lib/backStack.js";
 import { api, signedIn } from "../lib/api.js";
 import { EmptyState } from "../ui/primitives.jsx";
 import { StateLabel } from "../ui/stateLabel.jsx";
@@ -508,7 +509,7 @@ export function FixturePlanner({ competition, onBack }) {
         <h2 style={S.h3}>Fixture planner</h2>
         <StateLabel kind="demo"/>
         <p data-testid="pl-demo" style={S.body}>This is a demonstration. Sign in as the league's organiser to plan fixtures.</p>
-        {onBack && <div><button type="button" onClick={onBack} style={S.secondary}>Back</button></div>}
+        {onBack && <div><button type="button" onClick={onBack} style={S.secondary}>‹ {pageName("competitions")}</button></div>}
       </div>
     );
   }
@@ -522,7 +523,8 @@ export function FixturePlanner({ competition, onBack }) {
           <h2 data-testid="pl-heading" style={{ ...S.h3, fontSize: "20px" }}>Fixture planner: {competition.name ?? "this league"}</h2>
           <p style={S.meta}>{canManage ? "Draw the fixtures, place them in the slots grounds have offered, and publish them as matches." : "The published fixtures of this league."}</p>
         </div>
-        {onBack && <button type="button" data-testid="pl-back" onClick={onBack} style={S.secondary}>Back to the league</button>}
+        {/* Back to the competitions list it was opened from, named for the page in the menu's word (slice 12b). */}
+        {onBack && <button type="button" data-testid="pl-back" onClick={onBack} style={S.secondary}>‹ {pageName("competitions")}</button>}
       </div>
       <Said testid="pl-status">{said}</Said>
       <Alert words={listing.error} testid="pl-error"/>

@@ -7,6 +7,7 @@ import { sidesOf } from "../lib/matchCentre.js";
 import { uncheckedCells } from "@scrbrd/scoring";
 import { Badge } from "../ui/primitives.jsx";
 import { Icon } from "../ui/icons.jsx";
+import { pageName } from "../lib/backStack.js";
 import { useIsMobile } from "../shell/MobileNav.jsx";
 import {
   EDITABLE, FINISHED, READER_WORDS, STATE_SHORT, STATE_WORDS, blankCard, dropCardChecked, fetchPage, hadPages, inningsWord, livePages,
@@ -765,7 +766,8 @@ export function ScorebookImportView({ importId, match, onClose }) {
   const back = (
     <button type="button" onClick={onClose} data-testid="sb-back" className="pressBtn os-state"
       style={{ ...S.secondary, display: "inline-flex", alignItems: "center", gap: T.space.xs }}>
-      <Icon name="chevron-left"/> Back to the match
+      {/* Back to the fixture's panel on Matches (slice 12b): named for the page, in the menu's word. */}
+      <Icon name="chevron-left"/> {pageName("matches")}
     </button>
   );
 

@@ -1051,6 +1051,7 @@ button{touch-action:manipulation}
   background:${T.glass.film};backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   border:1px solid ${T.glass.edge};color:${T.content.primary};font-family:${T.type.body};font-size:14px;
   font-weight:600;box-shadow:${T.elevation.lg}}
+@media(max-width:359px){.os-exit-scorer .os-exit-glyph{display:none}}
 @media(max-width:1180px) and (min-width:881px){
   .os-shell{--g-4:repeat(2,1fr);--g-5:repeat(3,1fr)}
 }

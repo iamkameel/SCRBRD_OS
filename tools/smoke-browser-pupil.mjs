@@ -407,7 +407,7 @@ try {
   await tid(s.page, "next-fixture-open").click({ timeout: 4000 }).catch(() => {});
   await afterReads(s.page, 1500);
   ok("the fixture opens", /Verify Pupil XI/.test(await inner(s.page, "fixture-title")));
-  ok("...and Back names where he came from: Home", /^Home$/.test((await inner(s.page, "family-back")).trim()), await inner(s.page, "family-back"));
+  ok("...and Back names where he came from, in his menu's word: Home (slice 12b)", /^Home$/.test((await inner(s.page, "family-back")).trim()), await inner(s.page, "family-back"));
   const sheet = await inner(s.page, "side-sheet");
   ok("the team sheet: his side, by name and place", /R Pillay/.test(sheet) && /James Whitfield/.test(sheet) && /T Bekker/.test(sheet));
   {
@@ -672,6 +672,12 @@ try {
     await afterReads(s.page, 2000);
     ok("...which opens his Matches on that fixture, as his own list would", await tid(s.page, "os-main").getAttribute("data-page") === "mymatches"
        && await tid(s.page, "fixture-detail").first().getAttribute("data-match").catch(() => null) === NEXT);
+    // Slice 12b: he came from Notices, so Back says so, and goes there.
+    ok(`...and its Back names where he came from: Notices ("${(await inner(s.page, "family-back")).trim()}")`, /^Notices$/.test((await inner(s.page, "family-back")).trim()));
+    await tid(s.page, "family-back").click({ timeout: 4000 }).catch(() => {});
+    await afterReads(s.page, 1200);
+    ok("...which goes back to Notices, not to his Matches list", await tid(s.page, "os-main").getAttribute("data-page") === "notifications"
+       && await tid(s.page, "fixture-detail").count() === 0, await tid(s.page, "os-main").getAttribute("data-page"));
     await q(`delete from notification where id = $1`, [n17.id]);
   }
   group("No ordered list of team-mates is drawn for him (recognition R5b: D23, A15)");

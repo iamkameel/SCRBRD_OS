@@ -402,7 +402,7 @@ try {
      && /Leaves 07:15 · the Chapel car park/.test(await ptid("bus-card").innerText().catch(() => "")));
   ok("...his answer is not given yet", await ptid(`availability-state-${PILLAY}`).first().getAttribute("data-status").catch(() => "") === "none"
      && /No answer yet/.test(await ptid(`availability-by-${PILLAY}`).innerText().catch(() => "")));
-  ok("...and Back names where she came from: Matches (slice 9)", /^Matches$/.test((await ptid("family-back").innerText().catch(() => "")).trim()));
+  ok("...and Back names where she came from, in her menu's word: Matches (slices 9, 12b)", /^Matches$/.test((await ptid("family-back").innerText().catch(() => "")).trim()));
   {
     // REACH R-H (db/131; STEP4 Q10, Kameel 27 Sep 2026): the eleven to a
     // parent, names and order, under her child's own line, which stays first.
@@ -516,6 +516,13 @@ try {
   await afterReads(parent.page, 2000);
   ok("...which opens her Matches on that fixture, as her own list would", await parent.page.locator('[data-testid="os-main"]').getAttribute("data-page") === "fixtures"
      && await ptid("fixture-detail").first().getAttribute("data-match").catch(() => null) === DECL);
+  // Slice 12b: she came from Notices, so Back says so, and goes there; her Matches' own rows still say Matches.
+  ok(`...and its Back names where she came from: Notices ("${(await ptid("family-back").innerText().catch(() => "")).trim()}")`,
+     /^Notices$/.test((await ptid("family-back").innerText().catch(() => "")).trim()));
+  await ptid("family-back").click({ timeout: 4000 }).catch(() => {});
+  await afterReads(parent.page, 1200);
+  ok("...which goes back to Notices, not to her Matches list", await parent.page.locator('[data-testid="os-main"]').getAttribute("data-page") === "notices"
+     && await ptid("fixture-detail").count() === 0);
   await owner.query(`delete from notification where id = $1`, [N17]);
   ok("the guardian's session raised no scoping refusals", parent.refusals.length === 0);
   ok("...and no page errors", parent.errors.length === 0, parent.errors.join(" | "));

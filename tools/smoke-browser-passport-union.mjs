@@ -332,7 +332,7 @@ try {
   ok("...'No longer open to {institution}' and nothing more",
      await tid(s.page, "selection-passport").getAttribute("data-state") === "closed"
      && (await inner(s.page, "selection-closed")).trim() === `No longer open to ${KZN_NAME}`
-     && (await inner(s.page, "selection-passport")).replace(/‹ Back to the list/, "").trim() === `No longer open to ${KZN_NAME}`,
+     && (await inner(s.page, "selection-passport")).replace(/‹ Selection/, "").trim() === `No longer open to ${KZN_NAME}`,
      await inner(s.page, "selection-passport"));
   ok("...not his name, not a reason", !/Pillay|withdr|laps|moved|left|consent/i.test(await inner(s.page, "selection-passport")));
   await tid(s.page, "selection-back").click();

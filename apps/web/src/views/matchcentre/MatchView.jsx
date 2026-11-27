@@ -374,7 +374,7 @@ const COACH_TAB = { id: "coach", label: "Coach" };
  * not one this reader may open (§2.1 P4). Everything else is the Match Centre
  * as every signed-in reader has it.
  */
-function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDuties = null, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "All matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false, route = null, onChanged = null }) {
+function MatchView({ match, role, onClose, onNavProfile, onNav = null, onOpenDuties = null, onOpenScorer, canScoreIt, matches, onOpenFixture, onTeamResults, focus = null, focusLabel = null, backLabel = "Matches", captain = null, initialTab = null, initialDrawer = false, initialCorrections = false, route = null, onChanged = null }) {
   useTheme();
   const COMPETITIONS = useRows("competitions", role);
   const PLAYERS = useRows("players", role);

@@ -4,6 +4,7 @@ import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { useRows } from "../lib/live.js";
 import { Icon } from "../ui/icons.jsx";
+import { pageName } from "../lib/backStack.js";
 import { roleGrants } from "@scrbrd/policy/roles";
 
 /**
@@ -558,14 +559,15 @@ function Concern({ id, role, onBack }) {
 
   if (error) return (
     <div className="os-page" style={s.page}><Refused said={error}/>
-      <div><button type="button" style={s.secondary} onClick={onBack}>Back</button></div></div>
+      <div><button type="button" style={s.secondary} onClick={onBack}><Icon name="chevron-left"/> {pageName("safeguarding")}</button></div></div>
   );
   if (!c) return <div className="os-page" style={s.page}><p style={s.meta}>Loading…</p></div>;
   const open = c.state === "open";
   return (
     <div className="os-page" style={s.page} data-testid="sg-concern">
       <div style={s.row}>
-        <button type="button" className="pressBtn" style={s.secondary} onClick={onBack}>Back to the inbox</button>
+        {/* Back to the inbox on Safeguarding's own screen, named for the page in the menu's word (slice 12b). */}
+        <button type="button" className="pressBtn" style={s.secondary} onClick={onBack}><Icon name="chevron-left"/> {pageName("safeguarding")}</button>
       </div>
       <div style={s.card}>
         <div style={{ ...s.row, justifyContent: "space-between" }}>
@@ -810,7 +812,7 @@ function SharedWithMe({ id, onBack }) {
   }, [id]);
   return (
     <div className="os-page" style={s.page} data-testid="sg-share-open">
-      <div><button type="button" className="pressBtn" style={s.secondary} onClick={onBack}>Back</button></div>
+      <div><button type="button" className="pressBtn" style={s.secondary} onClick={onBack}><Icon name="chevron-left"/> {pageName("safeguarding")}</button></div>
       <Refused said={error}/>
       {sh && (
         <div style={s.card}>

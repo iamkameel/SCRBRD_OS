@@ -25,6 +25,7 @@ import { AvailabilityBlock, Back, BusCard, Card, Line, StateChip, TeamSheetLine,
 import { useFold } from "./useFold.js";
 import { CaptainSection, useCaptaincy } from "./captain.jsx";
 import { FixturePlan } from "./plan.jsx";
+import { backTo, pageName, useCameFrom } from "../../lib/backStack.js";
 // SCRBRD-124 (db/70): lifts to this fixture, where a family or a pupil asks for a seat.
 import { FixtureLifts } from "../lifts.jsx";
 
@@ -117,13 +118,16 @@ export function ChildMatches({ child, role, self = false, head = null }) {
   const [open, setOpen] = useState(null);
   // A notice's "See the fixture" (redesign slice 17, lib/noticeList.js): once his own fixtures read has answered,
   // the fixture it named opens as his row would, if it is among his. Nothing is opened that his list does not hold.
+  // Opened so, it was arrived at: its Back names Notices and goes back there (slice 12b); a row's is Matches.
   useEffect(() => {
     if (loading) return;
     const door = takeFixtureDoor(matches, child, now());
-    if (door) setOpen(door);
+    if (door) setOpen({ ...door, arrived: true });
   }, [loading, matches, child]);
-  if (open?.kind === "fixture") return <FixtureDetail match={open.match} child={child} role={role} self={self} onBack={() => setOpen(null)}/>;
-  if (open?.kind === "match") return <MatchFor match={open.match} child={child} role={role} self={self} matches={matches} onBack={() => setOpen(null)}/>;
+  const came = useCameFrom();
+  const back = backTo({ here: self ? "mymatches" : "fixtures", arrived: !!open?.arrived, came, close: () => setOpen(null) });
+  if (open?.kind === "fixture") return <FixtureDetail match={open.match} child={child} role={role} self={self} onBack={back.go} backLabel={back.name}/>;
+  if (open?.kind === "match") return <MatchFor match={open.match} child={child} role={role} self={self} matches={matches} onBack={back.go} backLabel={back.name}/>;
   const { live, upcoming, postponed, played } = fixturesOf(matches, child, now());
   const name = child.knownAs || child.name;
   return (
@@ -168,7 +172,7 @@ function Umpires({ match, role }) {
  * P3 · Fixture — where, when, how, and the declaration. The answer is given
  * here, beside the bus time (§2.1: "the declaration belongs beside it").
  */
-export function FixtureDetail({ match, child, role, self = false, onBack, backLabel = "Matches" }) {
+export function FixtureDetail({ match, child, role, self = false, onBack, backLabel = pageName("fixtures") }) {
   // SCRBRD-138: a captain's section, only for the pupil himself and only while
   // his own honour passes the gate for this fixture's season. Everyone else
   // sees the fixture exactly as it was.
@@ -177,7 +181,8 @@ export function FixtureDetail({ match, child, role, self = false, onBack, backLa
   const postponed = match.status === "postponed";
   return (
     <>
-      {/* Back names where she came from (the role reviews' direction §2.1): "Home" from a Home, "Matches" from the list. */}
+      {/* Back names where she came from (DESIGN_DIRECTION §2.1, slice 12b), in the menu's word: "Home" from a Home,
+          "Matches" from the list, "Notices" from a notice's "See the fixture". */}
       <Back onClick={onBack}>{backLabel}</Back>
       <header style={{ display: "grid", gap: T.space.xs }} data-testid="fixture-detail" data-match={match.id}>
         <span style={{ ...T.role.label, color: T.content.secondary }}>{whenOf(match)}</span>
@@ -219,7 +224,7 @@ export function FixtureDetail({ match, child, role, self = false, onBack, backLa
 }
 
 /** P4 · The match, live or past: the Match Centre in family mode (G13). */
-export function MatchFor({ match, child, role, self = false, matches, onBack, backLabel = "Matches" }) {
+export function MatchFor({ match, child, role, self = false, matches, onBack, backLabel = pageName("fixtures") }) {
   // SCRBRD-138: the Captain tab, for the pupil himself while his honour passes the gate.
   const { cap } = useCaptaincy(self ? child : null, role, match.season ?? null);
   return (

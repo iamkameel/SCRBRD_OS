@@ -356,7 +356,8 @@ function SyncPill({ sync, storage, onOpenHeld }) {
 // it is the way home instead. `onJoinSchool`, given only then, is offered on
 // a decided result, never during play (§2.5 step 6).
 // `onWatch(matchId)`: the shell's Match Centre on this match ("Watch the score", redesign slice 13).
-function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=null,padEntry=null,onJoinSchool=null}={}){
+// `backTo`: the words of the way back, the menu's word for where the scorer came from ("Today", "Matches"; slice 12b).
+function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=null,padEntry=null,onJoinSchool=null,backTo=null}={}){
   const homeOnly=padEntry?.homeOnly===true;
   const[screen,setScreen]=useState(homeOnly&&padEntry?.start==="pilot"?"practice":"setup");
   const[match,setMatch]=useState(null);
@@ -2793,7 +2794,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
     return (
       <div style={{minHeight:"100vh",background:D.base,padding:"24px",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <GS/>
-        <ExitKey onExit={onExit}/>
+        <ExitKey onExit={onExit} to={backTo}/>
         {renderModal()}
         <div style={{width:"100%",maxWidth:"920px"}}>
           {practiceMode&&<div style={{marginBottom:"16px",textAlign:"center"}}>{pilotMode?<PilotLabel/>:<PracticeLabel/>}</div>}
@@ -2814,7 +2815,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
                left={(padStatus?.pending??0)+(padStatus?.tossPending?1:0)} sending={!!padStatus?.syncing}
                attached={!!padStatus?.attached} reason={padStatus?.reason??null}/>
             :<FinishGate offer={finishAs} onSignIn={onSignIn??null} online={padStatus?.online!==false}
-               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack}
+               balls={ballsHere} pending={(padStatus?.pending??0)+(padStatus?.held??0)+(padStatus?.tossPending?1:0)} onBack={gateBack} backTo={backTo}
                released={!!padStatus?.released}/>)}
           {/* A tied match: the button where a super over may start, the
               engine's words where it may not (the tie stands). */}
@@ -2867,7 +2868,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
                 Save the scorecard
               </Btn>
             )}
-            {/* One primary: where the scorer's end has "Back to Today", this is not drawn. */}
+            {/* One primary: where the scorer's end has its "Back to Today" (named for where he came from), this is not drawn. */}
             {!gateBack&&<Btn variant="primary" size="lg" onClick={()=>{if(homeOnly){onExit?.();return;}setScreen("setup");setEvents([[],[]]);setCurIn(0);setMatch(null);setPractice(null);setSelSeg(null);}}>
               {homeOnly?"Back home":practiceMode?"Back to the start":"New Match"}
             </Btn>}
@@ -2879,12 +2880,12 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
 
   if(screen==="practice")return (<><GS/><PracticeSetup onStart={startPractice} onCancel={homeOnly?()=>onExit?.():()=>setScreen("setup")} pilot={pilotNow}/></>);
   // homeOnly: never the start screen (above); a match still opening, or on its way home.
-  if(screen==="setup"&&homeOnly)return (<><GS/><div role="status" data-testid="pad-opening" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.surface.canvas,color:T.content.secondary,...T.role.body}}>Opening…</div><ExitKey onExit={onExit}/></>);
+  if(screen==="setup"&&homeOnly)return (<><GS/><div role="status" data-testid="pad-opening" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.surface.canvas,color:T.content.secondary,...T.role.body}}>Opening…</div><ExitKey onExit={onExit} to={backTo}/></>);
   if(screen==="practice-list")return (<><GS/><PracticeList onBack={()=>setScreen("setup")} onResume={resumePractice}/></>);
   if(screen==="pilot-list")return (<><GS/><PilotList onBack={()=>setScreen("setup")} onResume={resumePractice}/></>);
   if(screen==="setup")return (<><GS/><SetupScreen onStart={startMatch}
     practice={{offer:practiceOffer,onStart:()=>setScreen("practice"),onList:()=>setScreen("practice-list"),onResume:resumePractice,
-      onPilotList:(pilotNow?.sync||pilotHere>0)?()=>setScreen("pilot-list"):null}}/><ExitKey onExit={onExit}/></>);
+      onPilotList:(pilotNow?.sync||pilotHere>0)?()=>setScreen("pilot-list"):null}}/><ExitKey onExit={onExit} to={backTo}/></>);
 
   // Slice 13 (Flow E): one screen, before any toss sheet. The toss sheet the
   // opening set waits behind it; only the handover sheet is drawn over it.
@@ -2892,7 +2893,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
     <>
       <GS/>
       {modal==="handover"&&renderModal()}
-      <OtherPhoneScreen match={match} holder={holder} reason={padStatus?.reason??null} onExit={onExit}
+      <OtherPhoneScreen match={match} holder={holder} reason={padStatus?.reason??null} onExit={onExit} backTo={backTo}
         onCode={()=>setModal("handover")}
         onWatch={onWatch&&matchId?()=>onWatch(matchId):null}
         onCheck={checkHolder} checking={checkingHolder}
@@ -2944,7 +2945,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
         <header data-testid="pad-titlebar" style={{position:"sticky",top:0,zIndex:100,minHeight:"52px",
           display:"flex",alignItems:"center",gap:T.space.sm,padding:`${T.space.xs} ${T.space.sm}`,
           background:T.surface.base,borderBottom:`1px solid ${T.line.normal}`}}>
-          <ExitKey onExit={onExit} inBar/>
+          <ExitKey onExit={onExit} inBar to={backTo}/>
           <div style={{flex:1,minWidth:0}}>
             {/* The two sides' names wrap on a narrow phone rather than end in an ellipsis: which match this is matters more than one line (I32). */}
             <h1 style={{margin:0,fontFamily:T.type.body,fontSize:"16px",fontWeight:600,lineHeight:1.25,color:T.content.primary,

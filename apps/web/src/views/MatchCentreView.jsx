@@ -34,6 +34,7 @@ import { clearCoach, peekCoach } from "../lib/cockpitNav.js";
 import { PickSideEntry } from "./cockpit/PickSide.jsx";
 import { APP_MATCHES, appPath, parseAppPath } from "../lib/matchTabs.js";
 import { navigate, usePath } from "../lib/route.js";
+import { cameInto, backTo, openedInside, useCameFrom } from "../lib/backStack.js";
 
 // A hand on the page: any of these means the person is steering, so the held scroll below lets go.
 const HAND = ["wheel", "touchstart", "pointerdown", "keydown"];
@@ -116,7 +117,20 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
   // closes the fixture (the effect below).
   const path = usePath();
   const route = parseAppPath(path);
-  const setOpenM = (m, tab = null) => { holdM(m); navigate(m ? appPath(m.id, tab) : APP_MATCHES); };
+  // Slice 12b (DESIGN_DIRECTION §2.1): the fixture's Back names where he came from. One this page opened on
+  // arriving (Today's card, a notice, a To-resolve row, its address) names the page before it and goes back there;
+  // one opened from this list names Matches and closes to it, and so does a direct link, which has no page before.
+  const came = useCameFrom();
+  const [arrived, setArrived] = useState(() => cameInto("matches", route?.matchId ?? null, { door: !!peekCoach() }));
+  // An arrival forgets what the list opened on an earlier visit, so the pad closing over it finds it arrived again.
+  useEffect(() => { if (arrived) openedInside("matches", null); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const setOpenM = (m, tab = null) => {
+    holdM(m);
+    if (!m) { setArrived(false); openedInside("matches", null); }
+    navigate(m ? appPath(m.id, tab) : APP_MATCHES);
+  };
+  /** A fixture opened from this page itself (the list, a "next fixture" link): its Back is Matches. */
+  const openHere = (m) => { setArrived(false); openedInside("matches", m.id); setOpenM(m); };
   // A paper scorebook being imported for a fixture (SCRBRD-120): its own
   // screens, opened from the fixture's side panel.
   const [sbOpen,   setSbOpen]   = useState(null);
@@ -126,7 +140,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
   useEffect(() => {
     const id = route?.matchId ?? null;
     if (id === (openM?.id ?? null)) return;
-    if (!id) { holdM(null); setCoachOn(null); return; }
+    if (!id) { holdM(null); setCoachOn(null); setArrived(false); return; }
     // A fixture this person's fixtures read does not hold stays unopened: the list, as for any other.
     const m = MATCHES.find((x) => x.id === id);
     if (m) { setSelMatch(null); holdM(m); }
@@ -201,7 +215,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
   const liveFolds = useLiveFolds(liveIds, matchesNonce);
   // Opens a fixture's own Match Centre — the "next fixture" links (item 4)
   // and, from the list itself, the ordinary "Open match" button.
-  const openFixture = (m) => { setSelMatch(null); setOpenM(m); };
+  const openFixture = (m) => { setSelMatch(null); openHere(m); };
   // CRI-1.4, and the list since (Kameel, 6 Nov): a fixture's scorer button — the match page's "Enter scoring"
   // and the list's "Open Live Scorer" alike — only where one of this person's assignments grants the scoring
   // routes' own capability over THAT fixture (lib/enterScoring.js). The demonstration has no session and no
@@ -219,8 +233,9 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
     // (a result, a new status) is the one the view shows.
     const fresh = MATCHES.find((m) => m.id === openM.id) ?? openM;
     const enters = scoresHere(fresh);
+    const back = backTo({ here: "matches", arrived, came, close: () => { setOpenM(null); setCoachOn(null); } });
     return (
-      <MatchView match={fresh} role={role} onClose={() => { setOpenM(null); setCoachOn(null); }} canScoreIt={enters}
+      <MatchView match={fresh} role={role} onClose={back.go} backLabel={back.name} canScoreIt={enters}
         initialTab={coachOn?.tab ?? null} initialDrawer={coachOn?.drawer ?? false} initialCorrections={coachOn?.corrections ?? false}
         // The fixture's bare address is its default tab (slice 10: the Coach tab until the first ball, for its coach).
         route={{ tab: route?.matchId === fresh.id ? route.tab : null, setTab: (t, home) => navigate(appPath(fresh.id, t, home)) }}
@@ -285,7 +300,7 @@ function MatchCentreView({ role, onOpenScorer, onNavProfile, onNav = null }) {
                 const sides = sidesOf(m);
                 const said = results[m.id] ?? null;
                 const scores = !signedIn() && m.scorecard ? { home: demoScore(m.scorecard.home), away: demoScore(m.scorecard.away), batting: isLive && m.scorecard.home ? "home" : null } : null;
-                const open = { label: openWords(m), testid: `mc-open-${m.id}`, onClick: () => setOpenM(m) };
+                const open = { label: openWords(m), testid: `mc-open-${m.id}`, onClick: () => openHere(m) };
                 // A scheduled fixture is offered too, because that is when scoring actually begins — you open the pad
                 // at the toss. Whether this person MAY score it is decided by the database when the scorer claims it;
                 // scoresHere() only decides whether to offer the button (over this fixture, by the routes' own
