@@ -58,12 +58,12 @@ function Wide({ children, onClick, testId, primary = false, disabled = false, ic
  *
  * @param {{
  *   match: any, holder: any, reason: string | null,
- *   onExit?: (() => void) | null, onCode: () => void, onWatch?: (() => void) | null,
+ *   onExit?: (() => void) | null, backTo?: string | null, onCode: () => void, onWatch?: (() => void) | null,
  *   onCheck?: (() => void) | null, checking?: boolean,
  *   lastAt?: string | null, onTakeOver?: (() => void) | null,
  * }} p
  */
-export function OtherPhoneScreen({ match, holder, reason, onExit = null, onCode, onWatch = null, onCheck = null, checking = false,
+export function OtherPhoneScreen({ match, holder, reason, onExit = null, backTo = null, onCode, onWatch = null, onCheck = null, checking = false,
                                    lastAt = null, onTakeOver = null }) {
   const say = otherPhoneWords(holder, reason, lastAt);
   const lapsed = say.kind === "lapsed";
@@ -77,7 +77,7 @@ export function OtherPhoneScreen({ match, holder, reason, onExit = null, onCode,
       {/* The pad's own title bar: back, and which match this is. */}
       <header style={{ position: "sticky", top: 0, zIndex: 100, minHeight: "52px", display: "flex", alignItems: "center", gap: T.space.sm,
         padding: `${T.space.xs} ${T.space.sm}`, background: T.surface.base, borderBottom: `1px solid ${T.line.normal}` }}>
-        <ExitKey onExit={onExit} inBar/>
+        <ExitKey onExit={onExit} inBar to={backTo}/>
         <h1 style={{ margin: 0, flex: 1, minWidth: 0, fontFamily: T.type.body, fontSize: "16px", fontWeight: 600, lineHeight: 1.25,
           color: T.content.primary, overflowWrap: "anywhere" }}>{sides}</h1>
       </header>

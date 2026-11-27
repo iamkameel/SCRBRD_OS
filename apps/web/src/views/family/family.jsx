@@ -23,6 +23,7 @@ import { tenantWords } from "../../lib/words.js";
 import { chooseChild, doorTo, fixturesOf, forgetChild, linkWords, peekFixtureDoor, pendingWords, recallChild, rememberChild, termsGated } from "../../lib/family.js";
 import { agreedWords } from "../../lib/guardianLink.js";
 import { Action, Card, ChildSwitcher, Line, NoneOr, Page, RetryBtn, Title } from "./parts.jsx";
+import { pageName } from "../../lib/backStack.js";
 import { readState } from "../../lib/readState.js";
 import { InjuryLine, LastMatchCard, LiveCard, NextFixtureCard, NoticesCard, SeasonCard } from "./cards.jsx";
 import { PersonalBests } from "./bests.jsx";
@@ -158,7 +159,7 @@ export function FamilyHome({ role, onNav, onOpenScorer }) {
     return (
       <>
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <MatchFor match={open.match} child={child} role={role} matches={matches} backLabel="Home" onBack={() => setOpen(null)}/>
+        <MatchFor match={open.match} child={child} role={role} matches={matches} backLabel={pageName("children")} onBack={() => setOpen(null)}/>
       </>
     );
   }
@@ -166,7 +167,7 @@ export function FamilyHome({ role, onNav, onOpenScorer }) {
     return (
       <Page testid="family-home">
         <AppointedOnMatch role={role} match={open.match} onOpenScorer={onOpenScorer}/>
-        <FixtureDetail match={open.match} child={child} role={role} backLabel="Home" onBack={() => setOpen(null)}/>
+        <FixtureDetail match={open.match} child={child} role={role} backLabel={pageName("children")} onBack={() => setOpen(null)}/>
       </Page>
     );
   }

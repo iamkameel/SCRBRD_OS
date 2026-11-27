@@ -36,22 +36,31 @@ import { EXTRAS, NB_DEFAULT, NB_FROM, NB_TYPES, extraCall, extraOf, nbFreeHit, n
  */
 
 /**
- * The way back to the shell. In the pad's title bar it is the first key, 44
- * square; on the setup and result screens, which have no bar, it floats where
- * it always did. One class either way (`os-exit-scorer`), which the walks and
- * GLOBAL_CSS know it by.
+ * The way back to the shell, named for where the scorer came from
+ * (DESIGN_DIRECTION §2.1: "The pad: its own bar. Back, named for where he came
+ * from"; slice 12b): "‹ Today", "‹ Matches", the menu's word for the page under
+ * the pad, which the shell passes as `to` (App.jsx). In the pad's title bar it
+ * is the first key, 44 tall and at least 44 wide, on one line; where the bar is
+ * narrow the glyph goes and the word stays (`os-exit-glyph`, GLOBAL_CSS),
+ * never a bare glyph. On the setup and result screens, which have no bar, it
+ * floats where it always did. One class either way (`os-exit-scorer`), which
+ * the walks and GLOBAL_CSS know it by. Its accessible name starts with the
+ * words it shows.
+ * @param {{ onExit?: (() => void) | null, inBar?: boolean, to?: string | null }} p
  */
-export function ExitKey({ onExit, inBar = false }) {
+export function ExitKey({ onExit, inBar = false, to = null }) {
   if (!onExit) return null;
+  const words = to || "Back";
   return (
     <button type="button" className="os-exit-scorer pressBtn" onClick={onExit} data-testid="exit-scorer"
-      aria-label={inBar ? "Back to SCRBRD OS" : undefined} title="Leave the scorer"
+      aria-label={`${words}: leave the scorer`} title="Leave the scorer"
       style={inBar ? { position: "static", top: "auto", left: "auto", zIndex: "auto", flexShrink: 0,
-        width: px(T.floor.target), height: px(T.floor.target), padding: 0, justifyContent: "center", borderRadius: T.radius.md,
+        minWidth: px(T.floor.target), height: px(T.floor.target), padding: `0 ${T.space.sm}`, gap: T.space.xs,
+        justifyContent: "center", borderRadius: T.radius.md, whiteSpace: "nowrap",
         background: "transparent", border: `1px solid ${T.line.normal}`, boxShadow: "none",
         backdropFilter: "none", WebkitBackdropFilter: "none", color: T.content.primary,
-        fontSize: "26px", fontWeight: 400, lineHeight: 1 } : undefined}>
-      <span aria-hidden="true">‹</span>{!inBar && " SCRBRD OS"}
+        fontFamily: T.type.body, fontSize: "15px", fontWeight: 600, lineHeight: 1 } : undefined}>
+      <span aria-hidden="true" className="os-exit-glyph" style={inBar ? { fontSize: "22px", fontWeight: 400 } : undefined}>‹</span>{words}
     </button>
   );
 }

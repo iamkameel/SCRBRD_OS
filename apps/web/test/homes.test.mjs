@@ -26,6 +26,7 @@ import { NAV_CAPABILITY, NAV_META, NAV_ORDER, PERSONA_ONLY, ROLE_IDENTITY, ROLES
 import { FRAMED, HEADER, HOMES, HOME_OF, UNDER, collapseHomes, entryFor, entryLabel, homeOf, homeParts } from "../src/design/homes.js";
 import { HomeBar } from "../src/shell/HomeBar.jsx";
 import { useMenu } from "../src/lib/homeNav.js";
+import { startTrail, trailStep } from "../src/lib/backStack.js";
 import { CompetitionsView } from "../src/views/CompetitionsView.jsx";
 import { LeagueView } from "../src/views/LeagueView.jsx";
 import { LogisticsView } from "../src/views/LogisticsView.jsx";
@@ -290,7 +291,11 @@ group("The shell routes the folded destination to its home");
   ok("...and the competitions route gets the section a link named", /competitions:\s+<CompetitionsHome\s+role=\{role\} section=\{pageSection\}\/>/.test(app));
   ok("...and the menu is told the page, and lights its home (design/homes.js entryFor)", (app.match(/<(Sidebar|MobileNav) role=\{role\} active=\{page\}/g) || []).length === 2);
   ok("...and Today, Matches and Team draw their bar over the screen", /FRAMED\.includes\(homeOf\(shown\)\)/.test(app) && /<HomeBar home=\{homeOf\(shown\)\}/.test(app));
-  ok("a menu choice clears a section a link had named", /const setPage = \(k, section = null\) => \{ setPageSection\(section\); setPageRaw\(k\); \}/.test(app));
+  // Slice 12b: the page and its section are one move on the shell's trail (lib/backStack.js), each move naming its own.
+  ok("a menu choice clears a section a link had named", /const setPage = \(k, section = null\) => moveTo\(\{ type: "go", key: k, section \}\)/.test(app)
+     && /const page = here\.page, pageSection = here\.section;/.test(app)
+     && trailStep(trailStep(trailStep(startTrail(), { type: "go", key: "logistics", section: "grounds" }), { type: "go", key: "fields" }), { type: "go", key: "logistics" }).section === null
+     && trailStep(startTrail("logistics"), { type: "go", key: "logistics", section: "grounds" }).section === "grounds");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

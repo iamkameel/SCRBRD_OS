@@ -5,7 +5,7 @@
  * destinations to their view components. Views read data through getData() in
  * rbac/, never from the mock constants directly.
  */
-import { Suspense, lazy, useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { Suspense, lazy, useState, useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 import { LoginPage } from "./auth/LoginPage.jsx";
 import { NAV_META, PERSONA_NAV, ROLES, navForRoles } from "./design/roles.js";
 import { FRAMED, homeOf } from "./design/homes.js";
@@ -31,6 +31,7 @@ import { clearSession, loadSession, saveSession } from "./lib/persist.js";
 import { signOut, refreshProfile } from "./lib/session.js";
 import { primaryRole } from "./lib/primaryRole.js";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
+import { BackContext, openedInside, pageName, startTrail, trailStep } from "./lib/backStack.js";
 import { StateLabel } from "./ui/stateLabel.jsx";
 
 // ── Route-level code splitting (SCRBRD-020) ─────────────────────────────
@@ -182,6 +183,8 @@ const onAddress = (/** @type {() => void} */ fn) => {
   return () => { window.removeEventListener("popstate", fn); window.removeEventListener("scrbrd:navigate", fn); };
 };
 const onFixtureAddress = () => /^\/app\/matches\/[^/]+/.test(window.location.pathname);
+/** The page a role opens first: a persona's own Home, else Today. Its Back's fixed parent too. @param {string} r */
+const homeFor = (r) => { const p = personaOf(r); return p ? (PERSONA_NAV[p]?.bar?.[0] ?? "dashboard") : "dashboard"; };
 
 export default function SCRBRD_OS() {
   // The theme (design/theme.js). Subscribing HERE, at the root, is what makes
@@ -211,12 +214,15 @@ export default function SCRBRD_OS() {
   const [followAsk, setFollowAsk] = useState(() => followAsked());
   const [role,      setRole]      = useState("superadmin");
   const [userName,  setUserName]  = useState("Super Admin");
-  const [page,      setPageRaw]   = useState("dashboard");
-  // A section a link named (GA-I30): "the ground schedule", not just "Logistics".
-  // Cleared by every move that does not name one, so a menu choice never opens
-  // a section a link asked for earlier.
-  const [pageSection, setPageSection] = useState(null);
-  const setPage = (k, section = null) => { setPageSection(section); setPageRaw(k); };
+  // The page, the section a link named on it (GA-I30: "the ground schedule", not just "Logistics"), and the trail
+  // of pages behind it (lib/backStack.js, slice 12b): Back names where the person came from. The section is
+  // cleared by every move that does not name one, so a menu choice never opens a section a link asked for earlier.
+  const [here, moveTo] = useReducer(trailStep, "dashboard", startTrail);
+  const page = here.page, pageSection = here.section;
+  /** The person moves on: where he was goes on the trail. */
+  const setPage = (k, section = null) => moveTo({ type: "go", key: k, section });
+  /** A move nobody made (a session restored, an address arrived on, a page switched off): nothing goes on the trail. */
+  const replacePage = (k, section = null) => moveTo({ type: "replace", key: k, section });
   const [collapsed, setCollapsed] = useState(false);
   // Lifted users state so ManagementView + SettingsView share the same source
   // of truth. Seeded from the read path rather than from the mock module: this
@@ -259,6 +265,10 @@ export default function SCRBRD_OS() {
   // Practice Match this phone holds. Nothing to persist: a reload reopens the
   // pad's start screen, as for any practice match (`scorerPractice`).
   const [scorerEntry, setScorerEntry] = useState(null);
+  // The pad was reopened by the session restore, not by a person (a reload mid-match): nobody came from anywhere,
+  // so its Back names the fixed parent, his Home, and goes there (slice 12b). A pad a person opened names the page
+  // under it, where it closes to.
+  const [padDirect, setPadDirect] = useState(false);
   // The login page was opened from a live pad (SCRBRD-078): it offers the
   // real sign-in only — never the demo — and returns to the pad.
   // The state to go back to ("app", or "pending" for the no-school pad), or false.
@@ -271,8 +281,10 @@ export default function SCRBRD_OS() {
     // Fall back to the dashboard rather than to undefined: a role whose nav
     // does not contain the current page used to set `page` to nav[0], and an
     // unknown role made that undefined — a blank main area with no way back.
-    const nav = ROLES[r]?.nav || [];
-    if (!nav.includes(page)) setPage(nav[0] ?? "dashboard");
+    // A new role starts the trail again: Back never names a page of the role before.
+    moveTo({ type: "forget" });
+    const menu = ROLES[r]?.nav || [];
+    if (!menu.includes(page)) replacePage(menu[0] ?? "dashboard");
   };
 
   // The door's hint is read once; it leaves the address so a reload or a
@@ -309,8 +321,10 @@ export default function SCRBRD_OS() {
     // is also appointed to score is badged "scorer" (primaryRole) and lands on
     // his own Home, the pupil's app (EXPERIENCE_PASS Q2).
     const held = (p?.assignments ?? []).map((a) => a.role);
-    const nav = held.length ? navForRoles(held) : ROLES[r]?.nav || [];
-    setPage(nav[0] || "dashboard");
+    const menu = held.length ? navForRoles(held) : ROLES[r]?.nav || [];
+    // Signed in: his first page, with nothing behind it (an address he arrived on may still move it, App below).
+    moveTo({ type: "forget" });
+    replacePage(menu[0] || "dashboard");
     setLoginForPad(false);
     setAppState("app");
   };
@@ -353,7 +367,7 @@ export default function SCRBRD_OS() {
     forgetSetup();
     setScorerOpen(false); setScorerResume(null); setScorerMatchId(null); setScorerPractice(false); setScorerEntry(null);
     setUsers([]); setUserEdits(false);
-    setRole("superadmin"); setUserName("Super Admin"); setPage("dashboard");
+    setRole("superadmin"); setUserName("Super Admin"); moveTo({ type: "forget" }); replacePage("dashboard");
     if (!keepDoor) { setDoor(null); setFollowAsk(null); }
     setAppState("login");
   };
@@ -367,6 +381,7 @@ export default function SCRBRD_OS() {
   const openScorer = (m, asRole = role, { restored = false } = {}) => {
     if (!canScore(asRole)) return;   // RBAC: scoring is a write capability
     setScorerEntry(null);
+    setPadDirect(restored);
     // A fixture that came from the server carries no seeded scorecard — there
     // is no stored score to seed from, by design. It opens with its match id
     // and the scorer builds the innings from the team sheet, which is what
@@ -431,6 +446,7 @@ export default function SCRBRD_OS() {
     setScorerResume(null);
     setScorerMatchId(null);
     setScorerEntry(entry ?? null);
+    setPadDirect(false);
     setScorerOpen(true);
   };
 
@@ -449,9 +465,17 @@ export default function SCRBRD_OS() {
     setScorerResume(null);
     setScorerMatchId(null);
     setScorerEntry({ ...entry, homeOnly: true });
+    setPadDirect(false);
     setScorerOpen(true);
   };
-  const closePad = () => { setScorerOpen(false); setScorerResume(null); setScorerEntry(null); };
+  const closePad = () => {
+    // A pad reopened by the restore goes to the page its Back named: Home.
+    if (padDirect && appState === "app") replacePage(homeFor(role));
+    setPadDirect(false);
+    setScorerOpen(false); setScorerResume(null); setScorerEntry(null);
+  };
+  // Where the pad's Back goes, by the menu's word for it: the page under the pad, or Home for one the restore reopened.
+  const padBackTo = pageName(padDirect ? homeFor(role) : page) ?? pageName(homeFor(role)) ?? "Today";
 
   // ── Session durability ──────────────────────────────────
   // A reload mid-over must not drop the scorer back to the login screen. The
@@ -469,7 +493,8 @@ export default function SCRBRD_OS() {
       if (s.appState) setAppState(s.appState === "landing" || s.appState === "onboarding" ? "login" : s.appState);
       if (s.role) setRole(s.role);
       if (s.userName) setUserName(s.userName);
-      if (s.page) setPage(s.page);
+      // Restored, not moved to: nothing goes on the trail.
+      if (s.page) replacePage(s.page);
       // Not for an account with no school: its pad is opened from its own home, by a person (openPadNoSchool).
       if (s.scorerPractice && !s.scorerMatchId && s.appState !== "pending") openScorer(null, s.role ?? role, { restored: true });
       if (s.scorerMatchId) {
@@ -548,10 +573,12 @@ export default function SCRBRD_OS() {
   const toApp = () => window.history.replaceState(window.history.state, "", "/app" + window.location.search);
   useEffect(() => {
     if (appState !== "app") return undefined;
-    const go = () => { if (atMatches()) reaches("matches") ? setPage("matches") : toApp(); };
-    go();
-    window.addEventListener("popstate", go);
-    return () => window.removeEventListener("popstate", go);
+    // Arriving on the address is no move of his (a link names the fixed parent, slice 12b); the back button is.
+    const go = (/** @type {boolean} */ arrive) => { if (atMatches()) reaches("matches") ? (arrive ? replacePage : setPage)("matches") : toApp(); };
+    const popped = () => go(false);
+    go(true);
+    window.addEventListener("popstate", popped);
+    return () => window.removeEventListener("popstate", popped);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appState, role, reachKey]);
   // The menu's own Match Centre, tapped while a match is open in it, goes back
@@ -582,17 +609,18 @@ export default function SCRBRD_OS() {
   // Leaving the screen leaves the address, and the back button onto one is that thing again.
   useEffect(() => {
     if (appState !== "app") return undefined;
-    const go = () => {
+    const go = (/** @type {boolean} */ arrive) => {
       const t = thingOf(window.location.pathname);
       if (!t) { setThing(null); return; }
       if (!reaches(THING_PAGE[t.kind])) { setThing(null); toApp(); return; }
       setThing(t);
       if (t.kind === "players") setProfileTarget(t.id);
-      setPage(THING_PAGE[t.kind]);
+      (arrive ? replacePage : setPage)(THING_PAGE[t.kind]);
     };
-    go();
-    window.addEventListener("popstate", go);
-    return () => window.removeEventListener("popstate", go);
+    const popped = () => go(false);
+    go(true);
+    window.addEventListener("popstate", popped);
+    return () => window.removeEventListener("popstate", popped);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appState, role, reachKey]);
   useEffect(() => {
@@ -644,7 +672,7 @@ export default function SCRBRD_OS() {
     </>
   );
   // The pad, full-screen, wherever it was opened from.
-  const padView = ({ asRole, onJoinSchool = null }) => (
+  const padView = ({ asRole, onJoinSchool = null, backTo = padBackTo }) => (
     <>
       <style>{GLOBAL_CSS}</style>
       {/* The key forces a remount when the scorer is pointed at a different
@@ -671,6 +699,8 @@ export default function SCRBRD_OS() {
             // title bar (step 2 of the redesign), floating on its setup and
             // result screens. It used to float over the pad's bar from here.
             onExit={closePad}
+            // Its Back's words (slice 12b): where the scorer came from, the menu's word for the page under the pad.
+            backTo={backTo}
             // "Watch the score" (redesign slice 13): another phone holds the
             // match, so the pad gives way to the Match Centre on it, at its
             // address (/app/matches/:id, which the Match Centre opens on
@@ -678,6 +708,8 @@ export default function SCRBRD_OS() {
             onWatch={(id) => {
               closePad();
               if (!id || !reaches("matches")) return;
+              // From a pad opened on Matches, the match it opens is Matches' own: its Back is Matches (slice 12b).
+              if (page === "matches" && !padDirect) openedInside("matches", id);
               window.history.pushState(null, "", `/app/matches/${encodeURIComponent(id)}` + window.location.search);
               setPage("matches");
             }}/>
@@ -688,7 +720,7 @@ export default function SCRBRD_OS() {
 
   if (appState === "pending") {
     // The pad, opened from the no-school home (openPadNoSchool): no role, and back home on exit.
-    if (scorerOpen && scorerEntry?.homeOnly) return padView({ asRole: null, onJoinSchool: () => { closePad(); setJoinFirst((n) => n + 1); } });
+    if (scorerOpen && scorerEntry?.homeOnly) return padView({ asRole: null, backTo: "Home", onJoinSchool: () => { closePad(); setJoinFirst((n) => n + 1); } });
     return (
       <><style>{GLOBAL_CSS}</style>
         {/* The same sign-out the shell uses. This one cleared the profile and
@@ -790,8 +822,12 @@ export default function SCRBRD_OS() {
   const personaHeader = persona && signedIn();
   // A persona that lands on a page it has no view for opens its own Home,
   // never the staff dashboard.
-  const home = persona ? (PERSONA_NAV[persona]?.bar?.[0] ?? "dashboard") : "dashboard";
+  const home = homeFor(role);
   const shown = VIEW_MAP[page] ? page : home;
+  // Where he came from (slice 12b): the trail's last page, if it is one this shell draws, and the move back to it.
+  // Nothing on a direct link or a fresh load: each screen's Back then names its fixed parent (lib/backStack.js).
+  const last = here.trail[here.trail.length - 1] ?? null;
+  const came = { from: last && VIEW_MAP[last.key] && last.key !== shown ? last : null, back: () => moveTo({ type: "back" }) };
 
   return (
     <>
@@ -802,7 +838,7 @@ export default function SCRBRD_OS() {
             navigation entry on every single page change — and the nav is up to
             nineteen entries long. Invisible until focused. */}
         <a href="#os-content" className="skip-link" data-testid="skip-link">Skip to content</a>
-        <OffPageGuard page={page} home={home} onNav={setPage}/>
+        <OffPageGuard page={page} home={home} onNav={replacePage}/>
         {!isMobile&&<Sidebar role={role} active={page} onNav={navTo} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} notifCount={unreadCount} invites={invitesWaiting} userName={userName} onSignOut={handleSignOut} persona={persona} home={home}/>}
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflow:"hidden"}}>
           {/* Said on every screen, not once on the login page. The shell can
@@ -834,7 +870,7 @@ export default function SCRBRD_OS() {
                     <HomeBar home={homeOf(shown)} role={role} section={shown} onSection={(k) => { if (thing) { setThing(null); toApp(); } navTo(k); }} onNav={navTo} scroll invites={invitesWaiting}/>
                   </div>
                 )}
-                {VIEW_MAP[shown] || VIEW_MAP.dashboard}
+                <BackContext.Provider value={came}>{VIEW_MAP[shown] || VIEW_MAP.dashboard}</BackContext.Provider>
               </ErrorBoundary>
             </Suspense>
           </main>

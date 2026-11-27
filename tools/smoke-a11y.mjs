@@ -976,7 +976,12 @@ async function cockpitWalk(theme) {
     await page.waitForTimeout(300);
     ok("Escape closes it and focus returns to the button that opened it", await tid("signals").count() === 0 && await page.evaluate(() => document.activeElement?.getAttribute("data-testid")) === "coach-signals-open");
 
+    // Slice 12b: the match-day card opened this fixture, so its Back names where he came from, Today, and goes there.
+    ok("Back on the fixture the match-day card opened names Today", (await tid("mc-back").innerText().catch(() => "")).trim() === "Today");
     await tap("mc-back", 800);
+    ok("...and goes back to Today", await tid("os-main").getAttribute("data-page").catch(() => null) === "dashboard" && await tid("day-matchday").count() === 1);
+    await page.locator('[data-testid="nav-matches"], [data-testid="mnav-matches"]').first().click({ timeout: 6000 }).catch(() => {});
+    await page.locator(`[data-testid="mc-open-${COCKPIT.live}"]`).waitFor({ timeout: 8000 }).catch(() => {});
     await tap(`mc-open-${COCKPIT.live}`, 1800);
     await pickTab(page, "coach").catch(() => {});
     await afterReads(page, 2500);

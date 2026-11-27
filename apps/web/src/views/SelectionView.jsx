@@ -25,6 +25,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { D, T, textOn, themed } from "../design/tokens.js";
+import { pageName } from "../lib/backStack.js";
 import { Card, EmptyState, SectionHeader } from "../ui/primitives.jsx";
 import { api, signedIn } from "../lib/api.js";
 import { AGE_GROUPS, asRow, canList, closedWords, emptyWords, listQuery, showsChip } from "../lib/selection.js";
@@ -288,7 +289,8 @@ function SelectionPassport({ boy, institution, onBack }) {
   return (
     <div style={{ padding: "24px 16px", maxWidth: "760px" }} data-testid="selection-passport" data-state={state.state}>
       <button type="button" onClick={onBack} data-testid="selection-back" style={{ ...button(false), marginBottom: "16px" }}>
-        ‹ Back to the list
+        {/* Back to the list, named for this page in the menu's word (slice 12b). */}
+        ‹ {pageName("selection")}
       </button>
       {state.state === "loading" && <EmptyState loading/>}
       {state.state === "error" && <EmptyState error onRetry={() => setNonce((n) => n + 1)}/>}

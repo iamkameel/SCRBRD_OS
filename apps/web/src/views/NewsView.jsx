@@ -8,6 +8,7 @@ import { api } from "../lib/api.js";
 import { profile, schoolsWhere } from "../lib/session.js";
 import { BAND_LABEL, bandOf, deskOf, kickerOf, longWhenSa, bodyParagraphs, readStore, sideLabel, standfirst, whenSa } from "../lib/newsFeed.js";
 import { holdsCapability } from "../rbac/index.js";
+import { backTo, useCameFrom } from "../lib/backStack.js";
 
 /**
  * THE NEWSFEED.
@@ -122,6 +123,8 @@ function NewsView({ role }) {
 
   // ── The full read, at #read-<id>: back (the button, or the phone's) closes it ──
   const [readingId, setReadingId] = useState(readingFromHash);
+  const [arrivedId] = useState(readingFromHash);
+  const came = useCameFrom();
   const pushed = useRef(false);
   const scrollWas = useRef(0);
   const returnTo = useRef(null);
@@ -173,14 +176,17 @@ function NewsView({ role }) {
 
   const publicRow = (n) => <PublicRow n={n} busy={!!busy} onDoor={door} error={publicError?.id===n.id ? publicError.text : null}/>;
   const reading = readingId ? rows.find(n => n.id === readingId) : null;
+  // Slice 12b (DESIGN_DIRECTION §2.1): the post the address named as the Newsfeed opened (Today's headline) names the
+  // page he came from and goes back there; one opened from the feed, or a direct link, names the Newsfeed and closes.
+  const back = backTo({ here: "news", arrived: !!arrivedId && readingId === arrivedId, came, close: closePost });
 
   if (readingId) {
     return (
       <div>
         {reading
-          ? <NewsArticle n={reading} onBack={closePost} publicRow={publicRow(reading)} more={rows.filter(m => m.id !== reading.id && m.scope === reading.scope && m.teamCode === reading.teamCode && !m.draft).slice(0, 3)}
+          ? <NewsArticle n={reading} onBack={back.go} back={back} publicRow={publicRow(reading)} more={rows.filter(m => m.id !== reading.id && m.scope === reading.scope && m.teamCode === reading.teamCode && !m.draft).slice(0, 3)}
                          onOpen={(id) => { returnTo.current = null; try { window.history.replaceState(window.history.state, "", `#read-${id}`); } catch { /* the post still opens */ } setReadingId(id); }}/>
-          : <NotInFeed loading={loading} onBack={closePost}/>}
+          : <NotInFeed loading={loading} onBack={back.go} back={back}/>}
       </div>
     );
   }
@@ -449,7 +455,7 @@ function NewsCard({ n, lead = false, index, fresh, onOpen, publicRow }) {
 }
 
 /** The full read: the cover, the kicker, the headline, the byline, the whole body. */
-function NewsArticle({ n, onBack, publicRow, more, onOpen }) {
+function NewsArticle({ n, onBack, back, publicRow, more, onOpen }) {
   const head = useRef(null);
   useEffect(() => { head.current?.focus?.({ preventScroll: true }); }, [n.id]);
   const [copied, setCopied] = useState(null);
@@ -469,7 +475,7 @@ function NewsArticle({ n, onBack, publicRow, more, onOpen }) {
       <button type="button" className="pressBtn" data-testid="news-read-back" onClick={onBack}
         style={{minHeight:"44px",padding:"0 14px 0 8px",marginBottom:"12px",display:"inline-flex",alignItems:"center",gap:"6px",
           borderRadius:D.pill,border:`1px solid ${D.border}`,background:"transparent",color:D.textSecondary,cursor:"pointer",fontFamily:D.head,fontSize:"13px",fontWeight:700}}>
-        <Icon name="chevron-left" size="16px"/> Newsfeed
+        <Icon name="chevron-left" size="16px"/> {back.name}
       </button>
       <div style={{borderRadius:D.lg,overflow:"hidden",border:`1px solid ${D.border}`}}>
         <NewsCover seed={n.id} school={n.schoolName || n.competitionName} team={n.teamCode} scope={n.scope} ratio="16 / 9"/>
@@ -524,14 +530,14 @@ function NewsArticle({ n, onBack, publicRow, more, onOpen }) {
         </section>
       )}
       <div style={{marginTop:"24px"}}>
-        <Btn variant="ghost" size="sm" data-testid="news-read-back-foot" onClick={onBack}>Back to the newsfeed</Btn>
+        <Btn variant="ghost" size="sm" data-testid="news-read-back-foot" onClick={onBack}>{back.away ? `Back to ${back.name}` : "Back to the newsfeed"}</Btn>
       </div>
     </article>
   );
 }
 
 /** A #read-<id> this reader has no post for: withdrawn, or never theirs to read. Nothing of it is shown. */
-function NotInFeed({ loading, onBack }) {
+function NotInFeed({ loading, onBack, back }) {
   return (
     <Card data-testid="news-read-missing" className="" sx={{padding:"20px",maxWidth:"640px",margin:"0 auto"}}>
       {loading
@@ -542,7 +548,7 @@ function NotInFeed({ loading, onBack }) {
               It may have been withdrawn, or it was written for a side or a school you do not follow.
             </p>
           </>}
-      <Btn size="sm" variant="ghost" data-testid="news-read-back" onClick={onBack}>Back to the newsfeed</Btn>
+      <Btn size="sm" variant="ghost" data-testid="news-read-back" onClick={onBack}>{back.away ? `Back to ${back.name}` : "Back to the newsfeed"}</Btn>
     </Card>
   );
 }

@@ -642,6 +642,13 @@ try {
             await head.click({ timeout: 4000 }).catch(() => {});
             await s.page.waitForSelector('[data-testid="news-read"]', { timeout: 8000 }).catch(() => {});
             ok("...and opens its post", await tid(s.page, "news-read").count() === 1, await pageNow(s.page));
+            // Slice 12b (DESIGN_DIRECTION §2.1): he came from Today, so the post's Back says Today, and goes there.
+            const postBack = (await inner(s.page, "news-read-back")).replace(/\s+/g, " ").trim();
+            ok(`...its Back names where he came from: Today ("${postBack}")`, postBack === "Today" && /^Back to Today$/.test((await inner(s.page, "news-read-back-foot")).trim()));
+            await tid(s.page, "news-read-back").first().click({ timeout: 4000 }).catch(() => {});
+            await afterReads(s.page, 1200);
+            ok("...which goes back to Today, and the address forgets the post", await tid(s.page, "os-main").getAttribute("data-page").catch(() => null) === "dashboard"
+               && await tid(s.page, "news-read").count() === 0 && !/#read-/.test(s.page.url()), await pageNow(s.page));
             const t = await visit(390, "light", false);
             const all = tid(t.page, "day-news-all");
             const box = await all.boundingBox().catch(() => null);

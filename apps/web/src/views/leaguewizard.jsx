@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { roleGrants } from "@scrbrd/policy/roles";
 import { T } from "../design/tokens.js";
+import { pageName } from "../lib/backStack.js";
 import { api, signedIn } from "../lib/api.js";
 import { profile } from "../lib/session.js";
 import { useLive, useRows } from "../lib/live.js";
@@ -697,7 +698,7 @@ export function LeagueWizard({ role, competitionId = null, onClose }) {
         {header}
         <StateLabel kind="demo"/>
         <p data-testid="lw-demo" style={S.body}>This is a demonstration, and nothing here is saved. Sign in as a league administrator to make a league.</p>
-        <div><button type="button" data-testid="lw-cancel" onClick={() => onClose()} style={S.secondary}>Back to competitions</button></div>
+        <div><button type="button" data-testid="lw-cancel" onClick={() => onClose()} style={S.secondary}>‹ {pageName("competitions")}</button></div>
       </div>
     );
   }
@@ -706,7 +707,7 @@ export function LeagueWizard({ role, competitionId = null, onClose }) {
       <div data-testid="lw-root" style={S.card}>
         {header}
         <Alert words={error} testid="lw-error"/>
-        <div><button type="button" data-testid="lw-cancel" onClick={() => onClose()} style={S.secondary}>Back to competitions</button></div>
+        <div><button type="button" data-testid="lw-cancel" onClick={() => onClose()} style={S.secondary}>‹ {pageName("competitions")}</button></div>
       </div>
     );
   }
