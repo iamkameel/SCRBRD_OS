@@ -20522,6 +20522,190 @@ BEGIN
 END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- └── db/176 (section 151) ─────────────────────────────────────────────
 
+-- ┌── db/177 (section 152): a boy born on 29 February, on a team sheet ──
+-- Helpers, as the owner. Every name is invented; the years are fixed (2027
+-- has no 29 February, 2028 has one), and the days the ageing-up list is read
+-- on are pinned (db/128's _v128_clock()).
+
+-- A Hilton boy born on p_born, in p_team, with a verified and agreed guardian
+-- link (the registration a squad row needs, db/08): his id.
+CREATE OR REPLACE FUNCTION _v177_boy(p_tag text, p_born date, p_team text) RETURNS uuid AS $$
+DECLARE b uuid;
+BEGIN
+  INSERT INTO player (school_id, team_code, full_name, surname, squad_no, playing_role, born)
+  VALUES ('11111111-1111-1111-1111-111111111111', p_team, 'Verify Leapday ' || initcap(p_tag), 'Leapday', 177, 'batter', p_born)
+  RETURNING id INTO b;
+  PERFORM _v175_guardian(b, 'v177' || p_tag, 'granted');
+  RETURN b;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- A Hilton fixture for p_team at midday in Johannesburg on p_on: its id.
+CREATE OR REPLACE FUNCTION _v177_fixture(p_team text, p_on date) RETURNS uuid AS $$
+  INSERT INTO match (school_id, team_code, opponent, starts_at, format, overs, status)
+  VALUES ('11111111-1111-1111-1111-111111111111', p_team, 'V177 Leapday XI',
+          (p_on::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg', 'T20', 20, 'scheduled')
+  RETURNING id
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- Put him on the fixture's sheet as the owner (the trigger is the subject, as
+-- §10c has it, so no policy refuses the row first): 'ok', or the refusal's
+-- SQLSTATE and its words.
+CREATE OR REPLACE FUNCTION _v177_pick(p_match uuid, p_boy uuid) RETURNS text AS $$
+BEGIN
+  INSERT INTO match_squad (match_id, player_id, side) VALUES (p_match, p_boy, 'home');
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLSTATE || ' ' || SQLERRM;
+END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The sheet rows of these boys, past row security: one per sheet that took one.
+CREATE OR REPLACE FUNCTION _v177_sheet_rows(p_boys uuid[]) RETURNS SETOF uuid AS $$
+  SELECT s.match_id FROM match_squad s WHERE s.player_id = ANY (p_boys)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+-- The ageing-up list against db/08's arithmetic (make_date() of his birthday,
+-- the CASE on 1 January), on today's day: every boy it could name who was not
+-- born on 29 February, read as the owner. `compared`: the rows db/08's would
+-- list; `differ`: the rows in one and not the other, either way.
+CREATE OR REPLACE FUNCTION _v177_unchanged(OUT compared bigint, OUT differ bigint) AS $$
+  WITH b AS (
+    SELECT p.id, p.born, substring(p.team_code FROM '^U([0-9]{1,2})')::int AS band,
+           extract(year FROM sa_today())::int AS y, extract(month FROM p.born)::int AS m, extract(day FROM p.born)::int AS dd
+      FROM player p
+     WHERE p.born IS NOT NULL AND p.team_code ~ '^U[0-9]{1,2}' AND NOT (to_char(p.born, 'MM-DD') = '02-29')),
+  nb AS (
+    SELECT b.*, make_date(CASE WHEN make_date(b.y, b.m, b.dd) < sa_today() THEN b.y + 1 ELSE b.y END, b.m, b.dd) AS nb FROM b),
+  want AS (
+    SELECT x.id, x.nb, extract(year FROM x.nb)::int - extract(year FROM x.born)::int AS turning, x.next_band,
+           (x.nb - sa_today())::int AS days
+      FROM (SELECT nb.*, extract(year FROM nb.nb)::int + 1 - extract(year FROM nb.born)::int
+                           - CASE WHEN make_date(extract(year FROM nb.nb)::int + 1, 1, 1)
+                                       < make_date(extract(year FROM nb.nb)::int + 1, nb.m, nb.dd) THEN 1 ELSE 0 END AS next_band
+              FROM nb) x
+     WHERE x.next_band > x.band AND x.nb >= sa_today() AND x.nb <= sa_today() + 30),
+  got AS (
+    SELECT v.player_id, v.next_birthday, v.turning, v.next_band, v.days_until
+      FROM player_band_change_due v JOIN player p ON p.id = v.player_id
+     WHERE NOT (to_char(p.born, 'MM-DD') = '02-29'))
+  SELECT (SELECT count(*) FROM want),
+         (SELECT count(*) FROM (SELECT * FROM want EXCEPT SELECT * FROM got) a)
+       + (SELECT count(*) FROM (SELECT * FROM got EXCEPT SELECT * FROM want) z)
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp;
+
+-- One case of section 152, run as scrbrd_app (an invoker) under each person's
+-- session.
+CREATE OR REPLACE FUNCTION _v177_case(p_case text) RETURNS void AS $$
+DECLARE
+  DOS uuid := '88888888-0000-0000-0000-000000000007';   -- Hilton's director of sport (player.age.read)
+  L uuid; O uuid; L14 uuid; L15 uuid; O14 uuid;
+  M27a uuid; M27b uuid; M28a uuid; M28b uuid;
+  b record; got text; j jsonb; d date; n bigint := 0; n2 bigint := 0; x record; v_bad text;
+BEGIN
+  PERFORM set_config('app.user_id', '', true);
+
+  IF p_case = 'sheet' THEN
+    -- (sheet) A boy born on 29 February, and the boy born the day after him,
+    -- each put on four sheets. 2027 has no 29 February: a Term 1 sheet,
+    -- before his birthday. 2028 is a leap year: a Term 4 sheet, months after
+    -- his sixteenth birthday, which 1 January still reads as 15.
+    L := _v177_boy('sheet', '2012-02-29', 'U14A');
+    O := _v177_boy('sheetnext', '2012-03-01', 'U14A');
+    M27a := _v177_fixture('U13A', '2027-02-20'); M27b := _v177_fixture('U14A', '2027-02-20');
+    M28a := _v177_fixture('U14A', '2028-10-14'); M28b := _v177_fixture('U15A', '2028-10-14');
+    FOR b IN SELECT y.id, y.nm FROM (VALUES (L, 'Verify Leapday Sheet'), (O, 'Verify Leapday Sheetnext')) y(id, nm) LOOP
+      got := _v177_pick(M27a, b.id);
+      PERFORM _assert(got = format('23514 %s is 14 on 1 January and cannot play U13A: the limit is 13', b.nm),
+                      format('§152 (sheet): %s, the 2027 U13A sheet answers %s', b.nm, got));
+      got := _v177_pick(M27b, b.id);
+      PERFORM _assert(got = 'ok', format('§152 (sheet): %s, the 2027 U14A sheet answers %s', b.nm, got));
+      got := _v177_pick(M28a, b.id);
+      PERFORM _assert(got = format('23514 %s is 15 on 1 January and cannot play U14A: the limit is 14', b.nm),
+                      format('§152 (sheet): %s, the 2028 U14A sheet answers %s', b.nm, got));
+      got := _v177_pick(M28b, b.id);
+      PERFORM _assert(got = 'ok', format('§152 (sheet): %s, the 2028 U15A sheet answers %s', b.nm, got));
+    END LOOP;
+    PERFORM _assert((SELECT string_agg(r::text, ',' ORDER BY r::text) FROM _v177_sheet_rows(ARRAY[L, O]) r)
+                      = (SELECT string_agg(r::text, ',' ORDER BY r::text) FROM unnest(ARRAY[M27b, M27b, M28b, M28b]) r),
+      '§152 (sheet): the sheets that took them are not the 2027 U14A and the 2028 U15A, each holding both');
+
+  ELSIF p_case = 'due' THEN
+    -- (due) The ageing-up list, read whole as the API reads it (his school's
+    -- director, under her session) on pinned days. A boy born on 29 February
+    -- in the U14A, the same in the U15A, and the boy born the day after him
+    -- in the U14A.
+    L14 := _v177_boy('due14', '2012-02-29', 'U14A');
+    L15 := _v177_boy('due15', '2012-02-29', 'U15A');
+    O14 := _v177_boy('duenext', '2012-03-01', 'U14A');
+    FOR x IN SELECT * FROM (VALUES
+        -- 2027, before his birthday: 1 March, the day age() reads him 15; he
+        -- is 15 on 1 January 2028, so out of the U14A. Not out of the U15A.
+        (date '2027-02-10', '2027-03-01|15|15|19|U15A', NULL::text, '2027-03-01|15|15|19|U15A'),
+        -- 2027, on it.
+        (date '2027-03-01', '2027-03-01|15|15|0|U15A', NULL, '2027-03-01|15|15|0|U15A'),
+        -- 2027, after it: his next is 29 February 2028, not within 30 days.
+        (date '2027-03-05', NULL, NULL, NULL),
+        -- 2028, before it: 29 February; 16 on 1 January 2029, so out of both.
+        (date '2028-02-10', '2028-02-29|16|16|19|U15A', '2028-02-29|16|16|19|U16A', '2028-03-01|16|16|20|U15A'),
+        -- 2028, after it: his next is 1 March 2029, not within 30 days.
+        (date '2028-03-05', NULL, NULL, NULL)) v(on_, l14, l15, o14) LOOP
+      PERFORM _assert(_v128_clock((x.on_::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg') = x.on_,
+                      format('§152 (due): the clock did not pin %s', x.on_));
+      PERFORM _as(DOS);
+      BEGIN
+        SELECT jsonb_object_agg(v.player_id::text, concat_ws('|', v.next_birthday, v.turning, v.next_band, v.days_until,
+                                                             array_to_string(v.trial_for, ',')))
+          INTO j FROM player_band_change_due v;
+      EXCEPTION WHEN OTHERS THEN
+        PERFORM _assert(false, format('§152 (due): on %s the director cannot read the list: %s %s', x.on_, SQLSTATE, SQLERRM));
+      END;
+      PERFORM _assert(j->>L14::text IS NOT DISTINCT FROM x.l14 AND j->>L15::text IS NOT DISTINCT FROM x.l15
+                      AND j->>O14::text IS NOT DISTINCT FROM x.o14,
+        format('§152 (due): on %s the list reads the U14A boy %s (expected %s), the U15A boy %s (expected %s), the boy born the day after %s (expected %s)',
+               x.on_, coalesce(j->>L14::text, 'not listed'), coalesce(x.l14, 'not listed'),
+               coalesce(j->>L15::text, 'not listed'), coalesce(x.l15, 'not listed'),
+               coalesce(j->>O14::text, 'not listed'), coalesce(x.o14, 'not listed')));
+      PERFORM set_config('app.user_id', '', true);
+    END LOOP;
+    PERFORM _v128_clock(NULL);
+
+  ELSIF p_case = 'unchanged' THEN
+    -- (unchanged) Every other boy the list could name, on every seventh day
+    -- of 2027 and 2028: the rows db/08's arithmetic gives, and no others.
+    FOR d IN SELECT g::date FROM generate_series(date '2027-01-03', date '2028-12-31', interval '7 days') g LOOP
+      PERFORM _v128_clock((d::timestamp + time '12:00') AT TIME ZONE 'Africa/Johannesburg');
+      SELECT u.compared, u.differ INTO x FROM _v177_unchanged() u;
+      n := n + x.compared; n2 := n2 + x.differ;
+    END LOOP;
+    PERFORM _v128_clock(NULL);
+    PERFORM _assert(n > 0 AND n2 = 0,
+      format('§152 (unchanged): of %s rows db/08''s arithmetic lists over 2027 and 2028, %s differ from the list''s', n, n2));
+
+  ELSIF p_case = 'body' THEN
+    -- (body) The trigger still calls a definer with its path pinned; the view
+    -- keeps its options and the application's read; and no function or view
+    -- of the schema builds a birthday from a date of birth's day (this
+    -- file's helpers aside).
+    PERFORM _assert(EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = 'match_squad'::regclass
+                               AND t.tgname = 'match_squad_is_age_eligible' AND t.tgfoid = 'match_squad_age_eligible()'::regprocedure)
+                    AND EXISTS (SELECT 1 FROM pg_proc p WHERE p.oid = 'match_squad_age_eligible()'::regprocedure AND p.prosecdef
+                                   AND p.proconfig = ARRAY['search_path=pg_catalog, public, pg_temp']),
+      '§152 (body): the age trigger does not call a definer with its path pinned');
+    PERFORM _assert((SELECT array_to_string(c.reloptions, ', ') FROM pg_class c WHERE c.oid = 'player_band_change_due'::regclass)
+                      = 'security_barrier=true, security_invoker=true'
+                    AND has_table_privilege('scrbrd_app', 'player_band_change_due', 'SELECT'),
+      '§152 (body): player_band_change_due lost its options or the application''s read');
+    SELECT string_agg(y.what, ', ' ORDER BY y.what COLLATE "C") INTO v_bad FROM (
+      SELECT p.oid::regprocedure::text AS what FROM pg_proc p JOIN pg_namespace ns ON ns.oid = p.pronamespace
+       WHERE ns.nspname = 'public' AND p.proname !~ '^_'
+         AND regexp_replace(p.prosrc, '--[^\n]*', '', 'g') ~* ',\s*\(?extract\(day from [a-z_.]*born\)\)?(::int(eger)?)?\s*\)'
+      UNION ALL
+      SELECT 'view ' || c.relname FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+       WHERE ns.nspname = 'public' AND c.relkind IN ('v', 'm')
+         AND pg_get_viewdef(c.oid) ~* ',\s*\(?extract\(day from [a-z_.]*born\)\)?(::int(eger)?)?\s*\)') y;
+    PERFORM _assert(v_bad IS NULL, format('§152 (body): these build a birthday from a date of birth''s day: %s', v_bad));
+  ELSE
+    RAISE EXCEPTION '§152: no case %', p_case;
+  END IF;
+  PERFORM set_config('app.user_id', '', true);
+END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
+-- └── db/177 (section 152) ─────────────────────────────────────────────
+
 -- ┌── Section timing (Kameel, 25 Nov 2026) ─────────────────────────────
 -- CI's verifier ran for two to three and a half hours with no output at all,
 -- so nobody could say which sections were slow. Each section of the DO block
@@ -53694,6 +53878,39 @@ $m130$;
   PERFORM _v176_case('grants');
   PERFORM set_config('app.user_id', '', true);
   -- └── db/176 (section 151) ─────────────────────────────────────────
+  RAISE NOTICE '%', pg_temp._v_section('§152 A boy born on 29 February, on a team sheet and on the ageing-up list');
+  -- ┌── db/177 (section 152) ─────────────────────────────────────────
+  -- ── 152. A boy born on 29 February, on a team sheet and on the ageing-up list (db/177; Kameel, 26 Nov 2026: "count and fix") ──
+  -- Each case stages its own boys and fixtures (as the owner) and runs as
+  -- scrbrd_app (_v177_case, an invoker). Labels:
+  --   (sheet)     a boy born on 29 February and the boy born the day after
+  --               him, each on four sheets: in 2027 (no 29 February) the
+  --               U13A refuses him in words, 14 on 1 January, and the U14A
+  --               takes him; in 2028 (a leap year), a Term 4 sheet after his
+  --               sixteenth birthday, the U14A refuses him, 15 on 1 January,
+  --               and the U15A takes him. The same four answers for both
+  --   (due)       the ageing-up list read whole by his school's director, as
+  --               the API reads it, on pinned days: 2027 before, on and after
+  --               his birthday (1 March, the day age() reads him a year
+  --               older), 2028 before and after it (29 February); the boy
+  --               born the day after listed alike
+  --   (unchanged) every other boy the list could name, on every seventh day
+  --               of 2027 and 2028: the rows db/08's arithmetic gives
+  --   (body)      the trigger calls a definer with its path pinned; the
+  --               view's options and the application's read; no function or
+  --               view builds a birthday from a date of birth's day
+  -- Broken by hand (27 Nov 2026), each went red for its own reason:
+  --   the trigger's arithmetic as db/08 wrote it     → (sheet) red: the 2027 U13A sheet answers 22008, date field value out of range: 2027-02-29
+  --   the view as db/128 left it                    → (due) red: on 2027-02-10 the director cannot read the list (22008, 2027-02-29)
+  --   its next birthday alone as db/08 built it      → (due) red: the same, on 2027-02-10
+  --   its age after the birthday alone, db/08's      → (due) red: on 2028-02-10 the list cannot be read (22008, 2029-02-29)
+  --   that age read at the cut-off before the birthday → (unchanged) red, run alone: 48 rows differ from the 30 db/08's lists
+  PERFORM _v177_case('sheet');
+  PERFORM _v177_case('due');
+  PERFORM _v177_case('unchanged');
+  PERFORM _v177_case('body');
+  PERFORM set_config('app.user_id', '', true);
+  -- └── db/177 (section 152) ─────────────────────────────────────────
   PERFORM set_config('app.user_id', '', true);
   RAISE NOTICE '%', pg_temp._v_section_summary();
   RAISE NOTICE 'ALL RLS LIVE ASSERTIONS PASSED';
