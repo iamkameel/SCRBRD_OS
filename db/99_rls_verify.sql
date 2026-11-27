@@ -12260,9 +12260,12 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 -- This session's rows through ball_event_live against db/121's view under
 -- row security: equal, every column, or §126 fails naming the reader and the
--- label. Returns how many rows the session reads.
-CREATE OR REPLACE FUNCTION _v152_same(p_what text) RETURNS int AS $$
-DECLARE a text := _v152_rows('ball_event_live'); b text := _v152_rows('_v152_live_rls');
+-- label. Returns how many rows the session reads. _v152_same_as() makes the
+-- comparison given the view's read ("rows:md5", as _v152_rows() spells it),
+-- for a caller that reads something else off that one read of the view (§126
+-- (stray), CI speed 27 Nov 2026); _v152_same() reads the view, then asks it.
+CREATE OR REPLACE FUNCTION _v152_same_as(p_what text, a text) RETURNS int AS $$
+DECLARE b text := _v152_rows('_v152_live_rls');
 BEGIN
   PERFORM _assert(a = b, format('§126 (%s): %s reads %s through ball_event_live and %s under row security (scope %s, match %s)',
                                 p_what, coalesce(nullif(current_setting('app.user_id', true), ''), 'nobody'), a, b,
@@ -12270,6 +12273,9 @@ BEGIN
                                 coalesce(nullif(current_setting('app.match_id', true), ''), '-')));
   RETURN split_part(a, ':', 1)::int;
 END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION _v152_same(p_what text) RETURNS int AS $$
+  SELECT _v152_same_as(p_what, _v152_rows('ball_event_live'))
+$$ LANGUAGE sql;
 
 -- The fixtures a pad's credential is held at (the owner's list): for each
 -- school, its fixture with the most balls as the host and as the away side,
@@ -20437,6 +20443,18 @@ BEGIN
     -- but his school's office are all that day. The office's own is recorded
     -- and not counted; yesterday's do not count today; nobody else counts or
     -- records one; a boy whose date is on record has no try to refuse.
+    --
+    -- The day pinned for the case (CI on #412, 26-27 Nov 2026). A try is
+    -- stamped by the wall clock (db/176's default, clock_timestamp()) and
+    -- counted against sa_today(), which reads now(): the start of THIS
+    -- transaction. A request's two clocks agree to the millisecond; this
+    -- file's do not once a run crosses midnight in Johannesburg before here
+    -- (BEGIN at 21:16, §151 at 01:40): every try was the next day's and none
+    -- counted. So for the case sa_today() reads the wall clock's day as the
+    -- case begins (db/128's pinned clock, _v128_clock()), the day the tries
+    -- are stamped, and it is put back at the case's end. Nothing it asserts
+    -- changes: the same count, of the same rows, against the day they fall on.
+    PERFORM _v128_clock(clock_timestamp());
     B := _v176_nodate('v176tries');
     PERFORM _as(REG);
     n := player_born_refused(B);
@@ -20467,6 +20485,7 @@ BEGIN
     n := player_born_refused(B2);
     PERFORM _assert(n IS NULL AND _v176_refusals(B2) = '',
                     format('§151 (tries): a try at a date on record was recorded (%s left): %s', n, _v176_refusals(B2)));
+    PERFORM _v128_clock(NULL);
 
   ELSIF p_case = 'grants' THEN
     -- (grants) The list is scrbrd_app's alone; the gate, the yes's door and
@@ -20522,6 +20541,9 @@ END $$ LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp;
 -- is dropped; the application role calls them through pg_temp's USAGE, which
 -- every session has on its own temporary schema. The first section's
 -- "previous" is everything before it: this file's helpers and fixtures.
+-- `node tools/verify-until.mjs --through §N` runs this file from its start
+-- through section N and rolls back, to time or check one section without
+-- the rest (it cuts where the next section's marker stands).
 CREATE FUNCTION pg_temp._v_section(p_label text) RETURNS text LANGUAGE plpgsql AS $v_section$
 DECLARE
   v_now  numeric := extract(epoch FROM pg_catalog.clock_timestamp());
@@ -37711,13 +37733,39 @@ $v49$;
     n    int;
     bad  text;
     rr   record;
+    -- Asked once, as the owner, before the person loops (CI speed, 26 Nov
+    -- 2026): nothing between here and (withdrawn) writes, so each is what
+    -- the loops asked per person and per row. BM the scored fixtures, GO the
+    -- guardians, PL* every plan's fixture, school and side.
+    BM   uuid[];
+    GO   uuid[];
+    PLF  uuid[];
+    PLS  uuid[];
+    PLT  text[];
+    v_seen  uuid[];
+    v_mr    uuid[];
+    v_child uuid[];
+    k2   int;
+    FXS  uuid[];
+    FRD  uuid[];
+    FR   uuid[];
+    FRM  jsonb := '{}';
   BEGIN
+    -- Fresh planner statistics after the stage, as §94 has them (CI speed, 26
+    -- Nov 2026): the loops below ask every person of some 300 about the
+    -- earlier sections' rows, on statistics last gathered at the seed. It
+    -- changes no answer, only the plans; they roll back with the rest.
+    PERFORM _v117_fresh_stats();
     FX := ARRAY[(z->>'f1')::uuid, (z->>'f2')::uuid, (z->>'f3')::uuid, (z->>'f4')::uuid,
                 (z->>'f5')::uuid, (z->>'f6')::uuid, (z->>'f7')::uuid, (z->>'f8')::uuid];
     TX := ARRAY[(z->>'t1')::uuid, (z->>'t1b')::uuid, (z->>'t2')::uuid, (z->>'t3')::uuid,
                 (z->>'t4')::uuid, (z->>'t6')::uuid, (z->>'t8')::uuid];
     SX := ARRAY[(z->>'s6')::uuid, (z->>'s7')::uuid, (z->>'s8')::uuid, (z->>'sw')::uuid];
     ppl := _v106_people();
+    BM := _v106_ball_matches();
+    GO := _v106_guardians_only();
+    SELECT coalesce(array_agg(p.fixture), '{}'), coalesce(array_agg(p.school), '{}'), coalesce(array_agg(p.team), '{}')
+      INTO PLF, PLS, PLT FROM _v106_plans() p;
 
     -- (reader): m fixtures · t trips · s training · x toss/umpire/weather · p publication
     want := '{
@@ -37801,11 +37849,22 @@ $v49$;
     END LOOP;
 
     -- (literal): the build is §2.5's text, for everyone, everywhere staged or scored
+    --
+    -- fixture_reach('fixture.read', f) is asked here and again at (shape) of
+    -- the same person and fixtures, with nothing written between. So it is asked once a person of every fixture either label
+    -- asks it of (FRD: the staged and seed fixtures, the scored ones, every
+    -- trip's and every toss's), and his set kept for (shape) (FRM). It is an
+    -- EXISTS, never NULL, so "f is in his set" is its answer exactly.
+    FXS := FX || _v106_seed_matches();
+    FRD := ARRAY(SELECT DISTINCT x FROM unnest(FXS || BM || ARRAY(SELECT t.match_id FROM _v106_trips() t) || _v106_toss_matches()) x);
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
+      FR := ARRAY(SELECT x FROM unnest(FRD) x WHERE fixture_reach('fixture.read', x));
+      FRM := FRM || jsonb_build_object(u::text, to_jsonb(FR));
       SELECT string_agg(format('%s/%s', x.f, x.cap), ' ') INTO bad
-        FROM (SELECT f0 AS f, c.cap FROM unnest(FX || _v106_seed_matches()) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
-       WHERE fixture_reach(x.cap, x.f) IS DISTINCT FROM _v117_lit_fixture(x.cap, x.f);
+        FROM (SELECT f0 AS f, c.cap FROM unnest(FXS) f0, (VALUES ('fixture.read'), ('transport.read')) c(cap)) x
+       WHERE (CASE x.cap WHEN 'fixture.read' THEN x.f = ANY (FR) ELSE fixture_reach(x.cap, x.f) END)
+             IS DISTINCT FROM _v117_lit_fixture(x.cap, x.f);
       PERFORM _assert(bad IS NULL, format('§83 (literal): for %s fixture_reach() and §2.5''s text answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(format('%s/%s', s.school, s.team), ' ') INTO bad
         FROM _v106_sides() s
@@ -37819,33 +37878,41 @@ $v49$;
     -- db/112 that includes the one a boy playing up reads only as the boy on
     -- its sheet, db/106 (e): he reads its balls too (§89). (shape) below holds
     -- match_read to fixture_reach() on every one of them.
+    -- Each side of the comparison is read once a person, as he reads it, and
+    -- both differences and the count are taken from those two (the log under
+    -- his row security was read three times a person before 26 Nov 2026).
+    -- The fixtures whose balls he reads are asked fixture by fixture, an
+    -- EXISTS under his row security over each scored fixture (BM, every
+    -- match_id the log holds, read as the owner): the same set as DISTINCT
+    -- match_id over every ball he reads, since each ball he reads is a row of
+    -- the log and so of a fixture in BM; a fixture he reads stops at its
+    -- first ball he reads instead of reading the rest.
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
+      v_seen := ARRAY(SELECT y FROM unnest(BM) y WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = y));
+      v_mr := ARRAY(SELECT m.id FROM match m WHERE m.id = ANY (BM) AND NOT trip_fixture_driver_only(m.id));
       SELECT string_agg(x::text, ' ') INTO bad
-        FROM ((SELECT DISTINCT b.match_id FROM ball_event b)
-              EXCEPT (SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
-                       AND NOT trip_fixture_driver_only(m.id))) d(x);
+        FROM ((SELECT unnest(v_seen)) EXCEPT (SELECT unnest(v_mr))) d(x);
       PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads the balls of %s, which match_read does not give him', u, left(bad, 300)));
       SELECT string_agg(x::text, ' ') INTO bad
-        FROM ((SELECT m.id FROM match m WHERE m.id = ANY (_v106_ball_matches())
-                AND NOT trip_fixture_driver_only(m.id))
-              EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b)) d(x);
+        FROM ((SELECT unnest(v_mr)) EXCEPT (SELECT unnest(v_seen))) d(x);
       PERFORM _assert(bad IS NULL, format('§83 (agree): %s reads %s through match_read and none of its balls', u, left(bad, 300)));
-      n := n + (SELECT count(DISTINCT b.match_id) FROM ball_event b);
+      n := n + cardinality(v_seen);
     END LOOP;
-    PERFORM _assert(n > 0 AND cardinality(_v106_ball_matches()) > 1 AND cardinality(ppl) > 20,
+    PERFORM _assert(n > 0 AND cardinality(BM) > 1 AND cardinality(ppl) > 20,
       format('§83 (agree): the log comparison ran over %s people, %s fixtures and %s reads: it proves nothing',
-             cardinality(ppl), cardinality(_v106_ball_matches()), n));
+             cardinality(ppl), cardinality(BM), n));
     -- (agree) 2: db/100's helper, for every guardian
     n := 0;
-    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+    FOREACH u IN ARRAY GO LOOP
       PERFORM _as(u);
+      v_child := my_child_fixtures();
       PERFORM _assert(
-        (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(my_child_fixtures()) x)
+        (SELECT coalesce(array_agg(x ORDER BY x), '{}') FROM unnest(v_child) x)
           = (SELECT coalesce(array_agg(m.id ORDER BY m.id), '{}') FROM match m),
         format('§83 (agree): for the guardian %s my_child_fixtures() and match_read give different fixtures', u));
-      n := n + cardinality(my_child_fixtures());
+      n := n + cardinality(v_child);
     END LOOP;
     PERFORM _assert(n > 10, format('§83 (agree): the guardians'' fixtures number %s: it proves nothing', n));
     -- (agree) 3: db/96's side, for everyone; db/101's sheet, for every guardian
@@ -37853,23 +37920,30 @@ $v49$;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       SELECT string_agg(format('%s/%s', p.school, p.team), ' ') INTO bad
-        FROM _v106_plans() p
+        FROM unnest(PLF, PLS, PLT) p(fixture, school, team)
        WHERE news_plan_reach(p.school, p.team) IS DISTINCT FROM
              (app_can('news.read', p.school, p.team, ZERO, ZERO) AND side_reach('team.read', p.school, p.team, ZERO));
       PERFORM _assert(bad IS NULL, format('§83 (agree): for %s news_plan_reach() and side_reach() answer apart at %s', u, bad));
     END LOOP;
     n := 0;
-    FOREACH u IN ARRAY _v106_guardians_only() LOOP
+    FOREACH u IN ARRAY GO LOOP
       PERFORM _as(u);
-      SELECT string_agg(format('%s/%s', p.school, p.team), ' ') INTO bad
-        FROM _v106_plans() p
-       -- since db/117 the side on the plan's day (its fixture's), as
-       -- news_post_plan_side and news_post_team_side ask it
-       WHERE (news_plan_reach(p.school, p.team, side_day(p.fixture)) OR news_sheet_reach(p.fixture, p.school, p.team)) IS DISTINCT FROM
-             (app_can('news.read', p.school, p.team, ZERO, ZERO) AND fixture_end_reach('team.read', p.fixture, p.school, p.team));
+      -- each plan's three answers asked once; MATERIALIZED, because the
+      -- comparison and the count both read them, and a subquery flattened
+      -- into both would ask each again
+      WITH r AS MATERIALIZED (
+        SELECT p.school, p.team,
+               -- since db/117 the side on the plan's day (its fixture's), as
+               -- news_post_plan_side and news_post_team_side ask it
+               news_plan_reach(p.school, p.team, side_day(p.fixture)) AS plan,
+               news_sheet_reach(p.fixture, p.school, p.team) AS sheet,
+               (app_can('news.read', p.school, p.team, ZERO, ZERO) AND fixture_end_reach('team.read', p.fixture, p.school, p.team)) AS want
+          FROM unnest(PLF, PLS, PLT) p(fixture, school, team))
+      SELECT string_agg(format('%s/%s', r.school, r.team), ' ') FILTER (WHERE (r.plan OR r.sheet) IS DISTINCT FROM r.want),
+             count(*) FILTER (WHERE r.sheet AND NOT r.plan)
+        INTO bad, k2 FROM r;
       PERFORM _assert(bad IS NULL, format('§83 (agree): for the guardian %s db/101''s plan reach and fixture_end_reach() answer apart at %s', u, bad));
-      n := n + (SELECT count(*) FROM _v106_plans() p
-                 WHERE news_sheet_reach(p.fixture, p.school, p.team) AND NOT news_plan_reach(p.school, p.team, side_day(p.fixture)));
+      n := n + k2;
     END LOOP;
     PERFORM _assert(n > 0, '§83 (agree): no guardian reaches a plan by the sheet alone: the sheet comparison proves nothing');
 
@@ -37877,18 +37951,21 @@ $v49$;
     -- admits, for every person, on every row of the table (db/106 header,
     -- THE SHAPE). match also opens to the driver of a trip to it (db/41);
     -- trip is narrowed for a driver by db/41's restrictive policy.
+    -- fixture_reach('fixture.read', …) is his set from (literal) (FRM): every
+    -- fixture asked below is in FRD.
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
+      FR := ARRAY(SELECT jsonb_array_elements_text(FRM->(u::text))::uuid);
       SELECT string_agg(_v106_label(z, x) || '?' || x::text, ' ') INTO bad
-        FROM unnest(FX || _v106_ball_matches()) x
+        FROM unnest(FX || BM) x
        WHERE EXISTS (SELECT 1 FROM match m WHERE m.id = x)
-             IS DISTINCT FROM (fixture_reach('fixture.read', x) OR x IN (SELECT trip_driven_matches()));
+             IS DISTINCT FROM (x = ANY (FR) OR x IN (SELECT trip_driven_matches()));
       PERFORM _assert(bad IS NULL, format('§83 (shape): for %s match_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
       SELECT string_agg(coalesce(_v106_label(z, t.id), t.id::text), ' ') INTO bad
         FROM _v106_trips() t
        WHERE EXISTS (SELECT 1 FROM trip v WHERE v.id = t.id)
              IS DISTINCT FROM (((fixture_end_reach('transport.read', t.match_id, t.school_id, t.team_code)
-                                 AND (fixture_reach('fixture.read', t.match_id) OR t.match_id IN (SELECT trip_driven_matches())))
+                                 AND (t.match_id = ANY (FR) OR t.match_id IN (SELECT trip_driven_matches())))
                                 OR (coalesce(t.driver_id = app_user_id(), false)
                                     AND app_can('transport.read', t.school_id, t.team_code, ZERO, t.match_id)))
                                AND (coalesce(t.driver_id = app_user_id(), false) OR NOT trip_fixture_driver_only(t.match_id)));
@@ -37901,7 +37978,7 @@ $v49$;
       SELECT string_agg(coalesce(_v106_label(z, x), x::text), ' ') INTO bad
         FROM unnest(_v106_toss_matches()) x
        WHERE EXISTS (SELECT 1 FROM match_toss v WHERE v.match_id = x)
-             IS DISTINCT FROM fixture_reach('fixture.read', x);
+             IS DISTINCT FROM (x = ANY (FR));
       PERFORM _assert(bad IS NULL, format('§83 (shape): for %s match_toss_read and fixture_reach() answer apart at %s', u, left(bad, 300)));
     END LOOP;
     PERFORM _assert(cardinality(_v106_toss_matches()) >= 3 AND (SELECT count(*) FROM _v106_trips()) >= 7
@@ -39590,7 +39667,17 @@ $v49$;
     v_child  uuid[];
     v_base   text;
     j        jsonb;
+    -- (guardians) and (agree): the scored fixtures, asked once a loop as the
+    -- owner (the loops write nothing); each person's fixtures with a ball he
+    -- reads, and those db/100's branches (or the sheet) give him, each asked
+    -- once a person (CI speed, 26 Nov 2026)
+    BM       uuid[];
+    v_seen   uuid[];
+    v_want   uuid[];
+    k        int;
   BEGIN
+    -- Fresh planner statistics after the stage, as at §83 and §94 (CI speed).
+    PERFORM _v117_fresh_stats();
     OFFICE := (z->>'office')::uuid;
     MB := (z->>'mb')::uuid; SB := (z->>'sb')::uuid; NB := (z->>'nb')::uuid; UPB := (z->>'up')::uuid;
     WD := (z->>'wd')::uuid; TM := (z->>'tm')::uuid; PB := (z->>'pb')::uuid; T1 := (z->>'t1')::uuid;
@@ -39700,17 +39787,21 @@ $v49$;
     PERFORM _assert(_v112_fact('child_md5') IN ('78db5a4d195937ed800efc92e0489516', '69846e82142ceea5c17809122f375706'),
       '§89 (guardians): my_child_fixtures() is not db/100''s, nor db/117''s');
     n := 0;
+    BM := _v106_ball_matches();
     FOREACH u IN ARRAY _v106_guardians_only() LOOP
       PERFORM _as(u);
       v_child := my_child_fixtures();
       PERFORM _assert(cardinality(my_own_sheet_fixtures()) = 0,
         format('§89 (guardians): the guardian %s has fixtures on the new branch', u));
+      -- the fixtures whose balls he reads, as §83 (agree) asks them: an
+      -- EXISTS under his row security over each fixture of BM, the same set
+      -- as DISTINCT match_id over every ball he reads
+      v_seen := ARRAY(SELECT y FROM unnest(BM) y WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = y));
+      v_want := ARRAY(SELECT y FROM unnest(BM) y WHERE _v112_db100(y, v_child));
       SELECT string_agg(x::text, ' ') INTO bad FROM (
-        ((SELECT DISTINCT b.match_id FROM ball_event b)
-         EXCEPT (SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child)))
+        ((SELECT unnest(v_seen)) EXCEPT (SELECT unnest(v_want)))
         UNION ALL
-        ((SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child))
-         EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b))) d(x);
+        ((SELECT unnest(v_want)) EXCEPT (SELECT unnest(v_seen)))) d(x);
       PERFORM _assert(bad IS NULL, format('§89 (guardians): the guardian %s reads balls apart from db/100 at %s', u, left(bad, 300)));
       n := n + 1;
     END LOOP;
@@ -39721,17 +39812,22 @@ $v49$;
     -- whose rows disagree are the ones earlier sections staged that way (an
     -- account handed a side its boy is not on, a stage's shortcut), and no
     -- more.
-    PERFORM _assert(_v112_fact('disagree_boys') = v_base,
+    -- (Each player_assignment_disagreements() reads every boy the file has
+    -- staged, so a message's own facts are asked only when its check fails.)
+    got := _v112_fact('disagree_boys');
+    PERFORM _assert(got = v_base,
+      CASE WHEN got = v_base THEN '' ELSE
       format('§89 (idempotent): after the moves the boys out of step are [%s], before them [%s]: %s',
-             _v112_fact('disagree_boys'), v_base, _v112_fact('disagree_names')));
+             got, v_base, _v112_fact('disagree_names')) END);
     -- Moves made before this file: tm moved with the carry off; mb given a
     -- second row on his old side by hand; nb, on no side, given one by hand.
     PERFORM _v112_move_untracked(TM, 'U15E');
     PERFORM _v112_grant(U_MB, 'U14E');
     PERFORM _v112_grant(U_NB, 'U14E');
-    PERFORM _assert((SELECT count(*) FROM unnest(string_to_array(_v112_fact('disagree_boys'), ',')) x
-                      WHERE x::uuid IN (TM, MB, NB)) = 3,
-      format('§89 (idempotent): the stale state staged [%s]', _v112_fact('disagree_names')));
+    n := (SELECT count(*) FROM unnest(string_to_array(_v112_fact('disagree_boys'), ',')) x
+           WHERE x::uuid IN (TM, MB, NB));
+    PERFORM _assert(n = 3,
+      CASE WHEN n = 3 THEN '' ELSE format('§89 (idempotent): the stale state staged [%s]', _v112_fact('disagree_names')) END);
     j := _v112_correct();
     PERFORM _assert(j->>TM::text = '1:1' AND j->>MB::text = '1:0' AND j->>NB::text = '1:0'
                     AND (SELECT count(*) FROM jsonb_object_keys(j)) = 3 + coalesce(cardinality(string_to_array(nullif(v_base, ''), ',')), 0),
@@ -39757,18 +39853,25 @@ $v49$;
 
     -- ── (agree) ──
     ppl := _v106_people();
+    BM := _v106_ball_matches();
     n := 0;
     FOREACH u IN ARRAY ppl LOOP
       PERFORM _as(u);
       v_child := my_child_fixtures();
+      v_seen := ARRAY(SELECT y FROM unnest(BM) y WHERE EXISTS (SELECT 1 FROM ball_event b WHERE b.match_id = y));
+      -- each fixture's two answers asked once; MATERIALIZED, because the set
+      -- and the count both read them, and a subquery flattened into both
+      -- would ask each again
+      WITH r AS MATERIALIZED (
+        SELECT y, _v112_db100(y, v_child) AS db, _v106_self_sheet('fixture.read', y) AS sheet FROM unnest(BM) y)
+      SELECT ARRAY(SELECT r.y FROM r WHERE r.db OR r.sheet), (SELECT count(*) FROM r WHERE r.sheet AND NOT r.db)
+        INTO v_want, k;
       SELECT string_agg(x::text, ' ') INTO bad FROM (
-        ((SELECT DISTINCT b.match_id FROM ball_event b)
-         EXCEPT (SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child) OR _v106_self_sheet('fixture.read', y)))
+        ((SELECT unnest(v_seen)) EXCEPT (SELECT unnest(v_want)))
         UNION ALL
-        ((SELECT y FROM unnest(_v106_ball_matches()) y WHERE _v112_db100(y, v_child) OR _v106_self_sheet('fixture.read', y))
-         EXCEPT (SELECT DISTINCT b.match_id FROM ball_event b))) d(x);
+        ((SELECT unnest(v_want)) EXCEPT (SELECT unnest(v_seen)))) d(x);
       PERFORM _assert(bad IS NULL, format('§89 (agree): %s reads balls apart from db/100 and the sheet at %s', u, left(bad, 300)));
-      IF EXISTS (SELECT 1 FROM unnest(_v106_ball_matches()) y WHERE _v106_self_sheet('fixture.read', y) AND NOT _v112_db100(y, v_child)) THEN
+      IF k > 0 THEN
         n := n + 1;
       END IF;
     END LOOP;
@@ -48577,7 +48680,14 @@ $v116$;
     b_stray boolean;
     b_host  boolean;
     b_tgt   boolean;
+    -- the pad's fixtures, asked once a label as the owner rather than once a
+    -- reader (CI speed, 26 Nov 2026): no reader's loop writes the log
+    MS      uuid[];
   BEGIN
+    -- Fresh planner statistics, as at §83, §89 and §94 (CI speed, 27 Nov
+    -- 2026): every label below reads the whole log, which the sections since
+    -- §94 have added to. No answer changes, only the plans.
+    PERFORM _v117_fresh_stats();
     -- (pinned)
     PERFORM _assert(ball_log_policies_unpinned() IS NULL, format('§126 (pinned): %s', ball_log_policies_unpinned()));
     PERFORM _assert(ball_log_text_pinned() AND ball_log_pinned(), '§126 (pinned): ball_event_live''s text pin or its live pin does not hold');
@@ -48647,32 +48757,36 @@ $v116$;
       -- (rows) / (stray)
       PERFORM set_config('app.user_id', '', true);
       n_all := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
+      IF pass = 1 THEN MS := ARRAY(SELECT * FROM _v152_matches()); END IF;
       FOR u IN SELECT * FROM _v152_readers() LOOP
         PERFORM _as(u);
-        n := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
         IF pass = 1 THEN
+          n := _v152_same('rows');
           IF n > 0 THEN n_some := n_some + 1; END IF;
           -- what each reads before the plant, for (closed)
           seen := seen || jsonb_build_object(u::text, n);
         END IF;
         IF pass = 2 THEN
-          -- the stray ball, the host's balls of the fixture, the void's target:
-          -- one read of the view (each read asks the whole log once while the
-          -- stray ball is there)
-          SELECT coalesce(bool_or(l.id = (y->>'stray')::bigint), false),
+          -- (stray): _v152_same('stray')'s comparison, and the stray ball, the
+          -- host's balls of the fixture and the void's target, all off ONE
+          -- read of the view (_v152_rows()'s "rows:md5" spelled here, then
+          -- _v152_same_as()). While the stray ball is there each read of the
+          -- view asks the whole log once under row security; the three were a
+          -- second read of it, under the same session and log (CI speed).
+          SELECT count(*) || ':' || coalesce(md5(string_agg(l::text, E'\n' ORDER BY l.id)), '-'),
+                 coalesce(bool_or(l.id = (y->>'stray')::bigint), false),
                  coalesce(bool_or(l.match_id = (y->>'match')::uuid AND l.school_id = HIL), false),
                  coalesce(bool_or(l.id = (y->>'target')::bigint), false)
-            INTO b_stray, b_host, b_tgt
-            FROM ball_event_live l
-           WHERE l.id IN ((y->>'stray')::bigint, (y->>'target')::bigint)
-              OR (l.match_id = (y->>'match')::uuid AND l.school_id = HIL);
+            INTO got, b_stray, b_host, b_tgt
+            FROM ball_event_live l;
+          n := _v152_same_as('stray', got);
           IF b_stray THEN n_stray := n_stray + 1; ELSIF b_host THEN n_host := n_host + 1; END IF;
           IF b_tgt THEN n_tgt := n_tgt + 1; ELSIF b_host THEN n_hid := n_hid + 1; END IF;
         END IF;
         -- (pad) a pad's credential at each school's busiest fixture, either
         -- end; after the plant, at the planted fixture (its re-judged striker),
         -- whether or not it is one of those.
-        FOR mm IN SELECT x FROM _v152_matches() x WHERE pass = 1
+        FOR mm IN SELECT x FROM unnest(MS) x WHERE pass = 1
                   UNION SELECT (y->>'match')::uuid WHERE pass = 2 LOOP
           PERFORM set_config('app.scope', 'pad', true);
           PERFORM set_config('app.match_id', mm::text, true);
@@ -48707,12 +48821,13 @@ $v116$;
     got := _v152_owner('ALTER TABLE match DISABLE ROW LEVEL SECURITY');
     PERFORM _assert(got = 'ok', format('§126 (match): row security could not be lifted from match: %s', got));
     PERFORM _assert(ball_log_pinned(), '§126 (match): lifting match''s row security broke the live pin');
+    MS := ARRAY(SELECT * FROM _v152_matches());
     FOR u IN SELECT * FROM _v152_readers() LOOP
       PERFORM _as(u);
       PERFORM _v152_same('match');
       -- and on a pad's credential at each fixture: match's pad guard is no
       -- part of the away branch once match asks no policy
-      FOR mm IN SELECT * FROM _v152_matches() LOOP
+      FOR mm IN SELECT * FROM unnest(MS) LOOP
         PERFORM set_config('app.scope', 'pad', true);
         PERFORM set_config('app.match_id', mm::text, true);
         PERFORM _v152_same('match, pad');
