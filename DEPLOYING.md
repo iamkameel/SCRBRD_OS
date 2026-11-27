@@ -3033,7 +3033,8 @@ To paste:
   deploy the API from before db/175's (PR #404); an older API runs on a database
   ahead of it (`services/api/schema-guard.mjs`).
 
-Not pasted yet. Hash to check: `sha256 518725205d9070b3985a59a004d330c0b5dd7fb258bb6969e44a72f1930343b8`.
+Pasted on the demo and production, 26 Nov 2026, from 46b31b63. Hash-checked:
+`sha256 518725205d9070b3985a59a004d330c0b5dd7fb258bb6969e44a72f1930343b8`.
 <!-- ── end db/176 ── -->
 
 ### 5 · Cloud Run, the first time
