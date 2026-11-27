@@ -12260,9 +12260,12 @@ END $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, p
 
 -- This session's rows through ball_event_live against db/121's view under
 -- row security: equal, every column, or §126 fails naming the reader and the
--- label. Returns how many rows the session reads.
-CREATE OR REPLACE FUNCTION _v152_same(p_what text) RETURNS int AS $$
-DECLARE a text := _v152_rows('ball_event_live'); b text := _v152_rows('_v152_live_rls');
+-- label. Returns how many rows the session reads. _v152_same_as() makes the
+-- comparison given the view's read ("rows:md5", as _v152_rows() spells it),
+-- for a caller that reads something else off that one read of the view (§126
+-- (stray), CI speed 27 Nov 2026); _v152_same() reads the view, then asks it.
+CREATE OR REPLACE FUNCTION _v152_same_as(p_what text, a text) RETURNS int AS $$
+DECLARE b text := _v152_rows('_v152_live_rls');
 BEGIN
   PERFORM _assert(a = b, format('§126 (%s): %s reads %s through ball_event_live and %s under row security (scope %s, match %s)',
                                 p_what, coalesce(nullif(current_setting('app.user_id', true), ''), 'nobody'), a, b,
@@ -12270,6 +12273,9 @@ BEGIN
                                 coalesce(nullif(current_setting('app.match_id', true), ''), '-')));
   RETURN split_part(a, ':', 1)::int;
 END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION _v152_same(p_what text) RETURNS int AS $$
+  SELECT _v152_same_as(p_what, _v152_rows('ball_event_live'))
+$$ LANGUAGE sql;
 
 -- The fixtures a pad's credential is held at (the owner's list): for each
 -- school, its fixture with the most balls as the host and as the away side,
@@ -48678,6 +48684,10 @@ $v116$;
     -- reader (CI speed, 26 Nov 2026): no reader's loop writes the log
     MS      uuid[];
   BEGIN
+    -- Fresh planner statistics, as at §83, §89 and §94 (CI speed, 27 Nov
+    -- 2026): every label below reads the whole log, which the sections since
+    -- §94 have added to. No answer changes, only the plans.
+    PERFORM _v117_fresh_stats();
     -- (pinned)
     PERFORM _assert(ball_log_policies_unpinned() IS NULL, format('§126 (pinned): %s', ball_log_policies_unpinned()));
     PERFORM _assert(ball_log_text_pinned() AND ball_log_pinned(), '§126 (pinned): ball_event_live''s text pin or its live pin does not hold');
@@ -48750,23 +48760,26 @@ $v116$;
       IF pass = 1 THEN MS := ARRAY(SELECT * FROM _v152_matches()); END IF;
       FOR u IN SELECT * FROM _v152_readers() LOOP
         PERFORM _as(u);
-        n := _v152_same(CASE pass WHEN 1 THEN 'rows' ELSE 'stray' END);
         IF pass = 1 THEN
+          n := _v152_same('rows');
           IF n > 0 THEN n_some := n_some + 1; END IF;
           -- what each reads before the plant, for (closed)
           seen := seen || jsonb_build_object(u::text, n);
         END IF;
         IF pass = 2 THEN
-          -- the stray ball, the host's balls of the fixture, the void's target:
-          -- one read of the view (each read asks the whole log once while the
-          -- stray ball is there)
-          SELECT coalesce(bool_or(l.id = (y->>'stray')::bigint), false),
+          -- (stray): _v152_same('stray')'s comparison, and the stray ball, the
+          -- host's balls of the fixture and the void's target, all off ONE
+          -- read of the view (_v152_rows()'s "rows:md5" spelled here, then
+          -- _v152_same_as()). While the stray ball is there each read of the
+          -- view asks the whole log once under row security; the three were a
+          -- second read of it, under the same session and log (CI speed).
+          SELECT count(*) || ':' || coalesce(md5(string_agg(l::text, E'\n' ORDER BY l.id)), '-'),
+                 coalesce(bool_or(l.id = (y->>'stray')::bigint), false),
                  coalesce(bool_or(l.match_id = (y->>'match')::uuid AND l.school_id = HIL), false),
                  coalesce(bool_or(l.id = (y->>'target')::bigint), false)
-            INTO b_stray, b_host, b_tgt
-            FROM ball_event_live l
-           WHERE l.id IN ((y->>'stray')::bigint, (y->>'target')::bigint)
-              OR (l.match_id = (y->>'match')::uuid AND l.school_id = HIL);
+            INTO got, b_stray, b_host, b_tgt
+            FROM ball_event_live l;
+          n := _v152_same_as('stray', got);
           IF b_stray THEN n_stray := n_stray + 1; ELSIF b_host THEN n_host := n_host + 1; END IF;
           IF b_tgt THEN n_tgt := n_tgt + 1; ELSIF b_host THEN n_hid := n_hid + 1; END IF;
         END IF;
