@@ -63,6 +63,7 @@ import { projectMatch } from "./chartData.js";
 import { FreeHitBanner, InningsOverBanner, PartnershipCard, ScorecardPanel, ballWords, buildEventCfg, momentQueue, wicketMomentCfg } from "./panels.jsx";
 import { ballMilestones } from "./milestones.js";
 import { ScoringBlocked, ScoringPanel } from "./scoring.jsx";
+import { PadClosed, PadKeys, closedReason, closedWords } from "./padClosed.jsx";
 import { SetupScreen } from "./setup.jsx";
 import { BattingOrderSheet, DeclareSheet, HandoverSheet, Innings2Sheet, InningsReviewSheet, NewOverSheet, NextInningsSheet, NoBallSheet, NotBoundarySheet, RevisionSheet, ShotSelectorSheet, WicketSheet, WideSheet } from "./sheets.jsx";
 import { firstInningsLead, inningsDecided, nextInningsPlan, twoInningsMatch } from "./twoInnings.js";
@@ -277,7 +278,11 @@ function SyncPill({ sync, storage, onOpenHeld }) {
     // The server took these into quarantine, not into its log: sent under a
     // token this device no longer held. They used to leave the queue and the
     // pill said "Sent" — true of the request, false of the scorebook.
-    quarantined: { dot: D.rose, label: `For review ${sync.rejected}`,
+    // On a closed match (27 Nov 2026) the count says what it means there:
+    // balls tapped after the match closed, not recorded, with the lead.
+    quarantined: sync.closed
+      ? { dot: D.rose, label: closedWords(sync.closed, sync.rejected).pill, title: closedWords(sync.closed, sync.rejected).review }
+      : { dot: D.rose, label: `For review ${sync.rejected}`,
                title: `The server held ${sync.rejected === 1 ? "one event" : `${sync.rejected} events`} for a supervisor to review. They are not in the scorebook.` },
     syncing: { dot: D.amber, label: `Sending ${sync.pending}`, title: "Balls still on their way" },
     // The last send got no answer (18 Nov 2026: it read "Held N", and "held"
@@ -619,7 +624,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
     const st = padStatus;
     if (!st) return { state: "offline", pending: 0, held: 0, heldList: [], reason: null };
     const base = { pending: st.pending, held: st.held, heldReason: st.heldReason, heldList: st.heldList,
-                   rejected: st.rejected, reason: st.reason };
+                   rejected: st.rejected, reason: st.reason, closed: closedReason(st) };
     return { ...base,
       state: st.held ? "held"
         : st.rejected ? "quarantined"
@@ -667,6 +672,13 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
   // A Pilot Match called off takes no more events (re-check 1): the seal it rests on is the last.
   const calledOffRef = useRef(false);
   calledOffRef.current = pilotMode && !!callOffNow;
+  // A fixture called off or complete (27 Nov 2026): the server said so when
+  // the pad claimed it (PadSync.attach, as it opens) or refused its lease.
+  // The keys go off and nothing more is recorded: a tap the server would only
+  // set aside for the lead is not taken (padClosed.jsx).
+  const closed = live ? closedReason(padStatus, { pilotCalledOff: pilotMode && !!callOffNow }) : null;
+  const closedRef = useRef(null);
+  closedRef.current = closed;
 
   /**
    * Everything in the log that the outbox does not already answer for goes
@@ -713,7 +725,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
   // `emitAt` names the innings: a super over opens one that the pad has no
   // log for yet (SCRBRD-114 phase 3b), and the pad's log grows to it.
   const emitAt = (at, ...evs) => {
-    if (padLockRef.current || calledOffRef.current) return;
+    if (padLockRef.current || calledOffRef.current || closedRef.current) return;
     setEvents(prev => {
       const cp = [...prev];
       while (cp.length <= at) cp.push([]);
@@ -1778,7 +1790,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
   // is saved only once the withdrawal is on disk (withdrawalsRef, the
   // persist effect below). Which outbox: see the start of undoLastBall.
   const undoLastBall=()=>{
-    if(padLock)return;
+    if(padLock||closedRef.current)return;
     const engine=syncRef.current?.engine??null;
     // Which outbox undo asks. Attached: the engine, whose markers say what
     // has left. A live pad holding no token (SCRBRD-078): the engine, but
@@ -3093,7 +3105,9 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
                 Not while a sheet is open: the sheet IS the fix in progress,
                 and a second button offering the same fix behind it only
                 competes. */}
-            {live&&!modal&&<SyncBanner status={padStatus} match={match} asideCount={asideCount} extra={bannerExtra}
+            {/* On the score tab, a closed match with nothing left to send is
+                said beside the keys (PadClosed), once, not twice. */}
+            {live&&!modal&&!(closed&&activeTab==="score"&&!(padStatus?.pendingList?.length))&&<SyncBanner status={padStatus} match={match} asideCount={asideCount} extra={bannerExtra}
               onSignIn={onSignIn&&padStatus?.online?onSignIn:null}
               onRetry={()=>syncRef.current?.attach("open")}
               onScoreHere={()=>syncRef.current?.attach("open")}
@@ -3104,10 +3118,12 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
               onDismissNote={()=>syncRef.current?.dismissNote()}/>}
             {/* SCRBRD-130 R1: while play is stopped, the banner says where and
                 offers the two ways on; it replaces the blocked panel's words. */}
-            {activeTab==="score"&&!modal&&stopped&&<RainBanner stopped={stopped} isChase={matchChaseOf(innings,curIn)!=null}
+            {activeTab==="score"&&!modal&&closed&&<PadClosed reason={closed} rejected={padStatus?.rejected??0}
+              onOut={onExit??(()=>setActiveTab("cards"))} outWords={onExit?(backTo?`Back to ${backTo}`:"Leave the scorer"):"See the scorecard"}/>}
+            {activeTab==="score"&&!modal&&!closed&&stopped&&<RainBanner stopped={stopped} isChase={matchChaseOf(innings,curIn)!=null}
               onResume={()=>setModal("resume")} onEnd={()=>setModal("rainEnd")}
               onCallOff={pilotMode&&matchChaseOf(innings,curIn)==null&&!isSuperOver(inn)?callOffMatch:null}/>}
-            {activeTab==="score"&&!modal&&!stopped&&<ScoringBlocked readiness={readiness} onFix={fixBlock}
+            {activeTab==="score"&&!modal&&!closed&&!stopped&&<ScoringBlocked readiness={readiness} onFix={fixBlock}
               cause={readiness.ready||(readiness.blocked[0]?.code==="next_bowler"&&pastOverAt!==`${curIn}:${inn?.balls??0}`)?null:likelyCause(readiness.blocked[0]?.code,{inn})}/>}
             {/* After the match, a suspension's report is offered here — never
                 during play, where nothing may stand between a tap and the
@@ -3127,19 +3143,18 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
           {activeTab==="score"&&uiMode==="focus"&&(
             // SCRBRD-130 R1: the one place the pad greys out — the Law refuses
             // the ball while play is stopped (a disabled fieldset turns off
-            // every key in it at once).
-            <fieldset disabled={!!stopped} data-testid="pad-keys" aria-disabled={!!stopped || undefined}
-              style={{border:0,padding:0,margin:0,minWidth:0,opacity:stopped?0.45:1}}>
+            // every key in it at once); and a closed match, with Undo gone.
+            <PadKeys off={!!stopped||!!closed}>
               <Pad inn={inn} basic={basic}
                 onCommitDetailed={onCommitDetailed} onWicketCtx={onWicketCtx}
-                onWide={recordWide} onNoBall={recordNoBall} onExtraWicket={openExtraWicket} onUndo={undoLastBall}
+                onWide={recordWide} onNoBall={recordNoBall} onExtraWicket={openExtraWicket} onUndo={closed?null:undoLastBall}
                 guard={guardReady} undoWhat={undoWhat}/>
-            </fieldset>
+            </PadKeys>
           )}
           {activeTab==="score"&&uiMode!=="focus"&&(
             <div className="pro-score-grid">
               {/* Left column: fixed scoring panel */}
-              <ScoringPanel
+              <PadKeys off={!!closed}><ScoringPanel
                 inn={inn} innings={innings} events={events} curIn={curIn} match={match}
                 hubStage={hubStage} hubShot={hubShot} hubApproach={hubApproach}
                 selSeg={selSeg}
@@ -3149,7 +3164,7 @@ function SCRBRD({resume,onSignIn,onExit,onWatch=null,role=null,onPracticeActive=
                 onApproach={onApproach} onShot={onShot} onShotSkip={onShotSkip}
                 onFieldSel={onFieldSel} onRun={onRun} onBye={onBye} onLegBye={onLegBye}
                 onWicket={onHubWicket} onWide={onWide} onNoBall={onNoBall} onReset={resetHub}
-                onBack={onBack} onUndo={undoLastBall}/>
+                onBack={onBack} onUndo={closed?null:undoLastBall}/></PadKeys>
               {/* Right column: draggable cards */}
               <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"2px 0"}}>

@@ -1,6 +1,7 @@
 import { D, inkOn } from "../design/tokens.js";
 import { refusalWords } from "../lib/handover.js";
 import { waitingPhrase, tossLine } from "@scrbrd/sync";
+import { closedWords } from "./padClosed.jsx";
 
 /**
  * What the pad of a live match says about the server, in words. SCRBRD-078.
@@ -195,7 +196,9 @@ export function bannerFor(st, match, asideCount = 0, extra = {}) {
       // A match called off (db/132) is the same, in its own words.
       const n = st.pendingList?.length ?? 0;
       const when = reason === "match_abandoned" ? "the match was called off" : "the result was recorded";
-      if (!n) return { reason, tone: "stop", lead: refusalWords(reason), text: "" };
+      // Nothing left to send, but balls tapped after it closed went to the
+      // lead (27 Nov 2026): said in words, not only as the pill's count.
+      if (!n) return { reason, tone: "stop", lead: refusalWords(reason), text: closedWords(reason, st.rejected).review ?? "" };
       return { reason, tone: "stop", lead: refusalWords(reason), list: pendingLines,
         ...(st.reviewing ? {} : { action: "review" }),
         text: st.reviewing ? `Sending ${waiting} to the lead for review…`

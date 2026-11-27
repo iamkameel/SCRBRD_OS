@@ -542,10 +542,11 @@ function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null,
             style={extra === x.kind ? { border: `2px solid ${T.content.primary}`, fontWeight: 600 } : undefined}/>
         ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,3fr) minmax(0,2fr)", gap: T.space.sm }}>
+      {/* No Undo on a match that has closed (padClosed.jsx): Dot takes the row. */}
+      <div style={{ display: "grid", gridTemplateColumns: onUndo ? "minmax(0,3fr) minmax(0,2fr)" : "minmax(0,1fr)", gap: T.space.sm }}>
         <Key face={<><span aria-hidden="true">·</span> Dot</>} say="Dot ball, no run" testid="key-dot" h="56px" onClick={onDot}
           style={{ fontSize: "18px", fontWeight: 600 }}/>
-        <Key testid="key-undo" h="56px" onClick={onUndo} say={label}
+        {onUndo && <Key testid="key-undo" h="56px" onClick={onUndo} say={label}
           face={<>
             <Icon name="undo-2"/>
             <span style={{ display: "grid", minWidth: 0, textAlign: "left", lineHeight: 1.15 }}>
@@ -556,7 +557,7 @@ function Strip({ extra, onExtra, onDot, onUndo, undoWhat, midBall, panel = null,
                 {midBall ? "this ball" : undoWhat ?? "nothing"}
               </span>
             </span>
-          </>}/>
+          </>}/>}
       </div>
     </div>
   );
@@ -799,7 +800,7 @@ export function Pad({ inn, basic, onCommitDetailed, onWicketCtx, onWide, onNoBal
       // A dot mid-ball carries what the scorer has told the pad so far — the
       // same event as the outcome's 0; with nothing chosen it is the one-tap dot.
       onDot={() => (basic ? basicRun(0) : commitRun(0))}
-      onUndo={() => { if (extra != null) { if (basic) setExtra(null); else reset(); } else if (!basic && phase > 1) reset(); else onUndo(); }}/>
+      onUndo={onUndo ? () => { if (extra != null) { if (basic) setExtra(null); else reset(); } else if (!basic && phase > 1) reset(); else onUndo(); } : null}/>
   );
   // The phase's own keys stay where they are, out of sight and out of reach,
   // while an extra's runs are asked over them: the strip does not move.

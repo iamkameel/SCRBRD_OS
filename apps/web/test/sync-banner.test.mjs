@@ -154,5 +154,21 @@ group("F. An attached pad with no signal says so (18 Nov 2026: it said nothing b
   ok("attached and online with a send under way: nothing to say", bannerFor(st({ attached: true, reason: null, online: true, pendingList: [ball] }), MATCH) === null);
 }
 
+group("G. A match called off (db/132; Kameel's solo run, 27 Nov 2026)");
+{
+  const off = render(st({ reason: "match_abandoned" }));
+  ok("called off: scoring has closed, in words", /This match was called off — scoring has closed/.test(off), off);
+  ok("...with nothing to send, no button", bannerFor(st({ reason: "match_abandoned" }), MATCH)?.action === undefined);
+  const held = bannerFor(st({ reason: "match_abandoned", rejected: 1 }), MATCH);
+  ok("a ball tapped after it closed: not recorded, said why, and where it went",
+     held?.text === "1 ball not recorded: the match was called off. It is with the match-day lead for review.", held?.text);
+  const two = bannerFor(st({ reason: "match_complete", rejected: 2 }), MATCH);
+  ok("...two on a complete match, in its own words", /^2 balls not recorded: the result was recorded\. They are with the match-day lead/.test(two?.text ?? ""), two?.text);
+  const b1 = { payload: { kind: "ball", value: 1 } };
+  const unsent = bannerFor(st({ reason: "match_abandoned", pendingList: [b1] }), MATCH, 0, { describe: () => "Ball — 1 run" });
+  ok("a ball still unsent: never sent before it was called off, Send for review kept", unsent?.action === "review"
+     && /never sent before the match was called off/.test(unsent.text), unsent);
+}
+
 console.log(`\n${"─".repeat(52)}\nSYNC BANNER: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

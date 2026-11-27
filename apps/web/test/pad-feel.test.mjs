@@ -44,6 +44,7 @@ import { EXTRAS, extraCall, NB_TYPES, NB_FROM } from "../src/scorer/extras.js";
 import { bowlerChoices, batterChoices, undoWords, unavailableWords, noClause } from "../src/scorer/prompts.js";
 import { hapticTick, setHapticOn, HAPTIC_KEY } from "../src/scorer/haptic.js";
 import { Pad, asksOneTap } from "../src/scorer/pad.jsx";
+import { PadClosed, PadKeys, closedReason, closedWords } from "../src/scorer/padClosed.jsx";
 
 let pass = 0, fail = 0;
 const ok = (n, c, d) => { if (c) pass++; else { fail++; console.log("  ✗", n, d ? `— ${String(d).slice(0, 300)}` : ""); } };
@@ -354,6 +355,35 @@ group("4. The pad as drawn");
      && /data-testid="key-dot"/.test(three));
   const small = [...three.matchAll(/font-size:(\d+(?:\.\d+)?)px/g)].map((m) => Number(m[1])).filter((n) => n < 12);
   ok("nothing on it under 12px", small.length === 0, small.join());
+}
+
+group("3b. A match that has closed: the keys off, Undo gone, the reason said (27 Nov 2026)");
+{
+  const inn = deriveInnings([...open(), run(1)]);
+  const noop = () => {};
+  const pad = (onUndo) => h(Pad, { inn, basic: false, onCommitDetailed: noop, onWicketCtx: noop, onWide: noop, onNoBall: noop, onUndo, undoWhat: "1 to R Pillay" });
+  const st = { reason: "match_abandoned", rejected: 1 };
+  const why = closedReason(st);
+  const keys = renderToStaticMarkup(h(PadKeys, { off: !!why }, pad(why ? null : noop)));
+  ok("the server's called off closes the pad", why === "match_abandoned");
+  ok("...complete closes it too, a plain refusal does not", closedReason({ reason: "match_complete" }) === "match_complete"
+     && closedReason({ reason: "lease_active" }) === null && closedReason(null) === null);
+  ok("...and a Pilot Match called off on this phone", closedReason({ reason: null }, { pilotCalledOff: true }) === "match_abandoned");
+  ok("the keys' fieldset is disabled", /<fieldset[^>]*disabled=""[^>]*data-testid="pad-keys"/.test(keys), keys.slice(0, 200));
+  ok("...the extras and Dot are inside it", /data-testid="pad-keys"[\s\S]*key-wide[\s\S]*key-dot/.test(keys));
+  ok("...and Undo is not there at all", !/key-undo/.test(keys));
+  const live = renderToStaticMarkup(h(PadKeys, { off: false }, pad(noop)));
+  ok("an open match: keys live, Undo there", !/<fieldset[^>]*disabled/.test(live) && /data-testid="key-undo"/.test(live));
+  const said = renderToStaticMarkup(h(PadClosed, { reason: why, rejected: st.rejected, onOut: noop, outWords: "Back to Matches" }));
+  ok("the reason beside the keys, in plain words", /This match was called off\. Scoring has closed\./.test(said), said);
+  ok("...the ball not recorded, said what it means", /1 ball not recorded: the match was called off\. It is with the match-day lead for review\./.test(said), said);
+  ok("...and one way out", (said.match(/<button/g) ?? []).length === 1 && /data-testid="pad-closed-out"[^>]*>Back to Matches</.test(said), said);
+  ok("the pill's words for it", closedWords("match_abandoned", 1).pill === "1 not recorded" && closedWords("match_abandoned", 0).pill === null);
+  const done = renderToStaticMarkup(h(PadClosed, { reason: "match_complete" }));
+  ok("a complete match: its own words, the amendment road, no review line", /This match is complete\. Scoring has closed\./.test(done)
+     && /amendment request/.test(done) && !/not recorded/.test(done));
+  const small = [...said.matchAll(/font-size:(\d+(?:\.\d+)?)px/g)].map((m) => Number(m[1])).filter((n) => n < 12);
+  ok("nothing on it under 12px, the way out 44px tall", small.length === 0 && /data-testid="pad-closed-out"[^>]*style="[^"]*min-height:44px/.test(said), small.join());
 }
 
 group("4. The haptic tick: fire and forget, never under reduced motion");
